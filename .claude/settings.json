@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(for app:*)",
+      "Bash(do echo:*)",
+      "Read(//home/dguedry/WIP/isotopeiq-satellite-2/backend/apps/**)",
+      "Bash(done)",
+      "Read(//home/dguedry/WIP/isotopeiq-satellite-2/backend/apps/$app/**)",
+      "Bash(ls -la /home/dguedry/WIP/isotopeiq-satellite-2/backend/apps/*/serializers.py)",
+      "Bash(grep -l \"REST_FRAMEWORK\\\\|AUTHENTICATION\" /home/dguedry/WIP/isotopeiq-satellite-2/backend/config/settings/*.py)",
+      "Bash(grep -i \"packages\\\\|installed_software\" /home/dguedry/WIP/isotopeiq-satellite-2/backend/apps/scripts/*.py)",
+      "Bash(docker compose:*)"
+    ],
+    "additionalDirectories": [
+      "/home/dguedry/WIP/isotopeiq-satellite-2"
+    ]
+  }
+}
