@@ -62,12 +62,11 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import api from './api'
+import api, { isLoggedIn, clearTokens } from './api'
 
 const router = useRouter()
-const isLoggedIn = computed(() => !!localStorage.getItem('access_token'))
 const username = ref(localStorage.getItem('username') || '')
 const runningJobs = ref(0)
 const newDrift = ref(0)
@@ -86,9 +85,18 @@ async function pollBadges() {
     runningJobs.value = Array.isArray(jobs) ? jobs.length : 0
     newDrift.value = Array.isArray(drift) ? drift.length : 0
   } catch {
-    // silently ignore badge poll errors
+    // silently ignore — if token expired, the interceptor calls clearTokens()
+    // which triggers the watch below to stop polling and redirect
   }
 }
+
+// When the interceptor clears tokens (refresh failed), stop polling and redirect
+watch(isLoggedIn, (val) => {
+  if (!val) {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+    router.push('/login')
+  }
+})
 
 onMounted(() => {
   if (isLoggedIn.value) {
@@ -102,9 +110,7 @@ onUnmounted(() => {
 })
 
 function logout() {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
-  localStorage.removeItem('username')
+  clearTokens()
   router.push('/login')
 }
 </script>

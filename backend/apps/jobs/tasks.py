@@ -9,6 +9,7 @@ from .models import Job, DeviceJobResult
 from core.collection.ssh import SSHCollector
 from core.collection.telnet import TelnetCollector
 from core.collection.winrm import WinRMCollector
+from core.collection.render import render_script
 from core.parser.runner import run_parser
 from core.canonical import validate_canonical
 
@@ -88,7 +89,7 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
         )
         try:
             collector = _get_collector(device)
-            raw_output = collector.run(policy.collection_script.content)
+            raw_output = collector.run(render_script(policy.collection_script.content, device))
             result.raw_output = raw_output
 
             parsed = run_parser(policy.parser_script.content, raw_output)

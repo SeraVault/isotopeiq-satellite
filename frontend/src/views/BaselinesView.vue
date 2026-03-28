@@ -31,11 +31,15 @@
 
     <!-- Baseline data modal -->
     <div v-if="viewing" class="modal">
-      <div class="modal-box modal-lg">
-        <h2>Baseline — Device {{ viewing.device }}</h2>
-        <p style="color:#666;margin:.25rem 0 1rem">Established {{ fmt(viewing.established_at) }} by {{ viewing.established_by }}</p>
-        <pre>{{ JSON.stringify(viewing.parsed_data, null, 2) }}</pre>
-        <div style="margin-top:1rem"><button @click="viewing = null">Close</button></div>
+      <div class="modal-box modal-xl">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:.25rem">
+          <h2>Baseline — Device {{ viewing.device }}</h2>
+          <button @click="viewing = null">✕ Close</button>
+        </div>
+        <p style="color:#666;margin:.25rem 0 1rem;font-size:.85rem">
+          Established {{ fmt(viewing.established_at) }} by {{ viewing.established_by }}
+        </p>
+        <CanonicalViewer :data="viewing.parsed_data" />
       </div>
     </div>
 
@@ -61,6 +65,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../api'
+import CanonicalViewer from '../components/CanonicalViewer.vue'
 
 const baselines = ref([])
 const loading = ref(false)

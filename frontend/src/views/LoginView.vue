@@ -22,6 +22,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
+import { setTokens } from '../api'
 
 const router = useRouter()
 const username = ref('')
@@ -37,8 +38,7 @@ async function submit() {
       username: username.value,
       password: password.value,
     })
-    localStorage.setItem('access_token', data.access)
-    localStorage.setItem('refresh_token', data.refresh)
+    setTokens(data.access, data.refresh, username.value)
     router.push('/')
   } catch {
     error.value = 'Invalid username or password.'

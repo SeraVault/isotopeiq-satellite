@@ -1,49 +1,37 @@
 import json
-import os
-import subprocess
-import sys
-import tempfile
+
+from core.canonical import CANONICAL_EMPTY
 
 PARSER_TIMEOUT = 60  # seconds
-
-# Minimal safe environment for parser subprocess execution.
-# TODO: For production, run parsers inside a container or with seccomp/cgroups.
-_SAFE_ENV = {
-    'PATH': '/usr/bin:/bin',
-    'PYTHONPATH': '',
-}
 
 
 def run_parser(parser_script: str, raw_input: str) -> dict:
     """
-    Execute a parser script in an isolated subprocess.
+    Execute a parser script in an isolated namespace.
 
-    The script receives raw_input on stdin and must write a single
-    canonical JSON object to stdout.
+    The script has two pre-assigned variables:
+      result  - str  - the raw output from the collection script
+      output  - dict - a copy of CANONICAL_EMPTY to populate
+
+    After the script runs, `output` is returned as the canonical dict.
+
+    Example parser:
+        for line in result.splitlines():
+            if line.startswith('hostname'):
+                output['device']['hostname'] = line.split()[-1]
     """
-    with tempfile.NamedTemporaryFile(
-        mode='w', suffix='.py', delete=False, prefix='isotopeiq_parser_'
-    ) as tmp:
-        tmp.write(parser_script)
-        script_path = tmp.name
+    namespace = {
+        'result': raw_input,
+        'output': {k: (v.copy() if isinstance(v, dict) else list(v))
+                   for k, v in CANONICAL_EMPTY.items()},
+    }
 
     try:
-        result = subprocess.run(
-            [sys.executable, script_path],
-            input=raw_input,
-            capture_output=True,
-            text=True,
-            timeout=PARSER_TIMEOUT,
-            env=_SAFE_ENV,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f'Parser exited with code {result.returncode}. stderr: {result.stderr[:500]}'
-            )
-        return json.loads(result.stdout)
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f'Parser timed out after {PARSER_TIMEOUT} seconds')
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f'Parser produced invalid JSON: {exc}')
-    finally:
-        os.unlink(script_path)
+        exec(parser_script, namespace)  # noqa: S102
+    except Exception as exc:
+        raise RuntimeError(f'Parser error: {exc}') from exc
+
+    parsed = namespace['output']
+    if not isinstance(parsed, dict):
+        raise RuntimeError('Parser must leave `output` as a dict.')
+    return parsed
