@@ -107,8 +107,34 @@ def _run_connection_test(connection_type, hostname, port, credential,
             TelnetCollector(dev).run('true')
         else:
             from core.collection.winrm import WinRMCollector
-            WinRMCollector(dev).run('Write-Output ok')
+            collector = WinRMCollector(dev)
+            collector.run('Write-Output ok')
+            # Attempt to raise the WinRM envelope size limit now so that
+            # large collection scripts succeed. Requires admin on target —
+            # silently ignored if it fails.
+            _winrm_configure_envelope(collector)
+            return Response({'success': True, 'detail': _WINRM_ONBOARDING_DETAIL}, status=status.HTTP_200_OK)
     except Exception as exc:
         return Response({'success': False, 'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     return Response({'success': True, 'detail': 'Connection successful.'}, status=status.HTTP_200_OK)
+
+
+_WINRM_ONBOARDING_DETAIL = (
+    'Connection successful.\n\n'
+    'To ensure large collection scripts work, run the following on the\n'
+    'Windows target as Administrator (if not already applied):\n\n'
+    '  Set-Item -Path WSMan:\\localhost\\MaxEnvelopeSizeKb -Value 8192\n\n'
+    'IsotopeIQ has attempted to apply this automatically.'
+)
+
+
+def _winrm_configure_envelope(collector):
+    """Best-effort: raise WinRM envelope size on the target after connection test."""
+    try:
+        collector.run(
+            'Set-Item -Path WSMan:\\localhost\\MaxEnvelopeSizeKb'
+            ' -Value 8192 -ErrorAction SilentlyContinue'
+        )
+    except Exception:
+        pass

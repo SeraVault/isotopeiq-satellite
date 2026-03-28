@@ -5,7 +5,7 @@ import paramiko
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = 30  # seconds
+TIMEOUT = 300  # seconds — Windows PS collection can be slow
 
 _KEY_TYPES = [
     paramiko.Ed25519Key,
@@ -88,10 +88,39 @@ class SSHCollector:
                 connect_kwargs['password'] = password
 
             client.connect(**connect_kwargs)
-            _, stdout, stderr = client.exec_command(script_content, timeout=TIMEOUT)
-            exit_code = stdout.channel.recv_exit_status()
-            output = stdout.read().decode('utf-8', errors='replace')
-            error = stderr.read().decode('utf-8', errors='replace')
+
+            # OpenSSH on Windows defaults to cmd.exe. Use SFTP to upload the
+            # script to a temp file then execute it with PowerShell, bypassing
+            # the cmd.exe shell entirely.
+            os_type = getattr(self._device, 'os_type', '')
+            if os_type == 'windows':
+                import uuid as _uuid
+                tmp = f'C:/Windows/Temp/isotopeiq_{_uuid.uuid4().hex}.ps1'
+                sftp = client.open_sftp()
+                try:
+                    with sftp.open(tmp, 'w') as f:
+                        f.write(script_content)
+                finally:
+                    sftp.close()
+                _, stdout, stderr = client.exec_command(
+                    f'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{tmp}" ; Remove-Item -Force "{tmp}" -ErrorAction SilentlyContinue',
+                    timeout=TIMEOUT,
+                )
+            else:
+                _, stdout, stderr = client.exec_command(script_content, timeout=TIMEOUT)
+            try:
+                output = stdout.read().decode('utf-8', errors='replace')
+                error = stderr.read().decode('utf-8', errors='replace')
+                exit_code = stdout.channel.recv_exit_status()
+            except Exception as inner:
+                err_so_far = ''
+                try:
+                    err_so_far = stderr.read().decode('utf-8', errors='replace')
+                except Exception:
+                    pass
+                raise RuntimeError(
+                    f'Channel error: {inner}. stderr: {err_so_far or "(empty)"}'
+                )
 
             if exit_code != 0:
                 raise RuntimeError(

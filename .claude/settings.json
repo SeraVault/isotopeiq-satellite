@@ -11,7 +11,11 @@
       "Bash(grep -i \"packages\\\\|installed_software\" /home/dguedry/WIP/isotopeiq-satellite-2/backend/apps/scripts/*.py)",
       "Bash(docker compose:*)",
       "Bash(npm install:*)",
-      "Bash(find /home/dguedry/WIP/isotopeiq-satellite-2/frontend/node_modules/jsondiffpatch -name *.css)"
+      "Bash(find /home/dguedry/WIP/isotopeiq-satellite-2/frontend/node_modules/jsondiffpatch -name *.css)",
+      "Bash(python3 -c \":*)",
+      "Bash(grep -r \"collect.*parse\\\\|test.*action\" /home/dguedry/WIP/isotopeiq-satellite-2 --include=*.md)",
+      "Bash(docker-compose ps:*)",
+      "WebSearch"
     ],
     "additionalDirectories": [
       "/home/dguedry/WIP/isotopeiq-satellite-2"

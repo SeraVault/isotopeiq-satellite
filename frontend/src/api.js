@@ -35,10 +35,9 @@ api.interceptors.response.use(
         error.config._retry = true
         try {
           const { data } = await axios.post('/api/token/refresh/', { refresh })
-          localStorage.setItem('access_token', data.access)
-          isLoggedIn.value = true
+          setTokens(data.access, data.refresh || null)
           error.config.headers.Authorization = `Bearer ${data.access}`
-          return axios(error.config)
+          return api(error.config)
         } catch {
           clearTokens()
         }

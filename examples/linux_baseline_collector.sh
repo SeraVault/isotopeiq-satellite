@@ -215,6 +215,17 @@ elif command -v zypper &>/dev/null; then
         | awk -F'|' 'NR>2 && /^[[:space:]]*i/ {gsub(/^[[:space:]]+|[[:space:]]+$/,"",$3); gsub(/^[[:space:]]+|[[:space:]]+$/,"",$4); print $3"|"$4"||"}' || true
 fi
 
+# Snap packages (any distro)
+if command -v snap &>/dev/null; then
+    snap list 2>/dev/null | awk 'NR>1 {print $1"|"$2"||"}' || true
+fi
+
+# Flatpak packages (any distro)
+if command -v flatpak &>/dev/null; then
+    flatpak list --app --columns=application,version 2>/dev/null \
+        | awk -F'\t' '{print $1"|"$2"||"}' || true
+fi
+
 # ── Services ──────────────────────────────────────────────────────────────────
 section "services"
 if [ "$INIT_SYSTEM" = "systemd" ]; then
