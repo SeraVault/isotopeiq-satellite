@@ -108,6 +108,16 @@ elif [ -f /etc/alpine-release ]; then
     echo "Alpine Linux"
     cat /etc/alpine-release
     echo ""
+elif [ -f /etc/redhat-release ]; then
+    # RHEL/CentOS/Fedora without os-release (very old versions)
+    head -1 /etc/redhat-release
+    grep -oP '[\d.]+' /etc/redhat-release | head -1 || echo ""
+    echo ""
+elif [ -f /etc/SuSE-release ]; then
+    # Old SUSE without os-release
+    head -1 /etc/SuSE-release
+    grep -E "^VERSION" /etc/SuSE-release | cut -d= -f2 | xargs || echo ""
+    grep -E "^PATCHLEVEL" /etc/SuSE-release | cut -d= -f2 | xargs || echo ""
 else
     echo ""
     echo ""
@@ -199,6 +209,10 @@ elif command -v apk &>/dev/null; then
 elif command -v pacman &>/dev/null; then
     # Arch
     pacman -Q 2>/dev/null | awk '{print $1"|"$2"||"}' || true
+elif command -v zypper &>/dev/null; then
+    # SUSE / openSUSE
+    zypper --no-color packages --installed-only 2>/dev/null \
+        | awk -F'|' 'NR>2 && /^[[:space:]]*i/ {gsub(/^[[:space:]]+|[[:space:]]+$/,"",$3); gsub(/^[[:space:]]+|[[:space:]]+$/,"",$4); print $3"|"$4"||"}' || true
 fi
 
 # ── Services ──────────────────────────────────────────────────────────────────
@@ -224,7 +238,7 @@ fi
 
 # ── Filesystem ────────────────────────────────────────────────────────────────
 section "filesystem"
-df -P -T | tail -n +2
+df -P -T 2>/dev/null | tail -n +2 || df -P 2>/dev/null | tail -n +2 || true
 
 section "filesystem_mounts"
 # Mount options from /proc/mounts

@@ -10,7 +10,8 @@
       "Bash(grep -l \"REST_FRAMEWORK\\\\|AUTHENTICATION\" /home/dguedry/WIP/isotopeiq-satellite-2/backend/config/settings/*.py)",
       "Bash(grep -i \"packages\\\\|installed_software\" /home/dguedry/WIP/isotopeiq-satellite-2/backend/apps/scripts/*.py)",
       "Bash(docker compose:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(find /home/dguedry/WIP/isotopeiq-satellite-2/frontend/node_modules/jsondiffpatch -name *.css)"
     ],
     "additionalDirectories": [
       "/home/dguedry/WIP/isotopeiq-satellite-2"

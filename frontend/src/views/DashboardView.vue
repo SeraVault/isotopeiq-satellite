@@ -42,7 +42,7 @@
               <td class="text-muted">{{ fmt(e.detected_at) }}</td>
               <td class="text-muted">{{ diffKeys(e.diff) }}</td>
               <td>
-                <button v-if="e.status === 'new'" @click="acknowledge(e)">Acknowledge</button>
+                <button v-if="e.status === 'new'" @click="openAcknowledge(e)">Acknowledge</button>
               </td>
             </tr>
           </tbody>
@@ -73,6 +73,30 @@
       </div>
     </div>
   </div>
+
+  <!-- Acknowledge modal -->
+  <div v-if="acknowledging" class="modal">
+    <div class="modal-box modal-sm">
+      <h2>Acknowledge Drift</h2>
+      <p class="text-muted" style="margin:.25rem 0 .75rem">Device: <strong>{{ acknowledging.device_name ?? acknowledging.device }}</strong></p>
+      <label>
+        Reason <span style="color:#c00">*</span>
+        <textarea
+          v-model="ackReason"
+          rows="4"
+          placeholder="Explain why this drift is expected or acceptable…"
+          style="width:100%;margin-top:.35rem;resize:vertical"
+        ></textarea>
+      </label>
+      <p v-if="ackError" class="error" style="margin-top:.4rem">{{ ackError }}</p>
+      <div style="margin-top:1rem;display:flex;gap:.5rem">
+        <button class="btn-primary" :disabled="ackSaving" @click="submitAcknowledge">
+          {{ ackSaving ? 'Saving…' : 'Acknowledge' }}
+        </button>
+        <button @click="acknowledging = null; ackReason = ''; ackError = ''">Cancel</button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -85,6 +109,11 @@ const recentJobs = ref([])
 const loadingDrift = ref(true)
 const loadingJobs = ref(true)
 
+const acknowledging = ref(null)
+const ackReason = ref('')
+const ackError = ref('')
+const ackSaving = ref(false)
+
 function fmt(iso) { return new Date(iso).toLocaleString() }
 
 function diffKeys(diff) {
@@ -94,10 +123,30 @@ function diffKeys(diff) {
   return keys.slice(0, 3).join(', ') + (keys.length > 3 ? ` +${keys.length - 3}` : '')
 }
 
-async function acknowledge(event) {
-  await api.post(`/drift/${event.id}/acknowledge/`)
-  event.status = 'acknowledged'
-  stats.value.new_drift = Math.max(0, stats.value.new_drift - 1)
+function openAcknowledge(event) {
+  acknowledging.value = event
+  ackReason.value = ''
+  ackError.value = ''
+}
+
+async function submitAcknowledge() {
+  if (!ackReason.value.trim()) {
+    ackError.value = 'A reason is required.'
+    return
+  }
+  ackSaving.value = true
+  ackError.value = ''
+  try {
+    await api.post(`/drift/${acknowledging.value.id}/acknowledge/`, { reason: ackReason.value.trim() })
+    acknowledging.value.status = 'acknowledged'
+    stats.value.new_drift = Math.max(0, stats.value.new_drift - 1)
+    acknowledging.value = null
+    ackReason.value = ''
+  } catch (e) {
+    ackError.value = e.response?.data?.error ?? 'Failed to acknowledge.'
+  } finally {
+    ackSaving.value = false
+  }
 }
 
 onMounted(async () => {

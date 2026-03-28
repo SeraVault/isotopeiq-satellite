@@ -635,6 +635,113 @@ CANONICAL_EMPTY: dict = {
     'custom':             {},
 }
 
+# ── Volatile field definitions ────────────────────────────────────────────────
+#
+# Volatile fields are excluded from baseline comparison because they change
+# frequently for reasons unrelated to configuration drift (e.g. timestamps,
+# resource utilisation, runtime state).  The full parsed data is still stored
+# in the baseline and job result for display purposes — only the diff is
+# computed against stripped copies.
+#
+# Structure:
+#   top-level section key ->
+#       'fields'  : set of scalar fields to drop from the section object, OR
+#       'items'   : set of fields to drop from every item when the section is
+#                   an array, OR
+#       'nested'  : dict mapping an item field name to a further 'items' set
+#                   for one level of nesting within array items
+
+VOLATILE_FIELDS: dict = {
+    # Disk utilisation changes constantly; mount/type/options/suid are static
+    'filesystem': {
+        'items': {'free_gb'},
+    },
+    # last_login and password_last_set are timestamps that change on every login
+    'users': {
+        'items': {'last_login', 'password_last_set'},
+    },
+    # Runtime service status is volatile; startup (enabled/disabled) is static
+    'services': {
+        'items': {'status'},
+    },
+    # PID is volatile; port, process_name, protocol, user are static
+    'listening_services': {
+        'items': {'pid'},
+    },
+    # NTP sync state is volatile; configured servers are static
+    'os': {
+        'fields': {'ntp_synced'},
+    },
+    # Certificate validity window changes on renewal — track expiry separately
+    'certificates': {
+        'items': {'not_before', 'not_after'},
+    },
+    # BGP/OSPF neighbour session state is runtime, not configuration
+    'routing_protocols': {
+        'nested': {
+            'neighbors': {'state'},
+        },
+    },
+    # VPN tunnel up/down state is runtime
+    'vpn_tunnels': {
+        'items': {'status'},
+    },
+    # VLAN operational state is volatile; id and name are static
+    'vlans': {
+        'items': {'state'},
+    },
+    # STP dynamic state: who is root, port roles/states change on topology events
+    'spanning_tree': {
+        'fields': {'root_bridge', 'root_priority', 'root_address'},
+        'nested': {
+            'ports': {'role', 'state'},
+        },
+    },
+}
+
+
+def strip_volatile(data: dict) -> dict:
+    """
+    Return a deep copy of a canonical document with all volatile fields removed.
+    Use this before comparing two snapshots for drift detection.
+    """
+    import copy
+    data = copy.deepcopy(data)
+
+    for section, spec in VOLATILE_FIELDS.items():
+        if section not in data:
+            continue
+
+        section_data = data[section]
+
+        # Scalar fields on a section object (e.g. os.ntp_synced)
+        if 'fields' in spec and isinstance(section_data, dict):
+            for field in spec['fields']:
+                section_data.pop(field, None)
+
+        # Fields on every item in an array section (e.g. filesystem[*].free_gb)
+        if 'items' in spec and isinstance(section_data, list):
+            for item in section_data:
+                if isinstance(item, dict):
+                    for field in spec['items']:
+                        item.pop(field, None)
+
+        # Fields within a nested array inside each item
+        # (e.g. routing_protocols[*].neighbors[*].state)
+        if 'nested' in spec:
+            items = section_data if isinstance(section_data, list) else [section_data]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                for nested_key, nested_fields in spec['nested'].items():
+                    for nested_item in item.get(nested_key, []):
+                        if isinstance(nested_item, dict):
+                            for field in nested_fields:
+                                nested_item.pop(field, None)
+
+    return data
+
+
 _validator = jsonschema.Draft7Validator(CANONICAL_SCHEMA)
 
 

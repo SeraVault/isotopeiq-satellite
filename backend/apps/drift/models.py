@@ -22,6 +22,7 @@ class DriftEvent(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
     acknowledged_by = models.CharField(max_length=255, blank=True)
     acknowledged_at = models.DateTimeField(null=True, blank=True)
+    acknowledgement_reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

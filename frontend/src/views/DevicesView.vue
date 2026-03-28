@@ -27,7 +27,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="d in devStore.devices" :key="d.id">
+          <tr v-for="d in devStore.devices" :key="d.id" class="clickable-row" @click="openViewer(d)">
             <td>{{ d.name }}</td>
             <td>{{ d.hostname }}</td>
             <td>{{ d.device_type }}</td>
@@ -35,7 +35,7 @@
             <td>{{ d.connection_type }}</td>
             <td>{{ credName(d.credential) }}</td>
             <td>{{ d.is_active ? 'Yes' : 'No' }}</td>
-            <td>
+            <td @click.stop>
               <button @click="testConn(d)" :disabled="testing === d.id">
                 {{ testing === d.id ? 'Testing…' : 'Test' }}
               </button>
@@ -148,6 +148,54 @@
           </form>
         </div>
       </div>
+      <!-- Device viewer modal -->
+      <div v-if="viewer.device" class="modal">
+        <div class="modal-box modal-xl">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:.75rem">
+            <div>
+              <h2 style="margin:0">{{ viewer.device.name }}</h2>
+              <p style="margin:.2rem 0 0;color:#666;font-size:.85rem">{{ viewer.device.hostname }} &middot; {{ viewer.device.device_type }} &middot; {{ viewer.device.os_type }}</p>
+            </div>
+            <button @click="viewer.device = null">✕ Close</button>
+          </div>
+
+          <div class="tabs" style="margin-bottom:1rem">
+            <div class="tab" :class="{ active: viewer.tab === 'info' }" @click="viewer.tab = 'info'">Info</div>
+            <div class="tab" :class="{ active: viewer.tab === 'baseline' }" @click="viewer.tab = 'baseline'; loadBaseline()">Baseline</div>
+          </div>
+
+          <!-- Info tab -->
+          <template v-if="viewer.tab === 'info'">
+            <table style="width:auto">
+              <tbody>
+                <tr><th style="text-align:left;padding-right:2rem;white-space:nowrap">Name</th><td>{{ viewer.device.name }}</td></tr>
+                <tr><th style="text-align:left;padding-right:2rem">Hostname</th><td>{{ viewer.device.hostname }}</td></tr>
+                <tr><th style="text-align:left;padding-right:2rem">FQDN</th><td>{{ viewer.device.fqdn || '—' }}</td></tr>
+                <tr><th style="text-align:left;padding-right:2rem">Port</th><td>{{ viewer.device.port }}</td></tr>
+                <tr><th style="text-align:left;padding-right:2rem">Device Type</th><td>{{ viewer.device.device_type }}</td></tr>
+                <tr><th style="text-align:left;padding-right:2rem">OS Type</th><td>{{ viewer.device.os_type }}</td></tr>
+                <tr><th style="text-align:left;padding-right:2rem">Connection</th><td>{{ viewer.device.connection_type }}</td></tr>
+                <tr><th style="text-align:left;padding-right:2rem">Credential</th><td>{{ credName(viewer.device.credential) }}</td></tr>
+                <tr><th style="text-align:left;padding-right:2rem">Active</th><td>{{ viewer.device.is_active ? 'Yes' : 'No' }}</td></tr>
+                <tr v-if="viewer.device.tags?.length"><th style="text-align:left;padding-right:2rem">Tags</th><td>{{ viewer.device.tags.join(', ') }}</td></tr>
+                <tr v-if="viewer.device.notes"><th style="text-align:left;padding-right:2rem">Notes</th><td style="white-space:pre-wrap">{{ viewer.device.notes }}</td></tr>
+              </tbody>
+            </table>
+          </template>
+
+          <!-- Baseline tab -->
+          <template v-else>
+            <div v-if="viewer.baselineLoading" class="text-muted">Loading baseline…</div>
+            <div v-else-if="!viewer.baseline" class="text-muted" style="padding:1rem 0">No baseline established yet. Run a policy against this device first.</div>
+            <div v-else>
+              <p style="font-size:.83rem;color:#666;margin:0 0 .75rem">
+                Established {{ fmt(viewer.baseline.established_at) }} by {{ viewer.baseline.established_by }}
+              </p>
+              <CanonicalViewer :data="viewer.baseline.parsed_data" />
+            </div>
+          </template>
+        </div>
+      </div>
     </template>
 
     <!-- ══════════════════════════════════════════════════════════════════ -->
@@ -235,11 +283,33 @@
 import { ref, onMounted } from 'vue'
 import { useDevicesStore } from '../stores/devices'
 import api from '../api'
+import CanonicalViewer from '../components/CanonicalViewer.vue'
 
 const devStore = useDevicesStore()
 
 // ── tab ────────────────────────────────────────────────────────────────────
 const activeTab = ref('Devices')
+
+// ── device viewer ───────────────────────────────────────────────────────────
+const viewer = ref({ device: null, tab: 'info', baseline: null, baselineLoading: false })
+
+function fmt(iso) { return new Date(iso).toLocaleString() }
+
+async function openViewer(device) {
+  viewer.value = { device, tab: 'info', baseline: null, baselineLoading: false }
+}
+
+async function loadBaseline() {
+  if (viewer.value.baseline !== null || viewer.value.baselineLoading) return
+  viewer.value.baselineLoading = true
+  try {
+    const { data } = await api.get('/baselines/', { params: { device: viewer.value.device.id } })
+    const results = data.results ?? data
+    viewer.value.baseline = results[0] ?? null
+  } finally {
+    viewer.value.baselineLoading = false
+  }
+}
 
 // ── credentials ────────────────────────────────────────────────────────────
 const credentials = ref([])
@@ -435,3 +505,8 @@ onMounted(() => {
   loadCredentials()
 })
 </script>
+
+<style scoped>
+.clickable-row { cursor: pointer; }
+.clickable-row:hover td { background: #f5f9ff; }
+</style>
