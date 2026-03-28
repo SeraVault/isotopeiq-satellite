@@ -29,9 +29,15 @@ Device identity
   {{DEVICE_TYPE}}       Device type (linux / windows / etc.)
   {{OS_TYPE}}           OS type
   {{CONNECTION_TYPE}}   Connection type (ssh / telnet / winrm / etc.)
+
+Satellite / push
+  {{SATELLITE_URL}}     Base URL of this Satellite server (from SATELLITE_URL env var)
+  {{PUSH_TOKEN}}        Device push token (for push-mode agents)
 """
 
 import re
+
+from django.conf import settings
 
 _PLACEHOLDER_RE = re.compile(r'\{\{([A-Z0-9_]+)\}')
 
@@ -71,6 +77,8 @@ def render_script(content: str, device) -> str:
         'DEVICE_TYPE':     getattr(device, 'device_type', ''),
         'OS_TYPE':         getattr(device, 'os_type', ''),
         'CONNECTION_TYPE': getattr(device, 'connection_type', ''),
+        'SATELLITE_URL':   getattr(settings, 'SATELLITE_URL', ''),
+        'PUSH_TOKEN':      str(getattr(device, 'push_token', '') or ''),
     }
 
     def _replace(match):

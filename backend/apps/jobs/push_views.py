@@ -38,8 +38,10 @@ class PushDataView(APIView):
             return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
 
         raw_data = request.data.get('raw_data', '')
-        if not raw_data:
-            return Response({'error': 'raw_data required'}, status=status.HTTP_400_BAD_REQUEST)
+        canonical_data = request.data.get('canonical_data')
+
+        if not raw_data and not canonical_data:
+            return Response({'error': 'raw_data or canonical_data required'}, status=status.HTTP_400_BAD_REQUEST)
 
         policy = (
             device.policies
@@ -60,11 +62,16 @@ class PushDataView(APIView):
             device=device,
             status='running',
             started_at=timezone.now(),
-            raw_output=raw_data,
+            raw_output=raw_data or '',
         )
 
         try:
-            if policy and policy.parser_script:
+            if canonical_data:
+                # Agent outputs canonical JSON directly — skip parsing
+                validate_canonical(canonical_data)
+                result.parsed_output = canonical_data
+                result.status = 'success'
+            elif policy and policy.parser_script:
                 parsed = run_parser(policy.parser_script.content, raw_data)
                 validate_canonical(parsed)
                 result.parsed_output = parsed

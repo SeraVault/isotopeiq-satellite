@@ -22,6 +22,7 @@ services:
     command: python -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --noreload
     volumes:
       - ./backend:/app
+      - ./agents:/agents:ro
     ports:
       - "8000:8000"
       - "5678:5678"
