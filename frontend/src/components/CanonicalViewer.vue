@@ -1,233 +1,137 @@
 <template>
-  <div class="cv">
+  <div>
+    <!-- ── Summary cards ──────────────────────────────────────────────── -->
+    <v-row dense class="mb-3">
+      <v-col v-if="d.device && anyValues(d.device)" cols="12" sm="6" md="3">
+        <v-card variant="tonal" color="secondary" rounded="lg">
+          <v-card-text class="pa-3">
+            <div class="text-caption font-weight-bold text-uppercase text-primary mb-2" style="letter-spacing:.08em">Device</div>
+            <CvKv :data="d.device" />
+          </v-card-text>
+        </v-card>
+      </v-col>
+      <v-col v-if="d.hardware && anyValues(d.hardware)" cols="12" sm="6" md="3">
+        <v-card variant="tonal" color="secondary" rounded="lg">
+          <v-card-text class="pa-3">
+            <div class="text-caption font-weight-bold text-uppercase text-primary mb-2" style="letter-spacing:.08em">Hardware</div>
+            <CvKv :data="d.hardware" />
+          </v-card-text>
+        </v-card>
+      </v-col>
+      <v-col v-if="d.os && anyValues(d.os)" cols="12" sm="6" md="3">
+        <v-card variant="tonal" color="secondary" rounded="lg">
+          <v-card-text class="pa-3">
+            <div class="text-caption font-weight-bold text-uppercase text-primary mb-2" style="letter-spacing:.08em">OS</div>
+            <CvKv :data="d.os" />
+          </v-card-text>
+        </v-card>
+      </v-col>
+      <v-col v-if="d.security && anyValues(d.security)" cols="12" sm="6" md="3">
+        <v-card variant="tonal" color="secondary" rounded="lg">
+          <v-card-text class="pa-3">
+            <div class="text-caption font-weight-bold text-uppercase text-primary mb-2" style="letter-spacing:.08em">Security</div>
+            <CvKv :data="flatSecurity(d.security)" />
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
 
-    <!-- ── Device + Hardware + OS (summary cards) ───────────────────────── -->
-    <div class="cv-summary-row">
-      <div class="cv-summary-card" v-if="d.device && anyValues(d.device)">
-        <div class="cv-card-title">Device</div>
-        <kv :data="d.device" />
-      </div>
-      <div class="cv-summary-card" v-if="d.hardware && anyValues(d.hardware)">
-        <div class="cv-card-title">Hardware</div>
-        <kv :data="d.hardware" />
-      </div>
-      <div class="cv-summary-card" v-if="d.os && anyValues(d.os)">
-        <div class="cv-card-title">OS</div>
-        <kv :data="d.os" />
-      </div>
-      <div class="cv-summary-card" v-if="d.security && anyValues(d.security)">
-        <div class="cv-card-title">Security</div>
-        <kv :data="flatSecurity(d.security)" />
-      </div>
-    </div>
+    <!-- ── Sections ────────────────────────────────────────────────────── -->
+    <v-expansion-panels variant="accordion" multiple :model-value="openSections">
 
-    <!-- ── Network ───────────────────────────────────────────────────────── -->
-    <section-block title="Network" :count="(d.network?.interfaces?.length ?? 0)" v-if="d.network">
-      <template v-if="d.network.default_gateway">
-        <div class="cv-meta-line">Default gateway: <strong>{{ d.network.default_gateway }}</strong></div>
-      </template>
-      <template v-if="d.network.dns_servers?.length">
-        <div class="cv-meta-line">DNS: <strong>{{ d.network.dns_servers.join(', ') }}</strong></div>
-      </template>
-      <cv-table
-        v-if="d.network.interfaces?.length"
-        :rows="d.network.interfaces"
-        :cols="['name','mac','ipv4','ipv6','admin_status','oper_status','speed','mtu']"
-        :format="{ ipv4: arr => arr?.join(', '), ipv6: arr => arr?.join(', ') }"
-      />
-      <cv-table
-        v-if="d.network.routes?.length"
-        title="Routes"
-        :rows="d.network.routes"
-        :cols="['destination','gateway','interface','metric']"
-      />
-      <cv-table
-        v-if="d.network.hosts_file?.length"
-        title="Hosts File"
-        :rows="d.network.hosts_file"
-        :cols="['ip','hostname']"
-      />
-    </section-block>
+      <CvSection v-if="d.network" value="network" title="Network" :count="d.network?.interfaces?.length ?? 0">
+        <div v-if="d.network.default_gateway" class="text-body-2 mb-1">Default gateway: <strong>{{ d.network.default_gateway }}</strong></div>
+        <div v-if="d.network.dns_servers?.length" class="text-body-2 mb-2">DNS: <strong>{{ d.network.dns_servers.join(', ') }}</strong></div>
+        <CvTable v-if="d.network.interfaces?.length" :rows="d.network.interfaces" :cols="['name','mac','ipv4','ipv6','admin_status','oper_status','speed','mtu']" :format="{ ipv4: a => a?.join(', '), ipv6: a => a?.join(', ') }" />
+        <CvTable v-if="d.network.routes?.length" title="Routes" :rows="d.network.routes" :cols="['destination','gateway','interface','metric']" />
+        <CvTable v-if="d.network.hosts_file?.length" title="Hosts File" :rows="d.network.hosts_file" :cols="['ip','hostname']" />
+      </CvSection>
 
-    <!-- ── Users ─────────────────────────────────────────────────────────── -->
-    <section-block title="Users" :count="d.users?.length" v-if="d.users?.length">
-      <cv-table
-        :rows="d.users"
-        :cols="['username','uid','shell','home','groups','sudo_privileges','disabled','last_login']"
-        :format="{ groups: arr => arr?.join(', '), disabled: v => v === true ? 'Yes' : v === false ? 'No' : '' }"
-        searchable
-      />
-    </section-block>
+      <CvSection v-if="d.users?.length" value="users" title="Users" :count="d.users.length">
+        <CvTable :rows="d.users" :cols="['username','uid','shell','home','groups','sudo_privileges','disabled','last_login']" :format="{ groups: a => a?.join(', '), disabled: v => v === true ? 'Yes' : v === false ? 'No' : '' }" searchable />
+      </CvSection>
 
-    <!-- ── Groups ────────────────────────────────────────────────────────── -->
-    <section-block title="Groups" :count="d.groups?.length" v-if="d.groups?.length">
-      <cv-table
-        :rows="d.groups"
-        :cols="['group_name','gid','members']"
-        :format="{ members: arr => arr?.join(', ') }"
-        searchable
-      />
-    </section-block>
+      <CvSection v-if="d.groups?.length" value="groups" title="Groups" :count="d.groups.length">
+        <CvTable :rows="d.groups" :cols="['group_name','gid','members']" :format="{ members: a => a?.join(', ') }" searchable />
+      </CvSection>
 
-    <!-- ── Packages ──────────────────────────────────────────────────────── -->
-    <section-block title="Packages" :count="d.packages?.length" v-if="d.packages?.length">
-      <cv-table
-        :rows="d.packages"
-        :cols="['name','version','vendor','source','install_date']"
-        searchable
-      />
-    </section-block>
+      <CvSection v-if="d.packages?.length" value="packages" title="Packages" :count="d.packages.length">
+        <CvTable :rows="d.packages" :cols="['name','version','vendor','source','install_date']" searchable />
+      </CvSection>
 
-    <!-- ── Installed Software ────────────────────────────────────────────── -->
-    <section-block title="Installed Software" :count="d.installed_software?.length" v-if="d.installed_software?.length">
-      <cv-table
-        :rows="d.installed_software"
-        :cols="['name','version','vendor','source','install_date']"
-        searchable
-      />
-    </section-block>
+<CvSection v-if="d.services?.length" value="services" title="Services" :count="d.services.length">
+        <CvTable :rows="d.services" :cols="['name','status','startup']"
+          :badges="{ status: { running: 'success', stopped: 'error', unknown: 'default' }, startup: { enabled: 'success', disabled: 'default', manual: 'warning', unknown: 'default' } }"
+          searchable />
+      </CvSection>
 
-    <!-- ── Services ──────────────────────────────────────────────────────── -->
-    <section-block title="Services" :count="d.services?.length" v-if="d.services?.length">
-      <cv-table
-        :rows="d.services"
-        :cols="['name','status','startup']"
-        :badges="{ status: { running: 'success', stopped: 'failed', unknown: 'pending' }, startup: { enabled: 'success', disabled: 'partial', manual: 'pending', unknown: 'pending' } }"
-        searchable
-      />
-    </section-block>
+      <CvSection v-if="d.filesystem?.length" value="filesystem" title="Filesystem" :count="d.filesystem.length">
+        <CvTable :rows="d.filesystem" :cols="['mount','type','size_gb','free_gb','mount_options']" :format="{ mount_options: a => a?.join(', '), size_gb: v => v != null ? v + ' GB' : '', free_gb: v => v != null ? v + ' GB' : '' }" />
+      </CvSection>
 
-    <!-- ── Filesystem ────────────────────────────────────────────────────── -->
-    <section-block title="Filesystem" :count="d.filesystem?.length" v-if="d.filesystem?.length">
-      <cv-table
-        :rows="d.filesystem"
-        :cols="['mount','type','size_gb','free_gb','mount_options']"
-        :format="{ mount_options: arr => arr?.join(', '), size_gb: v => v != null ? v + ' GB' : '', free_gb: v => v != null ? v + ' GB' : '' }"
-      />
-    </section-block>
+      <CvSection v-if="d.listening_services?.length" value="listening_services" title="Listening Services" :count="d.listening_services.length">
+        <CvTable :rows="d.listening_services" :cols="['port','protocol','local_address','process_name','pid','user']" searchable />
+      </CvSection>
 
-    <!-- ── Listening Services ────────────────────────────────────────────── -->
-    <section-block title="Listening Services" :count="d.listening_services?.length" v-if="d.listening_services?.length">
-      <cv-table
-        :rows="d.listening_services"
-        :cols="['port','protocol','local_address','process_name','pid','user']"
-        searchable
-      />
-    </section-block>
+      <CvSection v-if="d.firewall_rules?.length" value="firewall_rules" title="Firewall Rules" :count="d.firewall_rules.length">
+        <CvTable :rows="d.firewall_rules" :cols="['chain','direction','action','protocol','source','destination','port','source_tool']" searchable />
+      </CvSection>
 
-    <!-- ── Firewall Rules ────────────────────────────────────────────────── -->
-    <section-block title="Firewall Rules" :count="d.firewall_rules?.length" v-if="d.firewall_rules?.length">
-      <cv-table
-        :rows="d.firewall_rules"
-        :cols="['chain','direction','action','protocol','source','destination','port','source_tool']"
-        searchable
-      />
-    </section-block>
+      <CvSection v-if="d.ssh_keys?.length" value="ssh_keys" title="SSH Authorized Keys" :count="d.ssh_keys.length">
+        <CvTable :rows="d.ssh_keys" :cols="['username','key_type','comment','public_key']" :truncate="['public_key']" />
+      </CvSection>
 
-    <!-- ── SSH Keys ───────────────────────────────────────────────────────── -->
-    <section-block title="SSH Authorized Keys" :count="d.ssh_keys?.length" v-if="d.ssh_keys?.length">
-      <cv-table
-        :rows="d.ssh_keys"
-        :cols="['username','key_type','comment','public_key']"
-        :truncate="['public_key']"
-      />
-    </section-block>
+      <CvSection v-if="d.ssh_config && anyValues(d.ssh_config)" value="ssh_config" title="SSH Config">
+        <CvKv :data="d.ssh_config" />
+      </CvSection>
 
-    <!-- ── SSH Config ─────────────────────────────────────────────────────── -->
-    <section-block title="SSH Config" v-if="d.ssh_config && anyValues(d.ssh_config)">
-      <kv :data="d.ssh_config" />
-    </section-block>
+      <CvSection v-if="d.scheduled_tasks?.length" value="scheduled_tasks" title="Scheduled Tasks" :count="d.scheduled_tasks.length">
+        <CvTable :rows="d.scheduled_tasks" :cols="['name','type','user','schedule','command','enabled']" :format="{ enabled: v => v === true ? 'Yes' : v === false ? 'No' : '' }" searchable />
+      </CvSection>
 
-    <!-- ── Scheduled Tasks ───────────────────────────────────────────────── -->
-    <section-block title="Scheduled Tasks" :count="d.scheduled_tasks?.length" v-if="d.scheduled_tasks?.length">
-      <cv-table
-        :rows="d.scheduled_tasks"
-        :cols="['name','type','user','schedule','command','enabled']"
-        :format="{ enabled: v => v === true ? 'Yes' : v === false ? 'No' : '' }"
-        searchable
-      />
-    </section-block>
+      <CvSection v-if="d.kernel_modules?.length" value="kernel_modules" title="Kernel Modules" :count="d.kernel_modules.length">
+        <CvTable :rows="d.kernel_modules" :cols="['name','type','description','signed']" :format="{ signed: v => v === true ? 'Yes' : v === false ? 'No' : '' }" searchable />
+      </CvSection>
 
-    <!-- ── Kernel Modules ────────────────────────────────────────────────── -->
-    <section-block title="Kernel Modules" :count="d.kernel_modules?.length" v-if="d.kernel_modules?.length">
-      <cv-table
-        :rows="d.kernel_modules"
-        :cols="['name','type','description','signed']"
-        :format="{ signed: v => v === true ? 'Yes' : v === false ? 'No' : '' }"
-        searchable
-      />
-    </section-block>
+      <CvSection v-if="d.sysctl?.length" value="sysctl" title="System Parameters" :count="d.sysctl.length">
+        <CvTable :rows="d.sysctl" :cols="['key','value']" searchable />
+      </CvSection>
 
-    <!-- ── Sysctl ─────────────────────────────────────────────────────────── -->
-    <section-block title="Sysctl" :count="d.sysctl?.length" v-if="d.sysctl?.length" :collapsed="true">
-      <cv-table
-        :rows="d.sysctl"
-        :cols="['key','value']"
-        searchable
-      />
-    </section-block>
+      <CvSection v-if="d.certificates?.length" value="certificates" title="Certificates" :count="d.certificates.length">
+        <CvTable :rows="d.certificates" :cols="['subject','issuer','not_before','not_after','store','thumbprint']" :truncate="['thumbprint']" searchable />
+      </CvSection>
 
-    <!-- ── Certificates ───────────────────────────────────────────────────── -->
-    <section-block title="Certificates" :count="d.certificates?.length" v-if="d.certificates?.length">
-      <cv-table
-        :rows="d.certificates"
-        :cols="['subject','issuer','not_before','not_after','store','thumbprint']"
-        :truncate="['thumbprint']"
-        searchable
-      />
-    </section-block>
+      <CvSection v-if="d.vpn_tunnels?.length" value="vpn_tunnels" title="VPN Tunnels" :count="d.vpn_tunnels.length">
+        <CvTable :rows="d.vpn_tunnels" :cols="['name','type','local_address','remote_address','status','auth_method']"
+          :badges="{ status: { up: 'success', down: 'error', unknown: 'default' } }" />
+      </CvSection>
 
-    <!-- ── VPN Tunnels ────────────────────────────────────────────────────── -->
-    <section-block title="VPN Tunnels" :count="d.vpn_tunnels?.length" v-if="d.vpn_tunnels?.length">
-      <cv-table
-        :rows="d.vpn_tunnels"
-        :cols="['name','type','local_address','remote_address','status','auth_method']"
-        :badges="{ status: { up: 'success', down: 'failed', unknown: 'pending' } }"
-      />
-    </section-block>
+      <CvSection v-if="d.shares?.length" value="shares" title="Shares" :count="d.shares.length">
+        <CvTable :rows="d.shares" :cols="['name','type','path','permissions','read_only','enabled']" :format="{ read_only: v => v === true ? 'Yes' : v === false ? 'No' : '', enabled: v => v === true ? 'Yes' : v === false ? 'No' : '' }" />
+      </CvSection>
 
-    <!-- ── Shares ─────────────────────────────────────────────────────────── -->
-    <section-block title="Shares" :count="d.shares?.length" v-if="d.shares?.length">
-      <cv-table
-        :rows="d.shares"
-        :cols="['name','type','path','permissions','read_only','enabled']"
-        :format="{ read_only: v => v === true ? 'Yes' : v === false ? 'No' : '', enabled: v => v === true ? 'Yes' : v === false ? 'No' : '' }"
-      />
-    </section-block>
+      <CvSection v-if="d.logging_targets?.length" value="logging_targets" title="Logging Targets" :count="d.logging_targets.length">
+        <CvTable :rows="d.logging_targets" :cols="['destination','type','protocol','facility','enabled']" :format="{ enabled: v => v === true ? 'Yes' : v === false ? 'No' : '' }" />
+      </CvSection>
 
-    <!-- ── Logging Targets ───────────────────────────────────────────────── -->
-    <section-block title="Logging Targets" :count="d.logging_targets?.length" v-if="d.logging_targets?.length">
-      <cv-table
-        :rows="d.logging_targets"
-        :cols="['destination','type','protocol','facility','enabled']"
-        :format="{ enabled: v => v === true ? 'Yes' : v === false ? 'No' : '' }"
-      />
-    </section-block>
+      <CvSection v-if="d.vlans?.length" value="vlans" title="VLANs" :count="d.vlans.length">
+        <CvTable :rows="d.vlans" :cols="['id','name','state']" />
+      </CvSection>
 
-    <!-- ── VLANs ──────────────────────────────────────────────────────────── -->
-    <section-block title="VLANs" :count="d.vlans?.length" v-if="d.vlans?.length">
-      <cv-table :rows="d.vlans" :cols="['id','name','state']" />
-    </section-block>
+      <CvSection v-if="d.routing_protocols?.length" value="routing_protocols" title="Routing Protocols" :count="d.routing_protocols.length">
+        <CvTable :rows="d.routing_protocols" :cols="['protocol','instance','router_id','networks']" :format="{ networks: a => a?.join(', ') }" />
+      </CvSection>
 
-    <!-- ── Routing Protocols ─────────────────────────────────────────────── -->
-    <section-block title="Routing Protocols" :count="d.routing_protocols?.length" v-if="d.routing_protocols?.length">
-      <cv-table
-        :rows="d.routing_protocols"
-        :cols="['protocol','instance','router_id','networks']"
-        :format="{ networks: arr => arr?.join(', ') }"
-      />
-    </section-block>
+      <CvSection v-if="d.custom && anyValues(d.custom)" value="custom" title="Custom">
+        <CvKv :data="d.custom" />
+      </CvSection>
 
-    <!-- ── Custom ─────────────────────────────────────────────────────────── -->
-    <section-block title="Custom" v-if="d.custom && anyValues(d.custom)">
-      <kv :data="d.custom" />
-    </section-block>
-
+    </v-expansion-panels>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, defineComponent, h } from 'vue'
+import { computed, defineComponent, resolveComponent, h, ref } from 'vue'
 
 const props = defineProps({
   data: { type: Object, required: true },
@@ -247,72 +151,77 @@ function flatSecurity(sec) {
   const { password_policy, ...rest } = sec
   const flat = { ...rest }
   if (password_policy) {
-    Object.entries(password_policy).forEach(([k, v]) => {
-      flat[`policy_${k}`] = v
-    })
+    Object.entries(password_policy).forEach(([k, v]) => { flat[`policy_${k}`] = v })
   }
   return flat
 }
 
-// ── KeyValue sub-component ────────────────────────────────────────────────────
-const kv = defineComponent({
+const openSections = []
+
+function fmtVal(v) {
+  if (v === null || v === undefined) return ''
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No'
+  if (Array.isArray(v)) return v.join(', ')
+  return String(v)
+}
+
+function toLabel(k) {
+  return k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+// ── CvKv ─────────────────────────────────────────────────────────────────────
+const CvKv = defineComponent({
   props: { data: Object },
   setup(props) {
-    function fmt(v) {
-      if (v === null || v === undefined) return ''
-      if (typeof v === 'boolean') return v ? 'Yes' : 'No'
-      if (Array.isArray(v)) return v.join(', ')
-      return String(v)
+    return () => {
+      const VTable = resolveComponent('VTable')
+      const entries = Object.entries(props.data ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== '')
+      return h(VTable, { density: 'compact' }, {
+        default: () => h('tbody', entries.map(([k, v]) =>
+          h('tr', [
+            h('td', { style: 'width:180px;font-weight:500;color:rgb(var(--v-theme-primary));white-space:nowrap' }, toLabel(k)),
+            h('td', { style: 'word-break:break-word' }, fmtVal(v)),
+          ])
+        )),
+      })
     }
-    function label(k) {
-      return k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-    }
-    return () => h('dl', { class: 'cv-kv' },
-      Object.entries(props.data ?? {})
-        .filter(([, v]) => v !== null && v !== undefined && v !== '')
-        .map(([k, v]) => [
-          h('dt', label(k)),
-          h('dd', fmt(v)),
-        ]).flat()
-    )
   },
 })
 
-// ── SectionBlock sub-component ────────────────────────────────────────────────
-const sectionBlock = defineComponent({
+// ── CvSection ────────────────────────────────────────────────────────────────
+const CvSection = defineComponent({
   props: {
+    value: String,
     title: String,
     count: { type: Number, default: null },
-    collapsed: { type: Boolean, default: true },
   },
   setup(props, { slots }) {
-    const open = ref(!props.collapsed)
-    return () => h('div', { class: 'cv-section' }, [
-      h('div', {
-        class: 'cv-section-header',
-        onClick: () => { open.value = !open.value },
-      }, [
-        h('span', { class: 'cv-section-toggle' }, open.value ? '▾' : '▸'),
-        h('span', { class: 'cv-section-title' }, props.title),
-        props.count != null
-          ? h('span', { class: 'cv-section-count' }, props.count)
-          : null,
-      ]),
-      open.value ? h('div', { class: 'cv-section-body' }, slots.default?.()) : null,
-    ])
+    return () => {
+      const VExpansionPanel = resolveComponent('VExpansionPanel')
+      const VChip = resolveComponent('VChip')
+      return h(VExpansionPanel, { value: props.value }, {
+        title: () => h('div', { class: 'd-flex align-center ga-2' }, [
+          h('span', { class: 'text-body-2 font-weight-bold' }, props.title),
+          props.count != null
+            ? h(VChip, { size: 'x-small', color: 'primary', label: true }, { default: () => String(props.count) })
+            : null,
+        ]),
+        text: () => slots.default?.(),
+      })
+    }
   },
 })
 
-// ── CvTable sub-component ─────────────────────────────────────────────────────
-const cvTable = defineComponent({
+// ── CvTable ──────────────────────────────────────────────────────────────────
+const CvTable = defineComponent({
   props: {
-    rows:      { type: Array,  default: () => [] },
-    cols:      { type: Array,  default: null },       // null = auto from first row
-    title:     { type: String, default: null },
-    format:    { type: Object, default: () => ({}) }, // col -> fn(value)
-    badges:    { type: Object, default: () => ({}) }, // col -> { value: badgeClass }
-    truncate:  { type: Array,  default: () => [] },   // cols to truncate
-    searchable:{ type: Boolean, default: false },
+    rows:       { type: Array,   default: () => [] },
+    cols:       { type: Array,   default: null },
+    title:      { type: String,  default: null },
+    format:     { type: Object,  default: () => ({}) },
+    badges:     { type: Object,  default: () => ({}) },
+    truncate:   { type: Array,   default: () => [] },
+    searchable: { type: Boolean, default: false },
   },
   setup(props) {
     const search = ref('')
@@ -334,67 +243,70 @@ const cvTable = defineComponent({
     function cellVal(row, col) {
       const v = row[col]
       if (props.format[col]) return props.format[col](v)
-      if (v === null || v === undefined) return ''
-      if (typeof v === 'boolean') return v ? 'Yes' : 'No'
-      if (Array.isArray(v)) return v.join(', ')
-      return String(v)
+      return fmtVal(v)
     }
 
-    function badgeClass(col, row) {
+    function badgeColor(col, row) {
       if (!props.badges[col]) return null
-      const raw = row[col]
-      return props.badges[col][raw] ?? null
-    }
-
-    function label(k) {
-      return k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      return props.badges[col][row[col]] ?? null
     }
 
     return () => {
+      const VTable = resolveComponent('VTable')
+      const VChip = resolveComponent('VChip')
+      const VTextField = resolveComponent('VTextField')
       const nodes = []
 
       if (props.title) {
-        nodes.push(h('div', { class: 'cv-table-title' }, props.title))
+        nodes.push(h('div', {
+          style: 'font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(var(--v-theme-on-surface),.5);margin:12px 0 4px',
+        }, props.title))
       }
 
       if (props.searchable) {
-        nodes.push(h('input', {
-          class: 'cv-search',
+        nodes.push(h(VTextField, {
+          modelValue: search.value,
+          'onUpdate:modelValue': v => { search.value = v },
           placeholder: 'Filter…',
-          value: search.value,
-          onInput: e => { search.value = e.target.value },
+          density: 'compact',
+          variant: 'outlined',
+          hideDetails: true,
+          prependInnerIcon: 'mdi-magnify',
+          clearable: true,
+          style: 'max-width:260px;margin-bottom:8px',
         }))
       }
 
       if (!filtered.value.length) {
-        nodes.push(h('p', { class: 'text-muted', style: 'padding:.5rem 0' }, 'No entries.'))
+        nodes.push(h('div', { style: 'color:rgba(var(--v-theme-on-surface),.5);font-size:.85rem;padding:8px 0' }, 'No entries.'))
         return h('div', nodes)
       }
 
       nodes.push(
-        h('table', [
-          h('thead', h('tr',
-            headers.value.map(col => h('th', label(col)))
-          )),
-          h('tbody',
-            filtered.value.map(row =>
-              h('tr',
-                headers.value.map(col => {
-                  const bc = badgeClass(col, row)
-                  const val = cellVal(row, col)
-                  const isTrunc = props.truncate.includes(col)
-                  return h('td',
-                    bc
-                      ? h('span', { class: `badge badge-${bc}` }, val)
-                      : isTrunc
-                        ? h('span', { class: 'cv-trunc', title: val }, val)
-                        : val
-                  )
-                })
-              )
-            )
-          ),
-        ])
+        h(VTable, { density: 'compact' }, {
+          default: () => [
+            h('thead', h('tr',
+              headers.value.map(col => h('th', { style: 'white-space:nowrap' }, toLabel(col)))
+            )),
+            h('tbody', filtered.value.map(row =>
+              h('tr', headers.value.map(col => {
+                const bc = badgeColor(col, row)
+                const val = cellVal(row, col)
+                const isTrunc = props.truncate.includes(col)
+                if (bc) {
+                  return h('td', h(VChip, { size: 'x-small', color: bc, label: true }, { default: () => val }))
+                }
+                if (isTrunc) {
+                  return h('td', h('span', {
+                    title: val,
+                    style: 'display:inline-block;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;cursor:help;font-family:monospace;font-size:.78rem',
+                  }, val))
+                }
+                return h('td', val)
+              }))
+            )),
+          ],
+        })
       )
 
       return h('div', nodes)
@@ -402,158 +314,3 @@ const cvTable = defineComponent({
   },
 })
 </script>
-
-<style scoped>
-.cv {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  font-size: .875rem;
-}
-
-/* ── Summary cards ──────────────────────────────────────────────────────── */
-.cv-summary-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: .75rem;
-  margin-bottom: 1rem;
-}
-.cv-summary-card {
-  background: #16213e;
-  border-radius: 10px;
-  padding: 1rem 1.1rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,.18);
-  border: 1px solid rgba(79,195,247,.15);
-}
-.cv-card-title {
-  font-size: .68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .1em;
-  color: #4fc3f7;
-  margin-bottom: .6rem;
-  padding-bottom: .4rem;
-  border-bottom: 1px solid rgba(79,195,247,.2);
-}
-
-/* ── Key-value (inside summary cards) ──────────────────────────────────── */
-.cv-kv {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: .2rem .75rem;
-  font-size: .82rem;
-}
-.cv-kv :global(dt) {
-  color: #7a9abf;
-  white-space: nowrap;
-  font-weight: 500;
-}
-.cv-kv :global(dd) {
-  color: #c8d8f0;
-  word-break: break-word;
-}
-
-/* ── Sections ───────────────────────────────────────────────────────────── */
-.cv-section {
-  border: 1px solid #e8edf2;
-  border-radius: 8px;
-  margin-bottom: .4rem;
-  background: #fff;
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(0,0,0,.04);
-}
-.cv-section-header {
-  display: flex;
-  align-items: center;
-  gap: .6rem;
-  padding: .6rem 1rem;
-  cursor: pointer;
-  user-select: none;
-  background: linear-gradient(to right, #f7f9fc, #f0f4f8);
-  border-bottom: 1px solid transparent;
-  transition: background .12s;
-}
-.cv-section-header:hover {
-  background: linear-gradient(to right, #eaf4fd, #dff0fb);
-}
-.cv-section-toggle {
-  color: #4fc3f7;
-  font-size: .8rem;
-  width: .9rem;
-  flex-shrink: 0;
-  transition: transform .15s;
-}
-.cv-section-title {
-  font-weight: 600;
-  font-size: .88rem;
-  color: #1a2a4a;
-  flex: 1;
-}
-.cv-section-count {
-  background: #e0f3fd;
-  color: #0d7ab5;
-  font-size: .7rem;
-  font-weight: 700;
-  padding: .15rem .5rem;
-  border-radius: 999px;
-  letter-spacing: .02em;
-}
-.cv-section-body {
-  padding: .85rem 1rem 1rem;
-  background: #fff;
-  border-top: 1px solid #eef1f5;
-}
-.cv-meta-line {
-  font-size: .84rem;
-  margin-bottom: .45rem;
-  color: #556;
-}
-
-/* ── Tables ─────────────────────────────────────────────────────────────── */
-.cv-table-wrap { overflow-x: auto; margin-top: .25rem; }
-
-.cv-table-title {
-  font-size: .72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .07em;
-  color: #7a9abf;
-  margin: 1rem 0 .4rem;
-  padding-left: .1rem;
-}
-
-/* ── Search ─────────────────────────────────────────────────────────────── */
-.cv-search {
-  display: block;
-  width: 100%;
-  max-width: 280px;
-  padding: .32rem .65rem;
-  border: 1px solid #cdd5df;
-  border-radius: 5px;
-  font-size: .83rem;
-  margin-bottom: .6rem;
-  background: #f8fafc;
-  color: #2a3a50;
-  transition: border-color .15s, box-shadow .15s;
-}
-.cv-search:focus {
-  outline: none;
-  border-color: #4fc3f7;
-  box-shadow: 0 0 0 2px rgba(79,195,247,.18);
-  background: #fff;
-}
-
-/* ── Truncated cells ────────────────────────────────────────────────────── */
-.cv-trunc {
-  display: inline-block;
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
-  cursor: help;
-  color: #7a9abf;
-  font-family: monospace;
-  font-size: .78rem;
-}
-</style>

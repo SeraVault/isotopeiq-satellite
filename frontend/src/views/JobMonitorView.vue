@@ -1,184 +1,175 @@
 <template>
   <div>
-    <h1>Job Monitor</h1>
+    <div class="text-h5 font-weight-bold mb-5">Job Monitor</div>
 
     <!-- Filters -->
-    <div class="card filter-bar">
-      <label>
-        Device
-        <select v-model="filters.device" @change="applyFilters">
-          <option value="">All</option>
-          <option v-for="d in devices" :key="d.id" :value="d.id">{{ d.hostname }}</option>
-        </select>
-      </label>
-      <label>
-        Policy
-        <select v-model="filters.policy" @change="applyFilters">
-          <option value="">All</option>
-          <option v-for="p in policies" :key="p.id" :value="p.id">{{ p.name }}</option>
-        </select>
-      </label>
-      <label>
-        Script
-        <select v-model="filters.script" @change="applyFilters">
-          <option value="">All</option>
-          <option v-for="s in scripts" :key="s.id" :value="s.id">{{ s.name }}</option>
-        </select>
-      </label>
-      <label>
-        Status
-        <select v-model="filters.status" @change="applyFilters">
-          <option value="">All</option>
-          <option v-for="s in statuses" :key="s" :value="s">{{ s }}</option>
-        </select>
-      </label>
-      <label>
-        From
-        <input type="datetime-local" v-model="filters.created_after" @change="applyFilters" />
-      </label>
-      <label>
-        To
-        <input type="datetime-local" v-model="filters.created_before" @change="applyFilters" />
-      </label>
-      <div class="filter-actions">
-        <button @click="applyFilters" class="btn-primary">Refresh</button>
-        <button @click="clearFilters">Clear</button>
-      </div>
-    </div>
+    <v-card rounded="lg" elevation="1" class="mb-5 pa-4">
+      <v-row dense align="end">
+        <v-col cols="12" sm="6" md="2">
+          <v-select v-model="filters.device" label="Device" :items="deviceItems" item-title="title" item-value="value" clearable @update:model-value="applyFilters" />
+        </v-col>
+        <v-col cols="12" sm="6" md="2">
+          <v-select v-model="filters.policy" label="Policy" :items="policyItems" item-title="title" item-value="value" clearable @update:model-value="applyFilters" />
+        </v-col>
+        <v-col cols="12" sm="6" md="2">
+          <v-select v-model="filters.status" label="Status" :items="statuses" clearable @update:model-value="applyFilters" />
+        </v-col>
+        <v-col cols="12" sm="6" md="3">
+          <v-text-field v-model="filters.created_after" label="From" type="datetime-local" @change="applyFilters" />
+        </v-col>
+        <v-col cols="12" sm="6" md="3">
+          <v-text-field v-model="filters.created_before" label="To" type="datetime-local" @change="applyFilters" />
+        </v-col>
+        <v-col cols="12" sm="auto">
+          <v-btn color="primary" class="mr-2" @click="applyFilters">Refresh</v-btn>
+          <v-btn @click="clearFilters">Clear</v-btn>
+        </v-col>
+      </v-row>
+    </v-card>
 
-    <div v-if="store.loading" class="text-muted" style="padding:1rem 0">Loading…</div>
+    <div v-if="store.loading" class="text-medium-emphasis pa-4">Loading…</div>
     <template v-else>
-      <table v-if="store.jobs.length">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Policy</th>
-            <th>Triggered By</th>
-            <th>Status</th>
-            <th>Started</th>
-            <th>Duration</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="job in store.jobs" :key="job.id">
-            <td class="text-muted">{{ job.id }}</td>
-            <td>
-              {{ job.policy_name ?? (job.policy ? `Policy ${job.policy}` : '—') }}
-            </td>
-            <td>{{ job.triggered_by }}</td>
-            <td>
-              <span :class="`badge badge-${job.status}`">{{ job.status }}</span>
-              <span v-if="job.status === 'running' && job.current_device" class="text-muted" style="font-size:.78rem;margin-left:.4rem">
-                ↳ {{ job.current_device }}
-              </span>
-            </td>
-            <td>{{ job.started_at ? fmt(job.started_at) : '—' }}</td>
-            <td>{{ duration(job) }}</td>
-            <td>
-              <button @click="openDetail(job)">Details</button>
-              <button
-                v-if="job.status === 'running' || job.status === 'pending'"
-                class="btn-danger"
-                @click="cancel(job)"
-              >Cancel</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="text-muted">No jobs found.</p>
-      <PaginationBar :page="store.page" :total-pages="store.totalPages" :total-count="store.totalCount" @go="store.goPage" />
+      <v-card v-if="store.jobs.length" rounded="lg" elevation="1">
+        <v-table density="compact">
+          <thead>
+            <tr>
+              <th>#</th><th>Policy</th><th>Triggered By</th><th>Status</th>
+              <th>Started</th><th>Duration</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="job in store.jobs" :key="job.id">
+              <td class="text-medium-emphasis">#{{ job.id }}</td>
+              <td>{{ job.policy_name ?? (job.policy ? `Policy ${job.policy}` : '—') }}</td>
+              <td>{{ job.triggered_by }}</td>
+              <td>
+                <v-chip :color="statusColor(job.status)" size="x-small" label>{{ job.status }}</v-chip>
+                <span v-if="job.status === 'running' && job.current_device" class="text-medium-emphasis text-caption ml-2">
+                  ↳ {{ job.current_device }}
+                </span>
+              </td>
+              <td class="text-medium-emphasis text-caption">{{ job.started_at ? fmt(job.started_at) : '—' }}</td>
+              <td class="text-medium-emphasis text-caption">{{ duration(job) }}</td>
+              <td>
+                <v-btn size="x-small" variant="tonal" class="mr-1" @click="openDetail(job)">Details</v-btn>
+                <v-btn
+                  v-if="job.status === 'running' || job.status === 'pending'"
+                  size="x-small" color="error" variant="tonal"
+                  @click="cancel(job)"
+                >Cancel</v-btn>
+              </td>
+            </tr>
+          </tbody>
+        </v-table>
+      </v-card>
+      <div v-else class="pa-6 text-center text-medium-emphasis">No jobs found.</div>
+
+      <!-- Pagination -->
+      <div class="d-flex align-center justify-center ga-2 mt-4">
+        <v-btn size="small" variant="text" :disabled="store.page <= 1" @click="store.goPage(store.page - 1)">← Prev</v-btn>
+        <span class="text-caption text-medium-emphasis">Page {{ store.page }} of {{ store.totalPages }} &nbsp;({{ store.totalCount }} total)</span>
+        <v-btn size="small" variant="text" :disabled="store.page >= store.totalPages" @click="store.goPage(store.page + 1)">Next →</v-btn>
+      </div>
     </template>
 
-    <!-- Job detail modal -->
-    <div v-if="selected" class="modal">
-      <div class="modal-box modal-lg">
-
-        <!-- Header -->
-        <div class="detail-header">
+    <!-- Job detail dialog -->
+    <v-dialog v-model="detailOpen" max-width="760" scrollable>
+      <v-card v-if="selected" rounded="lg">
+        <v-card-title class="d-flex justify-space-between align-center">
           <div>
-            <h2 style="margin:0">Job #{{ selected.id }}</h2>
-            <p class="text-muted" style="margin:.2rem 0 0">
-              {{ selected.policy_name ?? (selected.policy ? `Policy ${selected.policy}` : 'Push job') }}
-              &middot; triggered by <strong>{{ selected.triggered_by }}</strong>
-              &middot; {{ selected.started_at ? fmt(selected.started_at) : '—' }}
-            </p>
+            <span>Job #{{ selected.id }}</span>
+            <v-chip :color="statusColor(selected.status)" size="x-small" label class="ml-2">{{ selected.status }}</v-chip>
           </div>
-          <div style="display:flex;align-items:center;gap:.75rem">
-            <span :class="`badge badge-${selected.status}`" style="font-size:.9rem;padding:.25rem .7rem">{{ selected.status }}</span>
-            <button @click="selected = null">✕ Close</button>
-          </div>
-        </div>
-
-        <!-- Device results -->
-        <div
-          v-for="result in selected.device_results"
-          :key="result.id"
-          class="device-result"
-          :class="`device-result--${result.status}`"
-        >
-          <div class="device-result-header">
-            <span class="device-result-name">{{ result.device_name ?? `Device ${result.device}` }}</span>
-            <span :class="`badge badge-${result.status}`">{{ result.status }}</span>
-            <span class="text-muted" style="margin-left:auto;font-size:.8rem">
-              {{ result.started_at ? fmt(result.started_at) : '' }}
-              {{ result.finished_at ? '→ ' + fmt(result.finished_at) : '' }}
-            </span>
-          </div>
-
-          <div v-if="result.error_message" class="result-error">
-            {{ result.error_message }}
-          </div>
-
-          <div class="result-accordions">
-            <details>
-              <summary>Raw Output</summary>
-              <pre>{{ result.raw_output || '(empty)' }}</pre>
-            </details>
-            <details>
-              <summary>Parsed Output</summary>
-              <pre>{{ result.parsed_output ? JSON.stringify(result.parsed_output, null, 2) : '(none)' }}</pre>
-            </details>
-            <details v-if="result.drift_event" open>
-              <summary>
-                Drift Detected
-                <span :class="`badge badge-${result.drift_event.status}`" style="margin-left:.5rem">{{ result.drift_event.status }}</span>
-              </summary>
-              <pre>{{ JSON.stringify(result.drift_event.diff, null, 2) }}</pre>
-            </details>
-            <p v-else-if="result.status === 'success'" class="no-drift">✓ No drift detected</p>
-          </div>
-        </div>
-
-      </div>
-    </div>
+          <v-btn icon="mdi-close" variant="text" size="small" @click="detailOpen = false" />
+        </v-card-title>
+        <v-card-subtitle>
+          {{ selected.policy_name ?? (selected.policy ? `Policy ${selected.policy}` : 'Push job') }}
+          · triggered by {{ selected.triggered_by }}
+          · {{ selected.started_at ? fmt(selected.started_at) : '—' }}
+        </v-card-subtitle>
+        <v-card-text>
+          <v-card
+            v-for="result in selected.device_results"
+            :key="result.id"
+            :border="`${resultColor(result.status)} md`"
+            rounded="lg"
+            class="mb-3"
+          >
+            <v-card-title class="d-flex align-center ga-2 pa-3 pb-2">
+              <span class="text-body-2 font-weight-bold">{{ result.device_name ?? `Device ${result.device}` }}</span>
+              <v-chip :color="statusColor(result.status)" size="x-small" label>{{ result.status }}</v-chip>
+              <span class="text-caption text-medium-emphasis ml-auto">
+                {{ result.started_at ? fmt(result.started_at) : '' }}
+                {{ result.finished_at ? '→ ' + fmt(result.finished_at) : '' }}
+              </span>
+            </v-card-title>
+            <v-card-text class="pa-3 pt-0">
+              <v-alert v-if="result.error_message" type="error" variant="tonal" density="compact" class="mb-2">
+                {{ result.error_message }}
+              </v-alert>
+              <v-expansion-panels variant="accordion">
+                <v-expansion-panel title="Raw Output">
+                  <template #text>
+                    <pre class="result-pre">{{ result.raw_output || '(empty)' }}</pre>
+                  </template>
+                </v-expansion-panel>
+                <v-expansion-panel title="Parsed Output">
+                  <template #text>
+                    <pre class="result-pre">{{ result.parsed_output ? JSON.stringify(result.parsed_output, null, 2) : '(none)' }}</pre>
+                  </template>
+                </v-expansion-panel>
+                <v-expansion-panel v-if="result.drift_event" :title="`Drift Detected (${result.drift_event.status})`">
+                  <template #text>
+                    <pre class="result-pre">{{ JSON.stringify(result.drift_event.diff, null, 2) }}</pre>
+                  </template>
+                </v-expansion-panel>
+              </v-expansion-panels>
+              <div v-if="!result.drift_event && result.status === 'success'" class="text-success text-body-2 mt-2">
+                ✓ No drift detected
+              </div>
+            </v-card-text>
+          </v-card>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useJobsStore } from '../stores/jobs'
 import api from '../api'
-import PaginationBar from '../components/PaginationBar.vue'
 
 const store = useJobsStore()
 const selected = ref(null)
+const detailOpen = ref(false)
 
 const devices = ref([])
 const policies = ref([])
-const scripts = ref([])
 const statuses = ['pending', 'running', 'success', 'partial', 'failed', 'cancelled']
 
+const deviceItems = computed(() => devices.value.map(d => ({ title: d.hostname, value: d.id })))
+const policyItems = computed(() => policies.value.map(p => ({ title: p.name, value: p.id })))
+
 const filters = reactive({
-  device: '', policy: '', script: '', status: '',
+  device: null, policy: null, status: '',
   created_after: '', created_before: '',
 })
+
+function statusColor(status) {
+  return { success: 'success', resolved: 'success', failed: 'error', running: 'info',
+           pending: 'warning', new: 'error', acknowledged: 'warning', partial: 'warning',
+           cancelled: 'default' }[status] ?? 'default'
+}
+
+function resultColor(status) {
+  return { success: 'success', failed: 'error', running: 'info', partial: 'warning' }[status] ?? 'default'
+}
 
 function buildParams() {
   const p = {}
   if (filters.device)         p.device         = filters.device
   if (filters.policy)         p.policy         = filters.policy
-  if (filters.script)         p.script         = filters.script
   if (filters.status)         p.status         = filters.status
   if (filters.created_after)  p.created_after  = new Date(filters.created_after).toISOString()
   if (filters.created_before) p.created_before = new Date(filters.created_before).toISOString()
@@ -187,7 +178,7 @@ function buildParams() {
 
 function applyFilters() { store.page = 1; store.fetchJobs(buildParams()) }
 function clearFilters() {
-  Object.assign(filters, { device: '', policy: '', script: '', status: '', created_after: '', created_before: '' })
+  Object.assign(filters, { device: null, policy: null, status: '', created_after: '', created_before: '' })
   store.page = 1
   store.fetchJobs()
 }
@@ -205,24 +196,23 @@ function duration(job) {
 async function openDetail(job) {
   const { data } = await api.get(`/jobs/${job.id}/`)
   selected.value = data
+  detailOpen.value = true
 }
 
 async function cancel(job) {
   if (!confirm(`Cancel job ${job.id}?`)) return
   await api.post(`/jobs/${job.id}/cancel/`)
   applyFilters()
-  if (selected.value?.id === job.id) selected.value = null
+  if (selected.value?.id === job.id) detailOpen.value = false
 }
 
 onMounted(async () => {
-  const [dRes, pRes, sRes] = await Promise.all([
+  const [dRes, pRes] = await Promise.all([
     api.get('/devices/'),
     api.get('/policies/'),
-    api.get('/scripts/'),
   ])
-  devices.value  = dRes.data.results  ?? dRes.data
-  policies.value = pRes.data.results  ?? pRes.data
-  scripts.value  = sRes.data.results  ?? sRes.data
+  devices.value  = dRes.data.results ?? dRes.data
+  policies.value = pRes.data.results ?? pRes.data
   store.fetchJobs()
   store.connectWebSocket()
 })
@@ -230,110 +220,16 @@ onUnmounted(() => store.disconnectWebSocket())
 </script>
 
 <style scoped>
-/* Filter bar */
-.filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .75rem;
-  align-items: flex-end;
-  margin-bottom: 1.25rem;
-  padding: 1rem 1.25rem;
-}
-.filter-bar label {
-  display: flex;
-  flex-direction: column;
+.result-pre {
+  background: #13131f;
+  color: #cdd6f4;
+  border-radius: 4px;
+  padding: .65rem .75rem;
   font-size: .8rem;
-  font-weight: 600;
-  color: #555;
-  gap: .25rem;
-  margin: 0;
-}
-.filter-bar select,
-.filter-bar input {
-  padding: .35rem .6rem;
-  border: 1px solid #d0d0d0;
-  border-radius: 5px;
-  font-size: .875rem;
-  background: #fff;
-  min-width: 130px;
-  margin: 0;
-}
-.filter-actions {
-  display: flex;
-  gap: .4rem;
-  align-items: flex-end;
-  padding-bottom: 1px;
-}
-
-/* Detail modal header */
-.detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
-  margin-bottom: 1.25rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #eee;
-}
-
-/* Device result blocks */
-.device-result {
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
-  margin-bottom: .75rem;
-  overflow: hidden;
-}
-.device-result--success { border-left: 4px solid #28a745; }
-.device-result--failed  { border-left: 4px solid #dc3545; }
-.device-result--running { border-left: 4px solid #17a2b8; }
-.device-result--partial { border-left: 4px solid #ffc107; }
-
-.device-result-header {
-  display: flex;
-  align-items: center;
-  gap: .6rem;
-  padding: .6rem 1rem;
-  background: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
-}
-.device-result-name {
-  font-weight: 600;
-  font-size: .9rem;
-}
-
-.result-error {
-  margin: .6rem 1rem;
-  padding: .55rem .75rem;
-  background: #fff5f5;
-  border: 1px solid #fcc;
-  border-radius: 5px;
-  color: #c00;
-  font-size: .85rem;
-}
-
-.result-accordions {
-  padding: .5rem 1rem .75rem;
-}
-.result-accordions details {
-  margin-top: .4rem;
-}
-.result-accordions summary {
-  cursor: pointer;
-  font-size: .85rem;
-  font-weight: 600;
-  color: #445;
-  padding: .3rem .1rem;
-  user-select: none;
-}
-.result-accordions summary:hover { color: #4fc3f7; }
-.result-accordions pre {
-  margin-top: .4rem;
-}
-
-.no-drift {
-  margin-top: .5rem;
-  font-size: .83rem;
-  color: #28a745;
-  font-weight: 500;
+  line-height: 1.5;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
 }
 </style>

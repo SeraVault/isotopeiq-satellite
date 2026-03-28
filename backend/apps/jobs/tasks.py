@@ -50,9 +50,17 @@ def _apply_baseline_and_drift(device, result) -> None:
 
     diffs = detect_drift(baseline.parsed_data, result.parsed_output)
     if diffs:
-        event = DriftEvent.objects.create(device=device, job_result=result, diff=diffs)
-        SyslogNotifier().notify_drift(device, event)
-        logger.warning('Drift detected for device "%s" (event %s).', device, event.pk)
+        # Reuse an existing open event rather than piling up one per collection run.
+        existing = DriftEvent.objects.filter(device=device, status='new').order_by('-created_at').first()
+        if existing:
+            existing.diff = diffs
+            existing.job_result = result
+            existing.save(update_fields=['diff', 'job_result'])
+            logger.warning('Drift updated for device "%s" (event %s).', device, existing.pk)
+        else:
+            event = DriftEvent.objects.create(device=device, job_result=result, diff=diffs)
+            SyslogNotifier().notify_drift(device, event)
+            logger.warning('Drift detected for device "%s" (event %s).', device, event.pk)
 
 
 @shared_task(bind=True)

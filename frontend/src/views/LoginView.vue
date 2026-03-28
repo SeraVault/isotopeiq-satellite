@@ -1,21 +1,49 @@
 <template>
-  <div class="login-wrap">
-    <form class="login-card" @submit.prevent="submit">
-      <h1 class="login-title">IsotopeIQ Satellite</h1>
-      <p v-if="error" class="error" style="margin-bottom:.75rem">{{ error }}</p>
-      <label>
-        Username
-        <input v-model="username" autocomplete="username" required />
-      </label>
-      <label style="margin-top:.75rem">
-        Password
-        <input v-model="password" type="password" autocomplete="current-password" required />
-      </label>
-      <button type="submit" :disabled="loading" style="margin-top:1.25rem;width:100%">
-        {{ loading ? 'Signing in…' : 'Sign In' }}
-      </button>
-    </form>
-  </div>
+  <v-main style="background: #f0f2f5">
+    <v-container fluid class="fill-height">
+      <v-row justify="center" align="center" class="fill-height">
+        <v-col cols="12" sm="5" md="4" lg="3">
+          <v-card elevation="2" rounded="lg" class="pa-6">
+            <div class="text-center mb-6">
+              <v-icon color="primary" size="40">mdi-hexagon-outline</v-icon>
+              <div class="text-h6 font-weight-bold mt-2">IsotopeIQ Satellite</div>
+            </div>
+
+            <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">
+              {{ error }}
+            </v-alert>
+
+            <v-form @submit.prevent="submit">
+              <v-text-field
+                v-model="username"
+                label="Username"
+                prepend-inner-icon="mdi-account-outline"
+                autocomplete="username"
+                class="mb-3"
+              />
+              <v-text-field
+                v-model="password"
+                label="Password"
+                type="password"
+                prepend-inner-icon="mdi-lock-outline"
+                autocomplete="current-password"
+                class="mb-4"
+              />
+              <v-btn
+                type="submit"
+                color="primary"
+                block
+                size="large"
+                :loading="loading"
+              >
+                Sign In
+              </v-btn>
+            </v-form>
+          </v-card>
+        </v-col>
+      </v-row>
+    </v-container>
+  </v-main>
 </template>
 
 <script setup>
@@ -24,14 +52,14 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { setTokens } from '../api'
 
-const router = useRouter()
+const router   = useRouter()
 const username = ref('')
 const password = ref('')
-const loading = ref(false)
-const error = ref('')
+const loading  = ref(false)
+const error    = ref('')
 
 async function submit() {
-  error.value = ''
+  error.value   = ''
   loading.value = true
   try {
     const { data } = await axios.post('/api/token/', {
@@ -47,25 +75,3 @@ async function submit() {
   }
 }
 </script>
-
-<style scoped>
-.login-wrap {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f5f5f5;
-}
-.login-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 2rem;
-  width: 100%;
-  max-width: 380px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.12);
-}
-.login-title {
-  margin-bottom: 1.5rem;
-  font-size: 1.4rem;
-}
-</style>

@@ -1,23 +1,19 @@
 <template>
   <div class="drift-diff-viewer">
-    <div class="diff-toolbar">
-      <label class="toggle-label">
-        <input type="checkbox" v-model="sideBySide" />
-        Side by side
-      </label>
-      <label class="toggle-label" style="margin-left:.75rem">
-        Context lines
-        <select v-model="context" style="margin-left:.35rem;padding:.1rem .3rem;font-size:.8rem">
-          <option :value="3">3</option>
-          <option :value="10">10</option>
-          <option :value="50">50</option>
-          <option :value="999999">All</option>
-        </select>
-      </label>
-      <label v-if="volatileFields" class="toggle-label" style="margin-left:.75rem">
-        <input type="checkbox" v-model="hideVolatile" />
-        Hide volatile fields
-      </label>
+    <div class="d-flex align-center flex-wrap ga-4 mb-3 pa-3 rounded-lg" style="background:#f5f5f5;border:1px solid #e8e8e8">
+      <v-checkbox v-model="sideBySide" label="Side by side" density="compact" hide-details />
+      <v-select
+        v-model="context"
+        label="Context lines"
+        :items="[{title:'3',value:3},{title:'10',value:10},{title:'50',value:50},{title:'All',value:999999}]"
+        item-title="title"
+        item-value="value"
+        density="compact"
+        variant="outlined"
+        hide-details
+        style="max-width:130px"
+      />
+      <v-checkbox v-if="volatileFields" v-model="hideVolatile" label="Hide volatile fields" density="compact" hide-details />
     </div>
 
     <div class="diff-body">
@@ -92,26 +88,6 @@ const newJson = computed(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-.diff-toolbar {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  margin-bottom: .75rem;
-  padding: .4rem .75rem;
-  background: #f5f5f5;
-  border-radius: 5px;
-  border: 1px solid #e8e8e8;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: .35rem;
-  font-size: .83rem;
-  cursor: pointer;
-  user-select: none;
 }
 .diff-body {
   overflow: auto;

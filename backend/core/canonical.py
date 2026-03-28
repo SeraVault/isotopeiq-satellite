@@ -572,7 +572,7 @@ CANONICAL_SCHEMA = {
         # Core sections — required by SRD §13.1
         'device', 'hardware', 'os', 'network',
         'users', 'groups',
-        'installed_software', 'packages',
+        'packages',
         'services', 'filesystem',
         'security',
     ],
@@ -584,9 +584,7 @@ CANONICAL_SCHEMA = {
         'network':            _NETWORK_SCHEMA,
         'users':              {'type': 'array', 'items': _USER_SCHEMA},
         'groups':             {'type': 'array', 'items': _GROUP_SCHEMA},
-        # installed_software — cross-platform app/program installs
-        'installed_software': {'type': 'array', 'items': _SOFTWARE_SCHEMA},
-        # packages — OS-level package manager entries (apt, yum, rpm, brew, winget…)
+        # packages — all software installs: OS packages, registry entries, app bundles, etc.
         'packages':           {'type': 'array', 'items': _SOFTWARE_SCHEMA},
         'services':           {'type': 'array', 'items': _SERVICE_SCHEMA},
         'filesystem':         {'type': 'array', 'items': _FILESYSTEM_SCHEMA},
@@ -627,7 +625,6 @@ CANONICAL_EMPTY: dict = {
     'network':            {'interfaces': [], 'open_ports': []},
     'users':              [],
     'groups':             [],
-    'installed_software': [],
     'packages':           [],
     'services':           [],
     'filesystem':         [],

@@ -1,111 +1,126 @@
 <template>
   <div>
-    <h1>Scripts</h1>
-    <div class="tabs">
-      <div
-        v-for="tab in ['Packages', 'Scripts']"
-        :key="tab"
-        class="tab"
-        :class="{ active: activeTab === tab }"
-        @click="activeTab = tab"
-      >{{ tab }}</div>
-    </div>
+    <div class="text-h5 font-weight-bold mb-5">Scripts</div>
+
+    <v-tabs v-model="activeTab" class="mb-5">
+      <v-tab value="Packages">Packages</v-tab>
+      <v-tab value="Scripts">Scripts</v-tab>
+    </v-tabs>
 
     <!-- ── PACKAGES TAB ───────────────────────────────────────────────────── -->
-    <template v-if="activeTab === 'Packages'">
-      <button class="btn-primary" @click="openNewPackage" style="margin-bottom:1rem">+ New Package</button>
-      <div v-if="pkgLoading" class="text-muted">Loading…</div>
-      <table v-else-if="packages.length">
-        <thead>
-          <tr><th>Name</th><th>Target OS</th><th>Version</th><th>Collection Script</th><th>Parser Script</th><th>Active</th><th></th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in packages" :key="p.id">
-            <td>{{ p.name }}</td>
-            <td>{{ p.target_os }}</td>
-            <td>{{ p.version }}</td>
-            <td class="text-muted">{{ p.collection_script_detail?.name ?? '—' }}</td>
-            <td class="text-muted">{{ p.parser_script_detail?.name ?? '—' }}</td>
-            <td>{{ p.is_active ? 'Yes' : 'No' }}</td>
-            <td>
-              <button @click="openEditor(p)">Edit / Test</button>
-              <button class="btn-danger" @click="removePkg(p.id)">Delete</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="text-muted">No packages yet.</p>
-    </template>
-
-    <!-- ── SCRIPTS TAB ────────────────────────────────────────────────────── -->
-    <template v-else>
-      <button class="btn-primary" @click="openNewScript" style="margin-bottom:1rem">+ New Script</button>
-      <div v-if="scrLoading" class="text-muted">Loading…</div>
-      <table v-else-if="scripts.length">
-        <thead>
-          <tr><th>Name</th><th>Type</th><th>Target OS</th><th>Version</th><th>Active</th><th></th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="s in scripts" :key="s.id">
-            <td>{{ s.name }}</td>
-            <td>{{ s.script_type }}</td>
-            <td>{{ s.target_os }}</td>
-            <td>{{ s.version }}</td>
-            <td>{{ s.is_active ? 'Yes' : 'No' }}</td>
-            <td>
-              <button @click="openEditScript(s)">Edit</button>
-              <button class="btn-danger" @click="removeScript(s.id)">Delete</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="text-muted">No scripts yet.</p>
-
-      <!-- Script modal -->
-      <div v-if="scriptForm.show" class="modal">
-        <div class="modal-box modal-lg">
-          <h2>{{ scriptForm.id ? 'Edit' : 'New' }} Script</h2>
-          <form @submit.prevent="saveScript">
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
-              <label>Name <input v-model="scriptForm.name" required /></label>
-              <label>Type
-                <select v-model="scriptForm.script_type">
-                  <option value="collection">Collection</option>
-                  <option value="parser">Parser</option>
-                  <option value="deployment">Deployment</option>
-                </select>
-              </label>
-              <label>Target OS
-                <select v-model="scriptForm.target_os">
-                  <option value="linux">Linux</option>
-                  <option value="windows">Windows</option>
-                  <option value="macos">macOS</option>
-                  <option value="any">Any</option>
-                </select>
-              </label>
-            </div>
-            <div style="display:grid;grid-template-columns:140px 1fr;gap:.75rem;margin-top:.75rem">
-              <label>Version <input v-model="scriptForm.version" /></label>
-              <label>Description <input v-model="scriptForm.description" /></label>
-            </div>
-            <label style="margin-top:.75rem;display:flex;flex-direction:column;flex:1;min-height:0">
-              Content
-              <div style="flex:1;min-height:400px;margin-top:.25rem">
-                <CodeEditor v-model="scriptForm.content" :language="scriptForm.script_type === 'parser' ? 'python' : 'shell'" />
-              </div>
-            </label>
-            <div style="display:flex;align-items:center;gap:1rem;margin-top:.75rem">
-              <label style="margin:0"><input v-model="scriptForm.is_active" type="checkbox" /> Active</label>
-              <span v-if="scriptForm.error" class="error">{{ scriptForm.error }}</span>
-              <div style="margin-left:auto">
-                <button class="btn-primary" type="submit">Save</button>
-                <button type="button" @click="scriptForm.show = false">Cancel</button>
-              </div>
-            </div>
-          </form>
+    <v-window v-model="activeTab">
+      <v-window-item value="Packages">
+        <div class="d-flex justify-space-between align-center mb-4">
+          <span class="text-body-2 text-medium-emphasis">{{ packages.length }} package(s)</span>
+          <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewPackage">New Package</v-btn>
         </div>
-      </div>
-    </template>
+
+        <div v-if="pkgLoading" class="text-medium-emphasis pa-4">Loading…</div>
+        <v-card v-else-if="packages.length" rounded="lg" elevation="1">
+          <v-table density="compact">
+            <thead>
+              <tr>
+                <th>Name</th><th>Target OS</th><th>Version</th>
+                <th>Collection Script</th><th>Parser Script</th><th>Active</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in packages" :key="p.id">
+                <td class="font-weight-medium">{{ p.name }}</td>
+                <td>{{ p.target_os }}</td>
+                <td>{{ p.version }}</td>
+                <td class="text-medium-emphasis">{{ p.collection_script_detail?.name ?? '—' }}</td>
+                <td class="text-medium-emphasis">{{ p.parser_script_detail?.name ?? '—' }}</td>
+                <td>
+                  <v-chip :color="p.is_active ? 'success' : 'default'" size="x-small" label>
+                    {{ p.is_active ? 'Yes' : 'No' }}
+                  </v-chip>
+                </td>
+                <td>
+                  <v-btn size="x-small" variant="tonal" class="mr-1" @click="openEditor(p)">Edit / Test</v-btn>
+                  <v-btn size="x-small" color="error" variant="tonal" @click="removePkg(p.id)">Delete</v-btn>
+                </td>
+              </tr>
+            </tbody>
+          </v-table>
+        </v-card>
+        <div v-else class="pa-6 text-center text-medium-emphasis">No packages yet.</div>
+      </v-window-item>
+
+      <!-- ── SCRIPTS TAB ────────────────────────────────────────────────────── -->
+      <v-window-item value="Scripts">
+        <div class="d-flex justify-space-between align-center mb-4">
+          <span class="text-body-2 text-medium-emphasis">{{ scripts.length }} script(s)</span>
+          <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewScript">New Script</v-btn>
+        </div>
+
+        <div v-if="scrLoading" class="text-medium-emphasis pa-4">Loading…</div>
+        <v-card v-else-if="scripts.length" rounded="lg" elevation="1">
+          <v-table density="compact">
+            <thead>
+              <tr><th>Name</th><th>Type</th><th>Target OS</th><th>Version</th><th>Active</th><th></th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="s in scripts" :key="s.id">
+                <td class="font-weight-medium">{{ s.name }}</td>
+                <td>{{ s.script_type }}</td>
+                <td>{{ s.target_os }}</td>
+                <td>{{ s.version }}</td>
+                <td>
+                  <v-chip :color="s.is_active ? 'success' : 'default'" size="x-small" label>
+                    {{ s.is_active ? 'Yes' : 'No' }}
+                  </v-chip>
+                </td>
+                <td>
+                  <v-btn size="x-small" variant="tonal" class="mr-1" @click="openEditScript(s)">Edit</v-btn>
+                  <v-btn size="x-small" color="error" variant="tonal" @click="removeScript(s.id)">Delete</v-btn>
+                </td>
+              </tr>
+            </tbody>
+          </v-table>
+        </v-card>
+        <div v-else class="pa-6 text-center text-medium-emphasis">No scripts yet.</div>
+      </v-window-item>
+    </v-window>
+
+    <!-- Script modal -->
+    <v-dialog v-model="scriptForm.show" max-width="700">
+      <v-card rounded="lg">
+        <v-card-title>{{ scriptForm.id ? 'Edit' : 'New' }} Script</v-card-title>
+        <v-card-text>
+          <v-alert v-if="scriptForm.error" type="error" variant="tonal" density="compact" class="mb-3">{{ scriptForm.error }}</v-alert>
+          <v-row dense>
+            <v-col cols="12" sm="4">
+              <v-text-field v-model="scriptForm.name" label="Name" required />
+            </v-col>
+            <v-col cols="12" sm="4">
+              <v-select v-model="scriptForm.script_type" label="Type" :items="['collection','parser','deployment']" />
+            </v-col>
+            <v-col cols="12" sm="4">
+              <v-select v-model="scriptForm.target_os" label="Target OS" :items="['linux','windows','macos','any']" />
+            </v-col>
+            <v-col cols="12" sm="3">
+              <v-text-field v-model="scriptForm.version" label="Version" />
+            </v-col>
+            <v-col cols="12" sm="9">
+              <v-text-field v-model="scriptForm.description" label="Description" />
+            </v-col>
+            <v-col cols="12">
+              <div class="text-caption font-weight-bold mb-1 text-medium-emphasis">Content</div>
+              <CodeEditor v-model="scriptForm.content" :language="scriptForm.script_type === 'parser' ? 'python' : 'shell'" style="min-height:300px" />
+            </v-col>
+            <v-col cols="12">
+              <v-checkbox v-model="scriptForm.is_active" label="Active" density="compact" hide-details />
+            </v-col>
+          </v-row>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="scriptForm.show = false">Cancel</v-btn>
+          <v-btn color="primary" @click="saveScript">Save</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- ── PACKAGE EDITOR (full-screen overlay) ───────────────────────────── -->
     <div v-if="editor.show" class="pkg-overlay">
@@ -114,51 +129,33 @@
       <div class="pkg-topbar">
         <div class="pkg-topbar-left">
           <span class="pkg-title">{{ editor.id ? 'Edit Package' : 'New Package' }}</span>
-          <span v-if="editor.saveError" class="error" style="font-size:.85rem">{{ editor.saveError }}</span>
+          <span v-if="editor.saveError" class="text-error text-caption">{{ editor.saveError }}</span>
         </div>
         <div class="pkg-topbar-right">
-          <button @click="editor.show = false">✕ Close</button>
-          <button class="btn-primary" @click="savePackage" :disabled="editor.saving">
-            {{ editor.saving ? 'Saving…' : 'Save' }}
-          </button>
+          <v-btn variant="text" color="white" size="small" @click="editor.show = false">✕ Close</v-btn>
+          <v-btn color="primary" size="small" :loading="editor.saving" @click="savePackage">Save</v-btn>
         </div>
       </div>
 
       <!-- Metadata row -->
       <div class="pkg-meta">
-        <label>
-          Package Name
-          <input v-model="editor.name" placeholder="e.g. Linux Baseline" required />
-        </label>
-        <label>
-          Target OS
-          <select v-model="editor.target_os">
-            <option value="linux">Linux</option>
-            <option value="windows">Windows</option>
-            <option value="macos">macOS</option>
-            <option value="any">Any</option>
-          </select>
-        </label>
-        <label>
-          Version
-          <input v-model="editor.version" style="width:100px" />
-        </label>
-        <label>
-          Test Device
-          <select v-model="editor.deviceId">
-            <option :value="null">— select device —</option>
-            <option v-for="d in testDevices" :key="d.id" :value="d.id">
-              {{ d.name }} ({{ d.hostname }})
-            </option>
-          </select>
-        </label>
-        <label>
-          Description
-          <input v-model="editor.description" placeholder="optional" />
-        </label>
-        <label style="align-self:flex-end;padding-bottom:.3rem">
-          <input v-model="editor.is_active" type="checkbox" /> Active
-        </label>
+        <v-text-field v-model="editor.name" label="Package Name" placeholder="e.g. Linux Baseline" required density="compact" variant="outlined" hide-details style="min-width:220px" />
+        <v-select v-model="editor.target_os" label="Target OS" :items="['linux','windows','macos','any']" density="compact" variant="outlined" hide-details style="min-width:130px" />
+        <v-text-field v-model="editor.version" label="Version" density="compact" variant="outlined" hide-details style="width:100px" />
+        <v-select
+          v-model="editor.deviceId"
+          label="Test Device"
+          :items="testDevices"
+          item-title="name"
+          item-value="id"
+          density="compact"
+          variant="outlined"
+          hide-details
+          style="min-width:200px"
+          clearable
+        />
+        <v-text-field v-model="editor.description" label="Description" placeholder="optional" density="compact" variant="outlined" hide-details style="min-width:220px" />
+        <v-checkbox v-model="editor.is_active" label="Active" density="compact" hide-details style="align-self:center" />
       </div>
 
       <!-- Editor + results area (fills remaining space) -->
@@ -174,21 +171,24 @@
                 <span class="pkg-editor-label">Collection Script</span>
                 <span class="pkg-editor-context">runs on the target device</span>
               </div>
-              <select v-model="editor.collectionLang" class="lang-select">
-                <option value="shell">Shell / Bash</option>
-                <option value="powershell">PowerShell</option>
-                <option value="batch">Batch (.bat / .com)</option>
-                <option value="vbscript">VBScript</option>
-                <option value="python">Python</option>
-                <option value="javascript">JavaScript</option>
-                <option value="sql">SQL</option>
-              </select>
-              <button
-                class="btn-primary pane-run-btn"
-                @click="runCollector"
-                :disabled="editor.collecting || !editor.deviceId || !editor.collectionContent.trim()"
+              <v-select
+                v-model="editor.collectionLang"
+                :items="langItems"
+                item-title="title"
+                item-value="value"
+                density="compact"
+                variant="outlined"
+                hide-details
+                style="max-width:160px"
+              />
+              <v-btn
+                color="primary"
+                size="x-small"
+                :loading="editor.collecting"
+                :disabled="!editor.deviceId || !editor.collectionContent.trim()"
                 :title="!editor.deviceId ? 'Select a test device first' : ''"
-              >{{ editor.collecting ? 'Running…' : '▶ Run Collector' }}</button>
+                @click="runCollector"
+              >▶ Run Collector</v-btn>
             </div>
             <CodeEditor v-model="editor.collectionContent" :language="editor.collectionLang" />
           </div>
@@ -198,14 +198,16 @@
             <div class="pkg-editor-header">
               <div>
                 <span class="pkg-editor-label">Parser Script</span>
-                <span class="pkg-editor-context">runs on the server — <code style="font-size:.75rem">result</code> = collector output, populate <code style="font-size:.75rem">output</code></span>
+                <span class="pkg-editor-context">runs on the server — <code style="font-size:.75rem">result</code> = collector output</span>
               </div>
-              <button
-                class="btn-primary pane-run-btn"
+              <v-btn
+                color="primary"
+                size="x-small"
+                :loading="editor.parsing"
+                :disabled="!editor.rawOutput || !editor.parserContent.trim()"
+                :title="!editor.rawOutput ? 'Run the collector first' : ''"
                 @click="runParser"
-                :disabled="editor.parsing || !editor.rawOutput || !editor.parserContent.trim()"
-                :title="!editor.rawOutput ? 'Run the collector first to capture raw output' : ''"
-              >{{ editor.parsing ? 'Parsing…' : '▶ Run Parser' }}</button>
+              >▶ Run Parser</v-btn>
             </div>
             <CodeEditor v-model="editor.parserContent" language="python" />
           </div>
@@ -220,17 +222,17 @@
           <div class="pkg-splitter-handle"></div>
         </div>
 
-        <!-- Bottom: results panel (always visible once collector has run) -->
+        <!-- Bottom: results panel -->
         <div v-if="editor.rawOutput !== null || editor.collectError" class="pkg-results">
           <div class="pkg-results-header">
             <span class="pkg-results-title">Results</span>
-            <span v-if="editor.parseResult" :class="['result-badge', editor.parseResult.success ? 'result-pass' : 'result-fail']">
+            <v-chip v-if="editor.parseResult" :color="editor.parseResult.success ? 'success' : 'error'" size="x-small" label>
               {{ editor.parseResult.success ? '✓ PASS' : '✗ FAIL' }}
-            </span>
-            <button style="margin-left:auto;color:#a0aec0" @click="clearResults">✕ Clear</button>
+            </v-chip>
+            <v-btn style="margin-left:auto" variant="text" size="x-small" color="grey" @click="clearResults">✕ Clear</v-btn>
           </div>
 
-          <!-- Collection or parse errors -->
+          <!-- Errors -->
           <div v-if="editor.collectError" class="result-error-banner">
             <strong>Collection error:</strong> {{ editor.collectError }}
           </div>
@@ -251,14 +253,13 @@
               <pre class="result-pre">{{ editor.rawOutput || '(empty)' }}</pre>
             </div>
             <div class="result-pane">
-              <div class="result-pane-label">Parsed Output <span class="text-muted" style="font-weight:400">(Canonical JSON)</span></div>
+              <div class="result-pane-label">Parsed Output <span style="font-weight:400;color:#7a8a9a">(Canonical JSON)</span></div>
               <pre class="result-pre">{{ editor.parseResult?.parsed_output ? JSON.stringify(editor.parseResult.parsed_output, null, 2) : '(run parser)' }}</pre>
             </div>
           </div>
         </div>
 
       </div>
-
     </div>
   </div>
 </template>
@@ -269,6 +270,16 @@ import api from '../api'
 import CodeEditor from '../components/CodeEditor.vue'
 
 const activeTab = ref('Packages')
+
+const langItems = [
+  { title: 'Shell / Bash', value: 'shell' },
+  { title: 'PowerShell', value: 'powershell' },
+  { title: 'Batch (.bat)', value: 'batch' },
+  { title: 'VBScript', value: 'vbscript' },
+  { title: 'Python', value: 'python' },
+  { title: 'JavaScript', value: 'javascript' },
+  { title: 'SQL', value: 'sql' },
+]
 
 // ── workspace splitter ────────────────────────────────────────────────────────
 const workspaceEl = ref(null)
@@ -366,18 +377,9 @@ function openEditor(pkg) {
 
 async function savePackage({ requireParser = true } = {}) {
   editor.value.saveError = ''
-  if (!editor.value.name.trim()) {
-    editor.value.saveError = 'Package name is required.'
-    return
-  }
-  if (!editor.value.collectionContent.trim()) {
-    editor.value.saveError = 'Collection script content is required.'
-    return
-  }
-  if (requireParser && !editor.value.parserContent.trim()) {
-    editor.value.saveError = 'Parser script content is required.'
-    return
-  }
+  if (!editor.value.name.trim()) { editor.value.saveError = 'Package name is required.'; return }
+  if (!editor.value.collectionContent.trim()) { editor.value.saveError = 'Collection script content is required.'; return }
+  if (requireParser && !editor.value.parserContent.trim()) { editor.value.saveError = 'Parser script content is required.'; return }
   editor.value.saving = true
   try {
     const ids = await _ensureScripts()
@@ -442,9 +444,7 @@ async function runParser() {
     editor.value.parseResult = data
   } catch (e) {
     editor.value.parseResult = {
-      success: false,
-      parsed_output: null,
-      validation_errors: null,
+      success: false, parsed_output: null, validation_errors: null,
       error: e.response?.data?.error ?? e.response?.data?.detail ?? 'Request failed.',
     }
   } finally {
@@ -459,52 +459,30 @@ function clearResults() {
 }
 
 async function _ensureScripts() {
-  const col = await _upsertScript(
-    editor.value.collectionScriptId,
-    `${editor.value.name} — Collector`,
-    'collection',
-    editor.value.collectionContent,
-  )
+  const col = await _upsertScript(editor.value.collectionScriptId, `${editor.value.name} — Collector`, 'collection', editor.value.collectionContent)
   editor.value.collectionScriptId = col
 
   let par = editor.value.parserScriptId
   if (editor.value.parserContent.trim()) {
-    par = await _upsertScript(
-      editor.value.parserScriptId,
-      `${editor.value.name} — Parser`,
-      'parser',
-      editor.value.parserContent,
-    )
+    par = await _upsertScript(editor.value.parserScriptId, `${editor.value.name} — Parser`, 'parser', editor.value.parserContent)
     editor.value.parserScriptId = par
   }
-
   return { collection: col, parser: par }
 }
 
 async function _upsertScript(id, name, type, content) {
-  const payload = {
-    name,
-    script_type: type,
-    content,
-    target_os: editor.value.target_os,
-    version: editor.value.version,
-    is_active: editor.value.is_active,
-  }
+  const payload = { name, script_type: type, content, target_os: editor.value.target_os, version: editor.value.version, is_active: editor.value.is_active }
   if (id) {
     const { data } = await api.patch(`/scripts/${id}/`, payload)
     return data.id
   } else {
-    // If name conflicts, append a timestamp to make it unique
     try {
       const { data } = await api.post('/scripts/', payload)
       scripts.value.push(data)
       return data.id
     } catch (e) {
       if (e.response?.data?.name) {
-        const { data } = await api.post('/scripts/', {
-          ...payload,
-          name: `${name} (${Date.now()})`,
-        })
+        const { data } = await api.post('/scripts/', { ...payload, name: `${name} (${Date.now()})` })
         scripts.value.push(data)
         return data.id
       }
@@ -561,9 +539,7 @@ async function removeScript(id) {
 
 // ── init ─────────────────────────────────────────────────────────────────────
 onMounted(async () => {
-  // Set initial editor height to ~60% of viewport
   editorHeight.value = Math.floor(window.innerHeight * 0.6)
-
   const [, , devRes] = await Promise.all([
     loadPackages(),
     loadScripts(),
@@ -574,18 +550,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* ── Language selector ────────────────────────────────────────────────────── */
-.lang-select {
-  margin-left: auto;
-  padding: .2rem .45rem;
-  font-size: .78rem;
-  border: 1px solid #313244;
-  border-radius: 4px;
-  background: #1e1e2e;
-  color: #cdd6f4;
-  cursor: pointer;
-}
-
 /* ── Package editor overlay ───────────────────────────────────────────────── */
 .pkg-overlay {
   position: fixed;
@@ -597,7 +561,6 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-/* Top bar */
 .pkg-topbar {
   display: flex;
   align-items: center;
@@ -611,38 +574,17 @@ onMounted(async () => {
 .pkg-topbar-right { display: flex; align-items: center; gap: .5rem; }
 .pkg-title { font-size: 1rem; font-weight: 600; }
 
-/* Metadata row */
 .pkg-meta {
   display: flex;
   gap: 1rem;
-  align-items: flex-end;
+  align-items: flex-start;
   padding: .75rem 1.25rem;
   background: #fff;
   border-bottom: 1px solid #e8e8e8;
   flex-shrink: 0;
   flex-wrap: wrap;
 }
-.pkg-meta label {
-  display: flex;
-  flex-direction: column;
-  font-size: .82rem;
-  font-weight: 600;
-  color: #555;
-  gap: .25rem;
-  margin: 0;
-}
-.pkg-meta input, .pkg-meta select {
-  margin: 0;
-  padding: .35rem .55rem;
-  border: 1px solid #d0d0d0;
-  border-radius: 4px;
-  font-size: .88rem;
-  min-width: 120px;
-}
-.pkg-meta label:nth-child(1) input { min-width: 220px; }
-.pkg-meta label:nth-child(5) input { min-width: 260px; }
 
-/* Workspace: editors on top, results on bottom */
 .pkg-workspace {
   flex: 1;
   display: flex;
@@ -651,7 +593,6 @@ onMounted(async () => {
   min-height: 0;
 }
 
-/* Draggable splitter */
 .pkg-splitter {
   flex-shrink: 0;
   height: 6px;
@@ -673,7 +614,6 @@ onMounted(async () => {
 .pkg-splitter:hover .pkg-splitter-handle,
 .pkg-splitter:active .pkg-splitter-handle { background: #fff; }
 
-/* Side-by-side editors */
 .pkg-editors {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -715,7 +655,7 @@ onMounted(async () => {
   letter-spacing: 0;
   margin-top: .1rem;
 }
-/* Test results panel */
+
 .pkg-results {
   flex: 1;
   min-height: 0;
@@ -735,18 +675,7 @@ onMounted(async () => {
   position: sticky;
   top: 0;
 }
-.pkg-results-title {
-  font-weight: 700;
-  font-size: .9rem;
-}
-.result-badge {
-  padding: .2rem .6rem;
-  border-radius: 999px;
-  font-size: .8rem;
-  font-weight: 700;
-}
-.result-pass { background: #d4edda; color: #155724; }
-.result-fail { background: #f8d7da; color: #721c24; }
+.pkg-results-title { font-weight: 700; font-size: .9rem; }
 .result-error-banner {
   margin: .75rem 1.25rem 0;
   padding: .65rem .85rem;
@@ -764,21 +693,11 @@ onMounted(async () => {
   flex: 1;
   min-height: 0;
 }
-.result-pane {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.pane-run-btn {
-  font-size: .78rem;
-  padding: .22rem .6rem;
-}
+.result-pane { display: flex; flex-direction: column; min-height: 0; }
 .result-pane-hint {
   font-size: .72rem;
   font-weight: 400;
   color: #7a8a9a;
-  text-transform: none;
-  letter-spacing: 0;
   margin-left: .4rem;
 }
 .result-pane-label {
@@ -803,5 +722,4 @@ onMounted(async () => {
   white-space: pre-wrap;
   word-break: break-word;
 }
-
 </style>

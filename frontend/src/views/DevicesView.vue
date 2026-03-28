@@ -1,376 +1,308 @@
 <template>
   <div>
-    <!-- ── Tab bar ─────────────────────────────────────────────────────── -->
-    <h1>Devices</h1>
-    <div class="tabs">
-      <div
-        v-for="tab in ['Devices', 'Credentials']"
-        :key="tab"
-        class="tab"
-        :class="{ active: activeTab === tab }"
-        @click="activeTab = tab"
-      >{{ tab }}</div>
-    </div>
+    <div class="text-h5 font-weight-bold mb-4">Devices</div>
 
-    <!-- ══════════════════════════════════════════════════════════════════ -->
-    <!-- DEVICES TAB                                                        -->
-    <!-- ══════════════════════════════════════════════════════════════════ -->
-    <template v-if="activeTab === 'Devices'">
-      <div class="card filter-bar">
-        <label>
-          Search
-          <input v-model="deviceSearch" placeholder="name, hostname, FQDN…" @keyup.enter="applyDeviceFilters" />
-        </label>
-        <label>
-          OS
-          <select v-model="deviceOsType" @change="applyDeviceFilters">
-            <option value="">All</option>
-            <option value="linux">Linux</option>
-            <option value="windows">Windows</option>
-            <option value="macos">macOS</option>
-            <option value="network">Network</option>
-          </select>
-        </label>
-        <label>
-          Connection
-          <select v-model="deviceConnType" @change="applyDeviceFilters">
-            <option value="">All</option>
-            <option value="ssh">SSH</option>
-            <option value="winrm">WinRM</option>
-            <option value="telnet">Telnet</option>
-            <option value="push">Push</option>
-          </select>
-        </label>
-        <label>
-          Active
-          <select v-model="deviceActive" @change="applyDeviceFilters">
-            <option value="">All</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
-          </select>
-        </label>
-        <div class="filter-actions">
-          <button class="btn-primary" @click="applyDeviceFilters">Search</button>
-          <button @click="clearDeviceFilters">Clear</button>
-          <button class="btn-primary" @click="openNewDevice">+ Add Device</button>
-        </div>
-      </div>
+    <v-tabs v-model="activeTab" color="primary" class="mb-4">
+      <v-tab value="devices">Devices</v-tab>
+      <v-tab value="credentials">Credentials</v-tab>
+    </v-tabs>
 
-      <div v-if="devStore.loading">Loading…</div>
-      <template v-else>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th><th>Hostname</th><th>Type</th><th>OS</th>
-              <th>Connection</th><th>Credential</th><th>Active</th><th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="d in devStore.devices" :key="d.id" class="clickable-row" @click="openViewer(d)">
-              <td>{{ d.name }}</td>
-              <td>{{ d.hostname }}</td>
-              <td>{{ d.device_type }}</td>
-              <td>{{ d.os_type }}</td>
-              <td>{{ d.connection_type }}</td>
-              <td>{{ credName(d.credential) }}</td>
-              <td>{{ d.is_active ? 'Yes' : 'No' }}</td>
-              <td @click.stop>
-                <button @click="testConn(d)" :disabled="testing === d.id">
-                  {{ testing === d.id ? 'Testing…' : 'Test' }}
-                </button>
-                <button class="btn-primary" @click="collect(d)" :disabled="collecting === d.id">
-                  {{ collecting === d.id ? 'Collecting…' : 'Collect' }}
-                </button>
-                <button @click="openEditDevice(d)">Edit</button>
-                <button class="btn-danger" @click="removeDevice(d.id)">Delete</button>
-              </td>
-            </tr>
-            <tr v-if="!devStore.devices.length">
-              <td colspan="8" style="color:#888;text-align:center">No devices found.</td>
-            </tr>
-          </tbody>
-        </table>
-        <PaginationBar :page="devStore.page" :total-pages="devStore.totalPages" :total-count="devStore.totalCount" @go="devStore.goPage" />
-      </template>
+    <!-- ── DEVICES TAB ──────────────────────────────────────────────────── -->
+    <v-window v-model="activeTab">
+      <v-window-item value="devices">
 
-      <!-- Test-connection result toast -->
-      <div v-if="testResult" :style="`margin-top:.75rem;padding:.6rem 1rem;border-radius:4px;background:${testResult.ok ? '#d4edda' : '#f8d7da'};color:${testResult.ok ? '#155724' : '#721c24'}`">
-        {{ testResult.msg }}
-      </div>
+        <!-- Filter bar -->
+        <v-card elevation="1" rounded="lg" class="mb-4 pa-4">
+          <v-row dense align="center">
+            <v-col cols="12" sm="3">
+              <v-text-field v-model="deviceSearch" label="Search" placeholder="name, hostname, FQDN…" prepend-inner-icon="mdi-magnify" clearable @keyup.enter="applyDeviceFilters" @click:clear="clearDeviceFilters" />
+            </v-col>
+            <v-col cols="6" sm="2">
+              <v-select v-model="deviceOsType" label="OS" :items="osItems" @update:modelValue="applyDeviceFilters" />
+            </v-col>
+            <v-col cols="6" sm="2">
+              <v-select v-model="deviceConnType" label="Connection" :items="connItems" @update:modelValue="applyDeviceFilters" />
+            </v-col>
+            <v-col cols="6" sm="2">
+              <v-select v-model="deviceActive" label="Active" :items="activeItems" @update:modelValue="applyDeviceFilters" />
+            </v-col>
+            <v-col cols="6" sm="3" class="d-flex ga-2 justify-end">
+              <v-btn @click="clearDeviceFilters" variant="outlined">Clear</v-btn>
+              <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewDevice">Add Device</v-btn>
+            </v-col>
+          </v-row>
+        </v-card>
 
-      <!-- Device modal -->
-      <div v-if="deviceForm.show" class="modal">
-        <div class="modal-box modal-md">
-          <h2>{{ deviceForm.id ? 'Edit' : 'Add' }} Device</h2>
-          <form @submit.prevent="saveDevice">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
-              <label>Name <input v-model="deviceForm.name" required /></label>
-              <label>Hostname / IP <input v-model="deviceForm.hostname" required /></label>
-              <label>FQDN <input v-model="deviceForm.fqdn" placeholder="optional" /></label>
-              <label>
-                Port <small style="color:#888;font-weight:400">(override only if non-standard)</small>
-                <input v-model.number="deviceForm.port" type="number" min="1" max="65535" :placeholder="defaultPort(deviceForm.connection_type)" />
-              </label>
-              <label>Device Type
-                <select v-model="deviceForm.device_type">
-                  <option value="linux">Linux</option>
-                  <option value="windows">Windows</option>
-                  <option value="macos">macOS</option>
-                  <option value="network">Network Device</option>
-                  <option value="other">Other</option>
-                </select>
-              </label>
-              <label>OS Type
-                <select v-model="deviceForm.os_type">
-                  <option value="linux">Linux</option>
-                  <option value="windows">Windows</option>
-                  <option value="macos">macOS</option>
-                  <option value="ios">Cisco IOS</option>
-                  <option value="junos">Junos</option>
-                  <option value="other">Other</option>
-                </select>
-              </label>
-              <label>Connection Type
-                <select v-model="deviceForm.connection_type" @change="onConnectionTypeChange">
-                  <option value="ssh">SSH</option>
-                  <option value="telnet">Telnet</option>
-                  <option value="winrm">WinRM</option>
-                  <option value="https">HTTPS / API</option>
-                  <option value="push">Push</option>
-                </select>
-              </label>
-              <label>Credential
-                <select v-model="deviceForm.credential">
-                  <option :value="null">— none (use inline fields) —</option>
-                  <option v-for="c in credentials" :key="c.id" :value="c.id">
-                    {{ c.name }} ({{ c.credential_type }})
-                  </option>
-                </select>
-              </label>
-            </div>
+        <!-- Snackbar for test/collect result -->
+        <v-snackbar v-model="snackbar.show" :color="snackbar.ok ? 'success' : 'error'" timeout="6000" location="bottom right">
+          {{ snackbar.msg }}
+        </v-snackbar>
 
-            <label v-if="deviceForm.connection_type === 'ssh'" style="margin-top:.75rem">
-              SSH Host Key <small style="color:#888">(optional — omitting disables host verification)</small>
-              <input v-model="deviceForm.host_key" placeholder="base64 public key — run: ssh-keyscan -t rsa <hostname>" style="font-family:monospace;font-size:.82rem" />
-            </label>
-
-            <details style="margin-top:.75rem">
-              <summary style="cursor:pointer;color:#555;font-size:.9rem">Inline credentials (fallback if no Credential selected)</summary>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.5rem">
-                <label>Username <input v-model="deviceForm.username" autocomplete="off" /></label>
-                <label>Password <input v-model="deviceForm.password" type="password" autocomplete="new-password" /></label>
+        <v-card elevation="1" rounded="lg">
+          <v-data-table
+            :headers="deviceHeaders"
+            :items="devStore.devices"
+            :loading="devStore.loading"
+            hide-default-footer
+            hover
+            @click:row="(_, { item }) => openViewer(item)"
+          >
+            <template #item.is_active="{ item }">
+              <v-chip :color="item.is_active ? 'success' : 'default'" size="x-small" label>{{ item.is_active ? 'Yes' : 'No' }}</v-chip>
+            </template>
+            <template #item.credential="{ item }">{{ credName(item.credential) }}</template>
+            <template #item.actions="{ item }">
+              <div class="d-flex ga-1" @click.stop>
+                <v-btn size="x-small" variant="tonal" :loading="testing === item.id" @click="testConn(item)">Test</v-btn>
+                <v-btn size="x-small" variant="tonal" color="primary" :loading="collecting === item.id" @click="collect(item)">Collect</v-btn>
+                <v-btn size="x-small" variant="tonal" @click="openEditDevice(item)">Edit</v-btn>
+                <v-btn size="x-small" variant="tonal" color="error" @click="removeDevice(item.id)">Delete</v-btn>
               </div>
-            </details>
-            <label style="margin-top:.75rem">
-              Tags (comma-separated)
-              <input v-model="deviceForm.tagsRaw" placeholder="prod, linux, web" />
-            </label>
-            <label style="margin-top:.75rem">Notes <textarea v-model="deviceForm.notes" rows="2"></textarea></label>
-            <label style="margin-top:.5rem"><input v-model="deviceForm.is_active" type="checkbox" /> Active</label>
+            </template>
+          </v-data-table>
+          <div class="d-flex align-center justify-space-between px-4 py-2 border-t">
+            <span class="text-caption text-medium-emphasis">{{ devStore.totalCount }} total</span>
+            <v-pagination v-model="devStore.page" :length="devStore.totalPages" density="compact" @update:modelValue="devStore.goPage" />
+          </div>
+        </v-card>
 
-            <p v-if="deviceForm.error" class="error" style="margin-top:.5rem">{{ deviceForm.error }}</p>
+        <!-- Device form dialog -->
+        <v-dialog v-model="deviceForm.show" max-width="700" scrollable>
+          <v-card rounded="lg">
+            <v-card-title>{{ deviceForm.id ? 'Edit' : 'Add' }} Device</v-card-title>
+            <v-card-text>
+              <v-row dense>
+                <v-col cols="12" sm="6"><v-text-field v-model="deviceForm.name" label="Name *" /></v-col>
+                <v-col cols="12" sm="6"><v-text-field v-model="deviceForm.hostname" label="Hostname / IP *" /></v-col>
+                <v-col cols="12" sm="6"><v-text-field v-model="deviceForm.fqdn" label="FQDN" placeholder="optional" /></v-col>
+                <v-col cols="12" sm="6"><v-text-field v-model.number="deviceForm.port" label="Port" type="number" :placeholder="String(defaultPort(deviceForm.connection_type))" /></v-col>
+                <v-col cols="12" sm="6">
+                  <v-select v-model="deviceForm.device_type" label="Device Type" :items="deviceTypeItems" />
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-select v-model="deviceForm.os_type" label="OS Type" :items="osTypeItems" />
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-select v-model="deviceForm.connection_type" label="Connection Type" :items="connTypeItems" @update:modelValue="onConnectionTypeChange" />
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-select v-model="deviceForm.credential" label="Credential" :items="credentialItems" clearable />
+                </v-col>
+                <v-col v-if="deviceForm.connection_type === 'ssh'" cols="12">
+                  <v-text-field v-model="deviceForm.host_key" label="SSH Host Key (optional)" placeholder="base64 public key — run: ssh-keyscan -t rsa <hostname>" style="font-family:monospace" />
+                </v-col>
+              </v-row>
 
-            <!-- Test connection result (inside modal) -->
-            <div v-if="deviceForm.testResult" :style="`margin-top:.85rem;padding:.75rem 1rem;border-radius:6px;border:1px solid ${deviceForm.testResult.ok ? '#b7dbb7' : '#f5c6cb'};background:${deviceForm.testResult.ok ? '#f0fff0' : '#fff5f5'}`">
-              <div style="display:flex;align-items:center;gap:.5rem;font-weight:600" :style="`color:${deviceForm.testResult.ok ? '#155724' : '#721c24'}`">
-                <span>{{ deviceForm.testResult.ok ? '✓ Connection successful' : '✗ Connection failed' }}</span>
-              </div>
-              <pre v-if="deviceForm.testResult.detail" style="margin-top:.5rem;background:transparent;color:inherit;padding:0;font-size:.82rem;white-space:pre-wrap;word-break:break-word">{{ deviceForm.testResult.detail }}</pre>
-            </div>
+              <v-expansion-panels class="mt-2" variant="accordion">
+                <v-expansion-panel title="Inline credentials (fallback)">
+                  <v-expansion-panel-text>
+                    <v-row dense>
+                      <v-col cols="6"><v-text-field v-model="deviceForm.username" label="Username" autocomplete="off" /></v-col>
+                      <v-col cols="6"><v-text-field v-model="deviceForm.password" label="Password" type="password" autocomplete="new-password" /></v-col>
+                    </v-row>
+                  </v-expansion-panel-text>
+                </v-expansion-panel>
+              </v-expansion-panels>
 
-            <div style="margin-top:1rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-              <button class="btn-primary" type="submit">Save</button>
-              <button type="button" @click="deviceForm.show = false">Cancel</button>
-              <span style="flex:1"></span>
-              <button
-                type="button"
-                :disabled="!deviceForm.hostname || deviceForm.testing || !canTestConnection(deviceForm.connection_type)"
-                :title="canTestConnection(deviceForm.connection_type) ? 'Test connection using the current form values' : `Connection testing is not supported for ${deviceForm.connection_type.toUpperCase()}`"
+              <v-text-field v-model="deviceForm.tagsRaw" label="Tags (comma-separated)" placeholder="prod, linux, web" class="mt-3" />
+              <v-textarea v-model="deviceForm.notes" label="Notes" rows="2" class="mt-1" />
+              <v-checkbox v-model="deviceForm.is_active" label="Active" density="compact" hide-details />
+
+              <v-alert v-if="deviceForm.error" type="error" variant="tonal" density="compact" class="mt-3">{{ deviceForm.error }}</v-alert>
+
+              <v-alert v-if="deviceForm.testResult" :type="deviceForm.testResult.ok ? 'success' : 'error'" variant="tonal" density="compact" class="mt-3">
+                <div class="font-weight-bold">{{ deviceForm.testResult.ok ? 'Connection successful' : 'Connection failed' }}</div>
+                <pre v-if="deviceForm.testResult.detail" class="mt-1" style="background:transparent;padding:0;font-size:.82rem;white-space:pre-wrap;word-break:break-word">{{ deviceForm.testResult.detail }}</pre>
+              </v-alert>
+            </v-card-text>
+            <v-card-actions>
+              <v-btn
+                variant="tonal"
+                :loading="deviceForm.testing"
+                :disabled="!deviceForm.hostname || !canTestConnection(deviceForm.connection_type)"
                 @click="testConnInModal"
-              >{{ deviceForm.testing ? 'Testing…' : 'Test Connection' }}</button>
-            </div>
-          </form>
+              >Test Connection</v-btn>
+              <v-spacer />
+              <v-btn @click="deviceForm.show = false">Cancel</v-btn>
+              <v-btn color="primary" @click="saveDevice">Save</v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-dialog>
+
+        <!-- Device viewer dialog -->
+        <v-dialog v-model="viewerOpen" max-width="1200" scrollable>
+          <v-card v-if="viewer.device" rounded="lg">
+            <v-card-title>
+              {{ viewer.device.name }}
+              <div class="text-caption text-medium-emphasis font-weight-regular">{{ viewer.device.hostname }} · {{ viewer.device.device_type }} · {{ viewer.device.os_type }}</div>
+            </v-card-title>
+            <v-tabs v-model="viewer.tab" color="primary" density="compact" class="border-b">
+              <v-tab value="info">Info</v-tab>
+              <v-tab value="baseline" @click="loadBaseline">Baseline</v-tab>
+            </v-tabs>
+            <v-card-text>
+              <v-window v-model="viewer.tab">
+                <v-window-item value="info">
+                  <v-table density="compact">
+                    <tbody>
+                      <tr v-for="row in infoRows(viewer.device)" :key="row.label">
+                        <td class="font-weight-medium text-no-wrap pr-6" style="width:160px">{{ row.label }}</td>
+                        <td>{{ row.value }}</td>
+                      </tr>
+                    </tbody>
+                  </v-table>
+                </v-window-item>
+                <v-window-item value="baseline">
+                  <div v-if="viewer.baselineLoading" class="pa-4 text-medium-emphasis">Loading baseline…</div>
+                  <div v-else-if="!viewer.baseline" class="pa-4 text-medium-emphasis">No baseline established yet. Run a policy against this device first.</div>
+                  <div v-else>
+                    <p class="text-caption text-medium-emphasis mb-3">Established {{ fmt(viewer.baseline.established_at) }} by {{ viewer.baseline.established_by }}</p>
+                    <CanonicalViewer :data="viewer.baseline.parsed_data" />
+                  </div>
+                </v-window-item>
+              </v-window>
+            </v-card-text>
+            <v-card-actions>
+              <v-spacer />
+              <v-btn @click="viewerOpen = false">Close</v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-dialog>
+      </v-window-item>
+
+      <!-- ── CREDENTIALS TAB ──────────────────────────────────────────── -->
+      <v-window-item value="credentials">
+        <div class="d-flex justify-end mb-3">
+          <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewCred">Add Credential</v-btn>
         </div>
-      </div>
-      <!-- Device viewer modal -->
-      <div v-if="viewer.device" class="modal">
-        <div class="modal-box modal-xl">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:.75rem">
-            <div>
-              <h2 style="margin:0">{{ viewer.device.name }}</h2>
-              <p style="margin:.2rem 0 0;color:#666;font-size:.85rem">{{ viewer.device.hostname }} &middot; {{ viewer.device.device_type }} &middot; {{ viewer.device.os_type }}</p>
-            </div>
-            <button @click="viewer.device = null">✕ Close</button>
-          </div>
 
-          <div class="tabs" style="margin-bottom:1rem">
-            <div class="tab" :class="{ active: viewer.tab === 'info' }" @click="viewer.tab = 'info'">Info</div>
-            <div class="tab" :class="{ active: viewer.tab === 'baseline' }" @click="viewer.tab = 'baseline'; loadBaseline()">Baseline</div>
-          </div>
-
-          <!-- Info tab -->
-          <template v-if="viewer.tab === 'info'">
-            <table style="width:auto">
-              <tbody>
-                <tr><th style="text-align:left;padding-right:2rem;white-space:nowrap">Name</th><td>{{ viewer.device.name }}</td></tr>
-                <tr><th style="text-align:left;padding-right:2rem">Hostname</th><td>{{ viewer.device.hostname }}</td></tr>
-                <tr><th style="text-align:left;padding-right:2rem">FQDN</th><td>{{ viewer.device.fqdn || '—' }}</td></tr>
-                <tr><th style="text-align:left;padding-right:2rem">Port</th><td>{{ viewer.device.port }}</td></tr>
-                <tr><th style="text-align:left;padding-right:2rem">Device Type</th><td>{{ viewer.device.device_type }}</td></tr>
-                <tr><th style="text-align:left;padding-right:2rem">OS Type</th><td>{{ viewer.device.os_type }}</td></tr>
-                <tr><th style="text-align:left;padding-right:2rem">Connection</th><td>{{ viewer.device.connection_type }}</td></tr>
-                <tr><th style="text-align:left;padding-right:2rem">Credential</th><td>{{ credName(viewer.device.credential) }}</td></tr>
-                <tr><th style="text-align:left;padding-right:2rem">Active</th><td>{{ viewer.device.is_active ? 'Yes' : 'No' }}</td></tr>
-                <tr v-if="viewer.device.tags?.length"><th style="text-align:left;padding-right:2rem">Tags</th><td>{{ viewer.device.tags.join(', ') }}</td></tr>
-                <tr v-if="viewer.device.notes"><th style="text-align:left;padding-right:2rem">Notes</th><td style="white-space:pre-wrap">{{ viewer.device.notes }}</td></tr>
-              </tbody>
-            </table>
-          </template>
-
-          <!-- Baseline tab -->
-          <template v-else>
-            <div v-if="viewer.baselineLoading" class="text-muted">Loading baseline…</div>
-            <div v-else-if="!viewer.baseline" class="text-muted" style="padding:1rem 0">No baseline established yet. Run a policy against this device first.</div>
-            <div v-else>
-              <p style="font-size:.83rem;color:#666;margin:0 0 .75rem">
-                Established {{ fmt(viewer.baseline.established_at) }} by {{ viewer.baseline.established_by }}
-              </p>
-              <CanonicalViewer :data="viewer.baseline.parsed_data" />
-            </div>
-          </template>
-        </div>
-      </div>
-    </template>
-
-    <!-- ══════════════════════════════════════════════════════════════════ -->
-    <!-- CREDENTIALS TAB                                                    -->
-    <!-- ══════════════════════════════════════════════════════════════════ -->
-    <template v-else>
-      <button class="btn-primary" @click="openNewCred" style="margin-bottom:1rem">+ Add Credential</button>
-
-      <div v-if="credLoading">Loading…</div>
-      <table v-else>
-        <thead>
-          <tr><th>Name</th><th>Type</th><th>Username</th><th>Notes</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in credentials" :key="c.id">
-            <td>{{ c.name }}</td>
-            <td>{{ c.credential_type }}</td>
-            <td>{{ c.username }}</td>
-            <td>{{ c.notes || '—' }}</td>
-            <td>
-              <button @click="openEditCred(c)">Edit</button>
-              <button class="btn-danger" @click="removeCred(c.id)">Delete</button>
-            </td>
-          </tr>
-          <tr v-if="!credentials.length">
-            <td colspan="5" style="color:#888;text-align:center">No credentials yet.</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <!-- Credential modal -->
-      <div v-if="credForm.show" class="modal">
-        <div class="modal-box modal-sm">
-          <h2>{{ credForm.id ? 'Edit' : 'Add' }} Credential</h2>
-          <form @submit.prevent="saveCred">
-            <label>Name <input v-model="credForm.name" required /></label>
-            <label style="margin-top:.75rem">Type
-              <select v-model="credForm.credential_type">
-                <option value="password">Username / Password</option>
-                <option value="private_key">Username / Private Key</option>
-                <option value="api_token">API Token</option>
-              </select>
-            </label>
-
-            <template v-if="credForm.credential_type !== 'api_token'">
-              <label style="margin-top:.75rem">Username <input v-model="credForm.username" /></label>
+        <v-card elevation="1" rounded="lg">
+          <v-data-table
+            :headers="credHeaders"
+            :items="credentials"
+            :loading="credLoading"
+            hide-default-footer
+          >
+            <template #item.actions="{ item }">
+              <div class="d-flex ga-1">
+                <v-btn size="x-small" variant="tonal" icon="mdi-pencil" @click="openEditCred(item)" />
+                <v-btn size="x-small" color="error" variant="tonal" icon="mdi-delete" @click="removeCred(item.id)" />
+              </div>
             </template>
+          </v-data-table>
+        </v-card>
 
-            <template v-if="credForm.credential_type === 'password'">
-              <label style="margin-top:.75rem">
-                Password
-                <input v-model="credForm.password" type="password" autocomplete="new-password" placeholder="leave blank to keep existing" />
-              </label>
-            </template>
-
-            <template v-if="credForm.credential_type === 'private_key'">
-              <label style="margin-top:.75rem">
-                Private Key (PEM)
-                <textarea v-model="credForm.private_key" rows="8" style="font-family:monospace;font-size:.82rem" placeholder="-----BEGIN ... PRIVATE KEY-----&#10;...&#10;-----END ... PRIVATE KEY-----"></textarea>
-              </label>
-            </template>
-
-            <template v-if="credForm.credential_type === 'api_token'">
-              <label style="margin-top:.75rem">
-                Token
-                <input v-model="credForm.token" type="password" autocomplete="new-password" placeholder="leave blank to keep existing" />
-              </label>
-            </template>
-
-            <label style="margin-top:.75rem">Notes <textarea v-model="credForm.notes" rows="2"></textarea></label>
-
-            <p v-if="credForm.error" class="error" style="margin-top:.5rem">{{ credForm.error }}</p>
-            <div style="margin-top:1rem">
-              <button class="btn-primary" type="submit">Save</button>
-              <button type="button" @click="credForm.show = false">Cancel</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </template>
+        <!-- Credential dialog -->
+        <v-dialog v-model="credForm.show" max-width="480" scrollable>
+          <v-card rounded="lg">
+            <v-card-title>{{ credForm.id ? 'Edit' : 'Add' }} Credential</v-card-title>
+            <v-card-text>
+              <v-text-field v-model="credForm.name" label="Name *" class="mb-2" />
+              <v-select v-model="credForm.credential_type" label="Type" :items="credTypeItems" class="mb-2" />
+              <v-text-field v-if="credForm.credential_type !== 'api_token'" v-model="credForm.username" label="Username" class="mb-2" />
+              <v-text-field v-if="credForm.credential_type === 'password'" v-model="credForm.password" label="Password" type="password" autocomplete="new-password" placeholder="leave blank to keep existing" class="mb-2" />
+              <v-textarea v-if="credForm.credential_type === 'private_key'" v-model="credForm.private_key" label="Private Key (PEM)" rows="8" style="font-family:monospace;font-size:.82rem" placeholder="-----BEGIN ... PRIVATE KEY-----&#10;...&#10;-----END ... PRIVATE KEY-----" class="mb-2" />
+              <v-text-field v-if="credForm.credential_type === 'api_token'" v-model="credForm.token" label="Token" type="password" autocomplete="new-password" placeholder="leave blank to keep existing" class="mb-2" />
+              <v-textarea v-model="credForm.notes" label="Notes" rows="2" />
+              <v-alert v-if="credForm.error" type="error" variant="tonal" density="compact" class="mt-3">{{ credForm.error }}</v-alert>
+            </v-card-text>
+            <v-card-actions>
+              <v-spacer />
+              <v-btn @click="credForm.show = false">Cancel</v-btn>
+              <v-btn color="primary" @click="saveCred">Save</v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-dialog>
+      </v-window-item>
+    </v-window>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDevicesStore } from '../stores/devices'
 import api from '../api'
 import CanonicalViewer from '../components/CanonicalViewer.vue'
-import PaginationBar from '../components/PaginationBar.vue'
 
 const devStore = useDevicesStore()
 
-// ── device filters ──────────────────────────────────────────────────────────
-const deviceSearch  = ref('')
-const deviceOsType  = ref('')
+// ── filter state ────────────────────────────────────────────────────────────
+const deviceSearch   = ref('')
+const deviceOsType   = ref('')
 const deviceConnType = ref('')
-const deviceActive  = ref('')
+const deviceActive   = ref('')
+
+const osItems     = [{ title: 'All', value: '' }, { title: 'Linux', value: 'linux' }, { title: 'Windows', value: 'windows' }, { title: 'macOS', value: 'macos' }, { title: 'Network', value: 'network' }]
+const connItems   = [{ title: 'All', value: '' }, { title: 'SSH', value: 'ssh' }, { title: 'WinRM', value: 'winrm' }, { title: 'Telnet', value: 'telnet' }, { title: 'Push', value: 'push' }]
+const activeItems = [{ title: 'All', value: '' }, { title: 'Yes', value: 'true' }, { title: 'No', value: 'false' }]
 
 function deviceFilterParams() {
   const p = {}
-  if (deviceSearch.value)   p.search          = deviceSearch.value
-  if (deviceOsType.value)   p.os_type         = deviceOsType.value
-  if (deviceConnType.value) p.connection_type  = deviceConnType.value
-  if (deviceActive.value)   p.is_active        = deviceActive.value
+  if (deviceSearch.value)   p.search           = deviceSearch.value
+  if (deviceOsType.value)   p.os_type          = deviceOsType.value
+  if (deviceConnType.value) p.connection_type   = deviceConnType.value
+  if (deviceActive.value)   p.is_active         = deviceActive.value
   return p
 }
 
-function applyDeviceFilters() {
-  devStore.page = 1
-  devStore.fetchDevices(deviceFilterParams())
-}
-
+function applyDeviceFilters() { devStore.page = 1; devStore.fetchDevices(deviceFilterParams()) }
 function clearDeviceFilters() {
-  deviceSearch.value = ''
-  deviceOsType.value = ''
-  deviceConnType.value = ''
-  deviceActive.value = ''
-  devStore.page = 1
-  devStore.fetchDevices()
+  deviceSearch.value = ''; deviceOsType.value = ''; deviceConnType.value = ''; deviceActive.value = ''
+  devStore.page = 1; devStore.fetchDevices()
 }
 
-// ── tab ────────────────────────────────────────────────────────────────────
-const activeTab = ref('Devices')
+// ── table headers ────────────────────────────────────────────────────────────
+const deviceHeaders = [
+  { title: 'Name',       key: 'name' },
+  { title: 'Hostname',   key: 'hostname' },
+  { title: 'Type',       key: 'device_type' },
+  { title: 'OS',         key: 'os_type' },
+  { title: 'Connection', key: 'connection_type' },
+  { title: 'Credential', key: 'credential' },
+  { title: 'Active',     key: 'is_active' },
+  { title: '',           key: 'actions', sortable: false, align: 'end' },
+]
 
-// ── device viewer ───────────────────────────────────────────────────────────
-const viewer = ref({ device: null, tab: 'info', baseline: null, baselineLoading: false })
+const credHeaders = [
+  { title: 'Name',     key: 'name' },
+  { title: 'Type',     key: 'credential_type' },
+  { title: 'Username', key: 'username' },
+  { title: 'Notes',    key: 'notes' },
+  { title: '',         key: 'actions', sortable: false, align: 'end' },
+]
+
+// ── tabs ─────────────────────────────────────────────────────────────────────
+const activeTab = ref('devices')
+
+// ── snackbar ─────────────────────────────────────────────────────────────────
+const snackbar = ref({ show: false, ok: true, msg: '' })
+function showSnack(ok, msg) { snackbar.value = { show: true, ok, msg } }
+
+// ── device viewer ─────────────────────────────────────────────────────────────
+const viewerOpen = ref(false)
+const viewer     = ref({ device: null, tab: 'info', baseline: null, baselineLoading: false })
 
 function fmt(iso) { return new Date(iso).toLocaleString() }
 
-async function openViewer(device) {
+function infoRows(d) {
+  return [
+    { label: 'Name',        value: d.name },
+    { label: 'Hostname',    value: d.hostname },
+    { label: 'FQDN',        value: d.fqdn || '—' },
+    { label: 'Port',        value: d.port },
+    { label: 'Device Type', value: d.device_type },
+    { label: 'OS Type',     value: d.os_type },
+    { label: 'Connection',  value: d.connection_type },
+    { label: 'Credential',  value: credName(d.credential) },
+    { label: 'Active',      value: d.is_active ? 'Yes' : 'No' },
+    ...(d.tags?.length ? [{ label: 'Tags',  value: d.tags.join(', ') }] : []),
+    ...(d.notes         ? [{ label: 'Notes', value: d.notes }]          : []),
+  ]
+}
+
+function openViewer(device) {
   viewer.value = { device, tab: 'info', baseline: null, baselineLoading: false }
+  viewerOpen.value = true
 }
 
 async function loadBaseline() {
@@ -378,21 +310,31 @@ async function loadBaseline() {
   viewer.value.baselineLoading = true
   try {
     const { data } = await api.get('/baselines/', { params: { device: viewer.value.device.id } })
-    const results = data.results ?? data
-    viewer.value.baseline = results[0] ?? null
+    viewer.value.baseline = (data.results ?? data)[0] ?? null
   } finally {
     viewer.value.baselineLoading = false
   }
 }
 
-// ── credentials ────────────────────────────────────────────────────────────
+// ── credentials ───────────────────────────────────────────────────────────────
 const credentials = ref([])
 const credLoading = ref(false)
+
+const credentialItems = computed(() => [
+  { title: '— none (use inline fields) —', value: null },
+  ...credentials.value.map(c => ({ title: `${c.name} (${c.credential_type})`, value: c.id })),
+])
+
+const credTypeItems = [
+  { title: 'Username / Password', value: 'password' },
+  { title: 'Username / Private Key', value: 'private_key' },
+  { title: 'API Token', value: 'api_token' },
+]
 
 async function loadCredentials() {
   credLoading.value = true
   try {
-    const { data } = await api.get('/devices/credentials/')
+    const { data } = await api.get('/devices/credentials/', { params: { page_size: 500 } })
     credentials.value = data.results ?? data
   } finally {
     credLoading.value = false
@@ -409,21 +351,17 @@ const credForm = ref(blankCred())
 function blankCred() {
   return { show: false, id: null, name: '', credential_type: 'password', username: '', password: '', private_key: '', token: '', notes: '', error: '' }
 }
-function openNewCred() { credForm.value = { ...blankCred(), show: true } }
-function openEditCred(c) { credForm.value = { ...blankCred(), show: true, id: c.id, name: c.name, credential_type: c.credential_type, username: c.username || '', notes: c.notes || '' } }
+function openNewCred()  { credForm.value = { ...blankCred(), show: true } }
+function openEditCred(c) {
+  credForm.value = { ...blankCred(), show: true, id: c.id, name: c.name, credential_type: c.credential_type, username: c.username || '', notes: c.notes || '' }
+}
 
 async function saveCred() {
   credForm.value.error = ''
-  const payload = {
-    name: credForm.value.name,
-    credential_type: credForm.value.credential_type,
-    username: credForm.value.username,
-    notes: credForm.value.notes,
-  }
-  if (credForm.value.password) payload.password = credForm.value.password
+  const payload = { name: credForm.value.name, credential_type: credForm.value.credential_type, username: credForm.value.username, notes: credForm.value.notes }
+  if (credForm.value.password)    payload.password    = credForm.value.password
   if (credForm.value.private_key) payload.private_key = credForm.value.private_key
-  if (credForm.value.token) payload.token = credForm.value.token
-
+  if (credForm.value.token)       payload.token       = credForm.value.token
   try {
     if (credForm.value.id) {
       const { data } = await api.patch(`/devices/credentials/${credForm.value.id}/`, payload)
@@ -445,18 +383,37 @@ async function removeCred(id) {
   credentials.value = credentials.value.filter(c => c.id !== id)
 }
 
-// ── devices ────────────────────────────────────────────────────────────────
-const testing = ref(null)
-const testResult = ref(null)
+// ── devices ───────────────────────────────────────────────────────────────────
+const testing   = ref(null)
 const collecting = ref(null)
 
 const DEFAULT_PORTS = { ssh: 22, telnet: 23, winrm: 5985, https: 443, push: null }
 const TESTABLE_TYPES = new Set(['ssh', 'telnet', 'winrm'])
 function canTestConnection(type) { return TESTABLE_TYPES.has(type) }
+function defaultPort(t) { return DEFAULT_PORTS[t] ?? '' }
 
-function defaultPort(connectionType) {
-  return DEFAULT_PORTS[connectionType] ?? ''
-}
+const deviceTypeItems = [
+  { title: 'Linux',          value: 'linux' },
+  { title: 'Windows',        value: 'windows' },
+  { title: 'macOS',          value: 'macos' },
+  { title: 'Network Device', value: 'network' },
+  { title: 'Other',          value: 'other' },
+]
+const osTypeItems = [
+  { title: 'Linux',     value: 'linux' },
+  { title: 'Windows',   value: 'windows' },
+  { title: 'macOS',     value: 'macos' },
+  { title: 'Cisco IOS', value: 'ios' },
+  { title: 'Junos',     value: 'junos' },
+  { title: 'Other',     value: 'other' },
+]
+const connTypeItems = [
+  { title: 'SSH',        value: 'ssh' },
+  { title: 'Telnet',     value: 'telnet' },
+  { title: 'WinRM',      value: 'winrm' },
+  { title: 'HTTPS / API', value: 'https' },
+  { title: 'Push',       value: 'push' },
+]
 
 function onConnectionTypeChange() {
   const def = DEFAULT_PORTS[deviceForm.value.connection_type]
@@ -465,60 +422,21 @@ function onConnectionTypeChange() {
 
 const deviceForm = ref(blankDevice())
 function blankDevice() {
-  return {
-    show: false, id: null,
-    name: '', hostname: '', fqdn: '', port: 22,
-    device_type: 'linux', os_type: 'linux',
-    connection_type: 'ssh',
-    credential: null,
-    username: '', password: '',
-    host_key: '', tagsRaw: '', notes: '',
-    is_active: true, error: '',
-    testing: false, testResult: null,
-  }
+  return { show: false, id: null, name: '', hostname: '', fqdn: '', port: 22, device_type: 'linux', os_type: 'linux', connection_type: 'ssh', credential: null, username: '', password: '', host_key: '', tagsRaw: '', notes: '', is_active: true, error: '', testing: false, testResult: null }
 }
-
-function openNewDevice() { deviceForm.value = { ...blankDevice(), show: true } }
+function openNewDevice()  { deviceForm.value = { ...blankDevice(), show: true } }
 function openEditDevice(d) {
-  deviceForm.value = {
-    ...blankDevice(), show: true,
-    id: d.id,
-    name: d.name, hostname: d.hostname, fqdn: d.fqdn || '',
-    port: d.port, device_type: d.device_type, os_type: d.os_type,
-    connection_type: d.connection_type,
-    credential: d.credential ?? null,
-    host_key: d.host_key || '',
-    tagsRaw: (d.tags ?? []).join(', '),
-    notes: d.notes || '',
-    is_active: d.is_active,
-  }
+  deviceForm.value = { ...blankDevice(), show: true, id: d.id, name: d.name, hostname: d.hostname, fqdn: d.fqdn || '', port: d.port, device_type: d.device_type, os_type: d.os_type, connection_type: d.connection_type, credential: d.credential ?? null, host_key: d.host_key || '', tagsRaw: (d.tags ?? []).join(', '), notes: d.notes || '', is_active: d.is_active }
 }
 
 async function saveDevice() {
   deviceForm.value.error = ''
-  const payload = {
-    name: deviceForm.value.name,
-    hostname: deviceForm.value.hostname,
-    fqdn: deviceForm.value.fqdn,
-    port: deviceForm.value.port,
-    device_type: deviceForm.value.device_type,
-    os_type: deviceForm.value.os_type,
-    connection_type: deviceForm.value.connection_type,
-    credential: deviceForm.value.credential,
-    host_key: deviceForm.value.host_key,
-    tags: deviceForm.value.tagsRaw.split(',').map(t => t.trim()).filter(Boolean),
-    notes: deviceForm.value.notes,
-    is_active: deviceForm.value.is_active,
-  }
+  const payload = { name: deviceForm.value.name, hostname: deviceForm.value.hostname, fqdn: deviceForm.value.fqdn, port: deviceForm.value.port, device_type: deviceForm.value.device_type, os_type: deviceForm.value.os_type, connection_type: deviceForm.value.connection_type, credential: deviceForm.value.credential, host_key: deviceForm.value.host_key, tags: deviceForm.value.tagsRaw.split(',').map(t => t.trim()).filter(Boolean), notes: deviceForm.value.notes, is_active: deviceForm.value.is_active }
   if (deviceForm.value.username) payload.username = deviceForm.value.username
   if (deviceForm.value.password) payload.password = deviceForm.value.password
-
   try {
-    if (deviceForm.value.id) {
-      await devStore.updateDevice(deviceForm.value.id, payload)
-    } else {
-      await devStore.createDevice(payload)
-    }
+    if (deviceForm.value.id) await devStore.updateDevice(deviceForm.value.id, payload)
+    else await devStore.createDevice(payload)
     deviceForm.value.show = false
   } catch (e) {
     deviceForm.value.error = JSON.stringify(e.response?.data ?? 'Save failed.')
@@ -531,31 +449,25 @@ async function removeDevice(id) {
 
 async function collect(device) {
   collecting.value = device.id
-  testResult.value = null
   try {
     const { data } = await api.post(`/devices/${device.id}/collect/`)
-    testResult.value = { ok: true, msg: `✓ ${device.name}: ${data.detail}` }
+    showSnack(true, `✓ ${device.name}: ${data.detail}`)
   } catch (e) {
-    const detail = e.response?.data?.detail ?? 'Failed to start collection.'
-    testResult.value = { ok: false, msg: `✗ ${device.name}: ${detail}` }
+    showSnack(false, `✗ ${device.name}: ${e.response?.data?.detail ?? 'Failed to start collection.'}`)
   } finally {
     collecting.value = null
-    setTimeout(() => { testResult.value = null }, 6000)
   }
 }
 
 async function testConn(device) {
   testing.value = device.id
-  testResult.value = null
   try {
     const { data } = await api.post(`/devices/${device.id}/test-connection/`)
-    testResult.value = { ok: true, msg: `✓ ${device.name}: ${data.detail}` }
+    showSnack(true, `✓ ${device.name}: ${data.detail}`)
   } catch (e) {
-    const detail = e.response?.data?.detail ?? 'Connection failed.'
-    testResult.value = { ok: false, msg: `✗ ${device.name}: ${detail}` }
+    showSnack(false, `✗ ${device.name}: ${e.response?.data?.detail ?? 'Connection failed.'}`)
   } finally {
     testing.value = null
-    setTimeout(() => { testResult.value = null }, 6000)
   }
 }
 
@@ -565,38 +477,21 @@ async function testConnInModal() {
   try {
     let data
     if (deviceForm.value.id) {
-      // Saved device — use stored credentials
       ;({ data } = await api.post(`/devices/${deviceForm.value.id}/test-connection/`))
     } else {
-      // New device — send form fields inline
-      ;({ data } = await api.post('/devices/test-connection/', {
-        connection_type: deviceForm.value.connection_type,
-        hostname:        deviceForm.value.hostname,
-        port:            deviceForm.value.port,
-        host_key:        deviceForm.value.host_key,
-        credential:      deviceForm.value.credential,
-        username:        deviceForm.value.username,
-        password:        deviceForm.value.password,
-      }))
+      ;({ data } = await api.post('/devices/test-connection/', { connection_type: deviceForm.value.connection_type, hostname: deviceForm.value.hostname, port: deviceForm.value.port, host_key: deviceForm.value.host_key, credential: deviceForm.value.credential, username: deviceForm.value.username, password: deviceForm.value.password }))
     }
     deviceForm.value.testResult = { ok: true, detail: data.detail }
   } catch (e) {
     const resp = e.response?.data
-    const detail = resp?.detail ?? resp?.error ?? JSON.stringify(resp) ?? 'Connection failed — no detail returned.'
-    deviceForm.value.testResult = { ok: false, detail }
+    deviceForm.value.testResult = { ok: false, detail: resp?.detail ?? resp?.error ?? JSON.stringify(resp) ?? 'Connection failed.' }
   } finally {
     deviceForm.value.testing = false
   }
 }
 
-// ── init ───────────────────────────────────────────────────────────────────
 onMounted(() => {
   devStore.fetchDevices()
   loadCredentials()
 })
 </script>
-
-<style scoped>
-.clickable-row { cursor: pointer; }
-.clickable-row:hover td { background: #f5f9ff; }
-</style>

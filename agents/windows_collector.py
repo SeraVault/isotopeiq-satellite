@@ -253,7 +253,6 @@ def empty_canonical():
         'users': [],
         'groups': [],
         'packages': [],
-        'installed_software': [],
         'services': [],
         'filesystem': [],
         'security': {
@@ -1012,7 +1011,7 @@ def _flush_fw_rule(buf, output, direction_map, action_map):
 
 
 # ---------------------------------------------------------------------------
-# sysctl (registry security settings)
+# sysctl — Windows equivalent: registry security/kernel settings (LSA, UAC, etc.)
 # ---------------------------------------------------------------------------
 
 def collect_sysctl(output):

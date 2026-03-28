@@ -1,90 +1,92 @@
 <template>
   <div>
-    <h1>Policies</h1>
-    <button class="btn-primary" @click="openNew" style="margin-bottom:1rem">+ New Policy</button>
-
-    <div v-if="loading">Loading…</div>
-    <table v-else-if="policies.length">
-      <thead>
-        <tr><th>Name</th><th>Schedule</th><th>Devices</th><th>Active</th><th>Actions</th></tr>
-      </thead>
-      <tbody>
-        <tr v-for="p in policies" :key="p.id">
-          <td>{{ p.name }}</td>
-          <td><code>{{ p.cron_schedule }}</code></td>
-          <td>{{ p.devices?.length ?? 0 }}</td>
-          <td>{{ p.is_active ? 'Yes' : 'No' }}</td>
-          <td>
-            <button @click="runNow(p.id)" :disabled="running === p.id">
-              {{ running === p.id ? 'Queued…' : 'Run Now' }}
-            </button>
-            <button @click="deployNow(p)" :disabled="!p.deployment_script || deploying === p.id">Deploy</button>
-            <button @click="openEdit(p)">Edit</button>
-            <button class="btn-danger" @click="remove(p.id)">Delete</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <p v-else>No policies yet.</p>
-
-    <!-- Policy form modal -->
-    <div v-if="showForm" class="modal">
-      <div class="modal-box modal-md">
-        <h2>{{ form.id ? 'Edit' : 'New' }} Policy</h2>
-        <form @submit.prevent="save">
-          <label>Name <input v-model="form.name" required /></label>
-          <label>Description <textarea v-model="form.description" rows="2"></textarea></label>
-          <label>
-            Cron Schedule
-            <input v-model="form.cron_schedule" placeholder="0 2 * * *" />
-            <small>minute hour dom month dow (UTC)</small>
-          </label>
-          <label>
-            Delay Between Devices (seconds)
-            <input v-model.number="form.delay_between_devices" type="number" min="0" />
-          </label>
-
-          <label>
-            Collection Script
-            <select v-model="form.collection_script">
-              <option :value="null">— none —</option>
-              <option v-for="s in collectionScripts" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
-          </label>
-          <label>
-            Parser Script
-            <select v-model="form.parser_script">
-              <option :value="null">— none —</option>
-              <option v-for="s in parserScripts" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
-          </label>
-          <label>
-            Deployment Script
-            <select v-model="form.deployment_script">
-              <option :value="null">— none —</option>
-              <option v-for="s in deploymentScripts" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
-          </label>
-
-          <fieldset style="margin-top:.75rem;padding:.75rem;border:1px solid #ccc;border-radius:4px">
-            <legend style="padding:0 .4rem">Devices</legend>
-            <div v-for="d in allDevices" :key="d.id" style="margin-bottom:.3rem">
-              <label style="display:flex;align-items:center;gap:.5rem;margin:0">
-                <input type="checkbox" :value="d.id" v-model="form.devices" />
-                {{ d.name }} ({{ d.hostname }})
-              </label>
-            </div>
-            <p v-if="!allDevices.length" style="color:#888;font-size:.85rem">No devices defined.</p>
-          </fieldset>
-
-          <label style="margin-top:.75rem"><input v-model="form.is_active" type="checkbox" /> Active</label>
-          <div style="margin-top:1rem">
-            <button class="btn-primary" type="submit">Save</button>
-            <button type="button" @click="cancel">Cancel</button>
-          </div>
-        </form>
-      </div>
+    <div class="d-flex justify-space-between align-center mb-5">
+      <div class="text-h5 font-weight-bold">Policies</div>
+      <v-btn color="primary" prepend-icon="mdi-plus" @click="openNew">New Policy</v-btn>
     </div>
+
+    <div v-if="loading" class="text-medium-emphasis pa-4">Loading…</div>
+    <v-card v-else-if="policies.length" rounded="lg" elevation="1">
+      <v-table density="compact">
+        <thead>
+          <tr><th>Name</th><th>Schedule</th><th>Devices</th><th>Active</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in policies" :key="p.id">
+            <td class="font-weight-medium">{{ p.name }}</td>
+            <td><code>{{ p.cron_schedule }}</code></td>
+            <td>{{ p.devices?.length ?? 0 }}</td>
+            <td>
+              <v-chip :color="p.is_active ? 'success' : 'default'" size="x-small" label>
+                {{ p.is_active ? 'Yes' : 'No' }}
+              </v-chip>
+            </td>
+            <td>
+              <v-btn size="x-small" variant="tonal" class="mr-1" :loading="running === p.id" @click="runNow(p.id)">Run Now</v-btn>
+              <v-btn size="x-small" variant="tonal" class="mr-1" :disabled="!p.deployment_script" :loading="deploying === p.id" @click="deployNow(p)">Deploy</v-btn>
+              <v-btn size="x-small" variant="tonal" class="mr-1" @click="openEdit(p)">Edit</v-btn>
+              <v-btn size="x-small" color="error" variant="tonal" @click="remove(p.id)">Delete</v-btn>
+            </td>
+          </tr>
+        </tbody>
+      </v-table>
+    </v-card>
+    <div v-else class="pa-6 text-center text-medium-emphasis">No policies yet.</div>
+
+    <!-- Policy form dialog -->
+    <v-dialog v-model="showForm" max-width="600" scrollable>
+      <v-card rounded="lg">
+        <v-card-title>{{ form.id ? 'Edit' : 'New' }} Policy</v-card-title>
+        <v-card-text>
+          <v-row dense>
+            <v-col cols="12">
+              <v-text-field v-model="form.name" label="Name" required />
+            </v-col>
+            <v-col cols="12">
+              <v-textarea v-model="form.description" label="Description" rows="2" />
+            </v-col>
+            <v-col cols="12" sm="8">
+              <v-text-field v-model="form.cron_schedule" label="Cron Schedule" placeholder="0 2 * * *" hint="minute hour dom month dow (UTC)" persistent-hint />
+            </v-col>
+            <v-col cols="12" sm="4">
+              <v-text-field v-model.number="form.delay_between_devices" label="Delay Between Devices (s)" type="number" min="0" />
+            </v-col>
+            <v-col cols="12" sm="4">
+              <v-select v-model="form.collection_script" label="Collection Script" :items="collectionScripts" item-title="name" item-value="id" clearable />
+            </v-col>
+            <v-col cols="12" sm="4">
+              <v-select v-model="form.parser_script" label="Parser Script" :items="parserScripts" item-title="name" item-value="id" clearable />
+            </v-col>
+            <v-col cols="12" sm="4">
+              <v-select v-model="form.deployment_script" label="Deployment Script" :items="deploymentScripts" item-title="name" item-value="id" clearable />
+            </v-col>
+            <v-col cols="12">
+              <div class="text-body-2 font-weight-bold mb-2">Devices</div>
+              <v-card variant="outlined" rounded="lg" class="pa-2" style="max-height:200px;overflow-y:auto">
+                <v-checkbox
+                  v-for="d in allDevices"
+                  :key="d.id"
+                  v-model="form.devices"
+                  :value="d.id"
+                  :label="`${d.name} (${d.hostname})`"
+                  density="compact"
+                  hide-details
+                />
+                <div v-if="!allDevices.length" class="text-medium-emphasis text-caption pa-2">No devices defined.</div>
+              </v-card>
+            </v-col>
+            <v-col cols="12">
+              <v-checkbox v-model="form.is_active" label="Active" density="compact" hide-details />
+            </v-col>
+          </v-row>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="cancel">Cancel</v-btn>
+          <v-btn color="primary" @click="save">Save</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 

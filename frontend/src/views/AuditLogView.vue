@@ -1,74 +1,72 @@
 <template>
   <div>
-    <h1>Audit Log</h1>
+    <div class="text-h5 font-weight-bold mb-5">Audit Log</div>
 
     <!-- Filters -->
-    <div style="display:flex;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem;align-items:flex-end">
-      <label>
-        Username
-        <input v-model="filters.username" placeholder="Filter by user" @keyup.enter="load" />
-      </label>
-      <label>
-        Action
-        <select v-model="filters.action" @change="load">
-          <option value="">All</option>
-          <option v-for="a in actions" :key="a" :value="a">{{ a }}</option>
-        </select>
-      </label>
-      <label>
-        Resource
-        <input v-model="filters.resource_type" placeholder="e.g. devices" @keyup.enter="load" />
-      </label>
-      <label>
-        From
-        <input type="datetime-local" v-model="filters.after" @change="load" />
-      </label>
-      <label>
-        To
-        <input type="datetime-local" v-model="filters.before" @change="load" />
-      </label>
-      <button @click="load">Search</button>
-      <button @click="clear">Clear</button>
-    </div>
+    <v-card rounded="lg" elevation="1" class="mb-5 pa-4">
+      <v-row dense align="end">
+        <v-col cols="12" sm="6" md="2">
+          <v-text-field v-model="filters.username" label="Username" placeholder="Filter by user" @keyup.enter="load" />
+        </v-col>
+        <v-col cols="12" sm="6" md="2">
+          <v-select v-model="filters.action" label="Action" :items="actions" clearable @update:model-value="load" />
+        </v-col>
+        <v-col cols="12" sm="6" md="2">
+          <v-text-field v-model="filters.resource_type" label="Resource" placeholder="e.g. devices" @keyup.enter="load" />
+        </v-col>
+        <v-col cols="12" sm="6" md="3">
+          <v-text-field v-model="filters.after" label="From" type="datetime-local" @change="load" />
+        </v-col>
+        <v-col cols="12" sm="6" md="3">
+          <v-text-field v-model="filters.before" label="To" type="datetime-local" @change="load" />
+        </v-col>
+        <v-col cols="12" sm="auto">
+          <v-btn color="primary" class="mr-2" @click="load">Search</v-btn>
+          <v-btn @click="clear">Clear</v-btn>
+        </v-col>
+      </v-row>
+    </v-card>
 
-    <div v-if="loading" class="text-muted">Loading…</div>
+    <div v-if="loading" class="text-medium-emphasis pa-4">Loading…</div>
     <template v-else>
-      <table>
-        <thead>
-          <tr>
-            <th>Timestamp</th>
-            <th>User</th>
-            <th>Action</th>
-            <th>Resource</th>
-            <th>Path</th>
-            <th>Status</th>
-            <th>IP</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="entry in entries" :key="entry.id">
-            <td class="text-muted" style="white-space:nowrap">{{ fmt(entry.timestamp) }}</td>
-            <td>{{ entry.username || '—' }}</td>
-            <td><span :class="`badge badge-${actionBadge(entry.action)}`">{{ entry.action }}</span></td>
-            <td>
-              <span v-if="entry.resource_type">
-                {{ entry.resource_type }}<span v-if="entry.resource_id" class="text-muted">/{{ entry.resource_id }}</span>
-              </span>
-              <span v-else class="text-muted">—</span>
-            </td>
-            <td class="text-muted" style="font-size:.8rem">{{ entry.method }} {{ entry.path }}</td>
-            <td>
-              <span v-if="entry.status_code" :class="`badge badge-${statusBadge(entry.status_code)}`">
-                {{ entry.status_code }}
-              </span>
-              <span v-else class="text-muted">—</span>
-            </td>
-            <td class="text-muted" style="font-size:.8rem">{{ entry.ip_address || '—' }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <v-card rounded="lg" elevation="1">
+        <v-table density="compact">
+          <thead>
+            <tr>
+              <th>Timestamp</th><th>User</th><th>Action</th>
+              <th>Resource</th><th>Path</th><th>Status</th><th>IP</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="entry in entries" :key="entry.id">
+              <td class="text-medium-emphasis text-caption" style="white-space:nowrap">{{ fmt(entry.timestamp) }}</td>
+              <td>{{ entry.username || '—' }}</td>
+              <td><v-chip :color="actionColor(entry.action)" size="x-small" label>{{ entry.action }}</v-chip></td>
+              <td>
+                <span v-if="entry.resource_type">
+                  {{ entry.resource_type }}<span v-if="entry.resource_id" class="text-medium-emphasis">/{{ entry.resource_id }}</span>
+                </span>
+                <span v-else class="text-medium-emphasis">—</span>
+              </td>
+              <td class="text-medium-emphasis text-caption">{{ entry.method }} {{ entry.path }}</td>
+              <td>
+                <v-chip v-if="entry.status_code" :color="statusCodeColor(entry.status_code)" size="x-small" label>
+                  {{ entry.status_code }}
+                </v-chip>
+                <span v-else class="text-medium-emphasis">—</span>
+              </td>
+              <td class="text-medium-emphasis text-caption">{{ entry.ip_address || '—' }}</td>
+            </tr>
+          </tbody>
+        </v-table>
+      </v-card>
 
-      <PaginationBar :page="page" :total-pages="totalPages" :total-count="totalCount" @go="goPage" />
+      <!-- Pagination -->
+      <div class="d-flex align-center justify-center ga-2 mt-4">
+        <v-btn size="small" variant="text" :disabled="page <= 1" @click="goPage(page - 1)">← Prev</v-btn>
+        <span class="text-caption text-medium-emphasis">Page {{ page }} of {{ totalPages }} &nbsp;({{ totalCount }} total)</span>
+        <v-btn size="small" variant="text" :disabled="page >= totalPages" @click="goPage(page + 1)">Next →</v-btn>
+      </div>
     </template>
   </div>
 </template>
@@ -76,7 +74,6 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import api from '../api'
-import PaginationBar from '../components/PaginationBar.vue'
 
 const entries = ref([])
 const loading = ref(true)
@@ -88,24 +85,20 @@ const PAGE_SIZE = 50
 const actions = ['login', 'logout', 'create', 'update', 'delete', 'action']
 
 const filters = reactive({
-  username: '',
-  action: '',
-  resource_type: '',
-  after: '',
-  before: '',
+  username: '', action: '', resource_type: '', after: '', before: '',
 })
 
 function fmt(iso) { return new Date(iso).toLocaleString() }
 
-function actionBadge(action) {
-  return { login: 'success', logout: 'pending', create: 'running', update: 'acknowledged', delete: 'failed', action: 'partial' }[action] ?? 'pending'
+function actionColor(action) {
+  return { login: 'success', logout: 'default', create: 'info', update: 'warning', delete: 'error', action: 'primary' }[action] ?? 'default'
 }
 
-function statusBadge(code) {
-  if (code >= 500) return 'failed'
-  if (code >= 400) return 'new'
+function statusCodeColor(code) {
+  if (code >= 500) return 'error'
+  if (code >= 400) return 'warning'
   if (code >= 200) return 'success'
-  return 'pending'
+  return 'default'
 }
 
 function buildParams() {
@@ -130,10 +123,7 @@ async function load() {
   }
 }
 
-function goPage(n) {
-  page.value = n
-  load()
-}
+function goPage(n) { page.value = n; load() }
 
 function clear() {
   Object.assign(filters, { username: '', action: '', resource_type: '', after: '', before: '' })

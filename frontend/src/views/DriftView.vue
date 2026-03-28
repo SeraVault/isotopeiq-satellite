@@ -1,116 +1,118 @@
 <template>
   <div>
-    <h1>Drift Events</h1>
+    <div class="text-h5 font-weight-bold mb-5">Drift Events</div>
 
-    <div class="card filter-bar">
-      <label>
-        Device
-        <select v-model="filters.device" @change="applyFilters">
-          <option value="">All</option>
-          <option v-for="d in devices" :key="d.id" :value="d.id">{{ d.name }}</option>
-        </select>
-      </label>
-      <label>
-        Status
-        <select v-model="filters.status" @change="applyFilters">
-          <option value="">All</option>
-          <option value="new">New</option>
-          <option value="acknowledged">Acknowledged</option>
-          <option value="resolved">Resolved</option>
-        </select>
-      </label>
-      <div class="filter-actions">
-        <button @click="applyFilters">Refresh</button>
-        <button @click="clearFilters">Clear</button>
-      </div>
-    </div>
+    <!-- Filters -->
+    <v-card rounded="lg" elevation="1" class="mb-5 pa-4">
+      <v-row dense align="end">
+        <v-col cols="12" sm="6" md="3">
+          <v-select v-model="filters.device" label="Device" :items="deviceItems" item-title="title" item-value="value" clearable @update:model-value="applyFilters" />
+        </v-col>
+        <v-col cols="12" sm="6" md="3">
+          <v-select v-model="filters.status" label="Status" :items="['new','acknowledged','resolved']" clearable @update:model-value="applyFilters" />
+        </v-col>
+        <v-col cols="12" sm="auto">
+          <v-btn color="primary" class="mr-2" @click="applyFilters">Refresh</v-btn>
+          <v-btn @click="clearFilters">Clear</v-btn>
+        </v-col>
+      </v-row>
+    </v-card>
 
-    <div v-if="store.loading">Loading…</div>
+    <div v-if="store.loading" class="text-medium-emphasis pa-4">Loading…</div>
     <template v-else>
-      <table v-if="store.events.length">
-        <thead>
-          <tr><th>Device</th><th>Status</th><th>Detected</th><th>Acknowledged By</th><th>Diff Keys</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="event in store.events" :key="event.id">
-            <td>{{ event.device_name ?? event.device }}</td>
-            <td><span :class="`badge badge-${event.status}`">{{ event.status }}</span></td>
-            <td>{{ new Date(event.created_at).toLocaleString() }}</td>
-            <td>
-              <span v-if="event.acknowledged_by">
-                {{ event.acknowledged_by }}
-                <span v-if="event.acknowledgement_reason" class="text-muted" style="font-size:.8rem"> — {{ event.acknowledgement_reason }}</span>
-              </span>
-              <span v-else class="text-muted">—</span>
-            </td>
-            <td>{{ Object.keys(event.diff).join(', ') || '—' }}</td>
-            <td>
-              <button @click="openDiff(event)">View Diff</button>
-              <button v-if="event.status === 'new'" @click="openAcknowledge(event)">Acknowledge</button>
-              <button v-if="event.status !== 'resolved'" @click="store.resolve(event.id)">Resolve</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="text-muted">No drift events.</p>
-      <PaginationBar :page="store.page" :total-pages="store.totalPages" :total-count="store.totalCount" @go="store.goPage" />
+      <v-card v-if="store.events.length" rounded="lg" elevation="1">
+        <v-table density="compact">
+          <thead>
+            <tr>
+              <th>Device</th><th>Status</th><th>Detected</th>
+              <th>Acknowledged By</th><th>Diff Keys</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="event in store.events" :key="event.id">
+              <td class="font-weight-medium">{{ event.device_name ?? event.device }}</td>
+              <td><v-chip :color="statusColor(event.status)" size="x-small" label>{{ event.status }}</v-chip></td>
+              <td class="text-medium-emphasis text-caption">{{ new Date(event.created_at).toLocaleString() }}</td>
+              <td>
+                <span v-if="event.acknowledged_by">
+                  {{ event.acknowledged_by }}
+                  <span v-if="event.acknowledgement_reason" class="text-medium-emphasis text-caption"> — {{ event.acknowledgement_reason }}</span>
+                </span>
+                <span v-else class="text-medium-emphasis">—</span>
+              </td>
+              <td class="text-caption text-medium-emphasis">{{ Object.keys(event.diff || {}).join(', ') || '—' }}</td>
+              <td>
+                <v-btn size="x-small" variant="tonal" class="mr-1" @click="openDiff(event)">View Diff</v-btn>
+                <v-btn v-if="event.status === 'new'" size="x-small" variant="tonal" @click="openAcknowledge(event)">Acknowledge</v-btn>
+              </td>
+            </tr>
+          </tbody>
+        </v-table>
+      </v-card>
+      <div v-else class="pa-6 text-center text-medium-emphasis">No drift events.</div>
+
+      <!-- Pagination -->
+      <div class="d-flex align-center justify-center ga-2 mt-4">
+        <v-btn size="small" variant="text" :disabled="store.page <= 1" @click="store.goPage(store.page - 1)">← Prev</v-btn>
+        <span class="text-caption text-medium-emphasis">Page {{ store.page }} of {{ store.totalPages }} &nbsp;({{ store.totalCount }} total)</span>
+        <v-btn size="small" variant="text" :disabled="store.page >= store.totalPages" @click="store.goPage(store.page + 1)">Next →</v-btn>
+      </div>
     </template>
 
-    <!-- Diff detail modal -->
-    <div v-if="selected" class="modal">
-      <div class="modal-box modal-xl">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:.75rem">
+    <!-- Diff detail dialog -->
+    <v-dialog v-model="diffOpen" max-width="1100" scrollable>
+      <v-card v-if="selected" rounded="lg">
+        <v-card-title class="d-flex justify-space-between align-center">
           <div>
-            <h2 style="margin:0">Drift — {{ selected.device_name ?? selected.device }}</h2>
-            <p style="margin:.25rem 0 0;color:#666;font-size:.85rem">
-              <span :class="`badge badge-${selected.status}`">{{ selected.status }}</span>
-              &nbsp; {{ new Date(selected.created_at).toLocaleString() }}
-            </p>
+            <span>Drift — {{ selected.device_name ?? selected.device }}</span>
+            <v-chip :color="statusColor(selected.status)" size="x-small" label class="ml-2">{{ selected.status }}</v-chip>
           </div>
-          <button @click="selected = null">✕ Close</button>
-        </div>
-        <div v-if="diffLoading" class="text-muted" style="padding:1rem 0">Loading diff data…</div>
-        <DriftDiffViewer v-else :baseline="selected.baseline_data" :current="selected.result_data" :volatile-fields="store.volatileFields" />
-      </div>
-    </div>
+          <v-btn icon="mdi-close" variant="text" size="small" @click="diffOpen = false" />
+        </v-card-title>
+        <v-card-subtitle>{{ new Date(selected.created_at).toLocaleString() }}</v-card-subtitle>
+        <v-card-text>
+          <div v-if="diffLoading" class="text-medium-emphasis pa-4">Loading diff data…</div>
+          <DriftDiffViewer v-else :baseline="selected.baseline_data" :current="selected.result_data" :volatile-fields="store.volatileFields" />
+        </v-card-text>
+      </v-card>
+    </v-dialog>
 
-    <!-- Acknowledge modal -->
-    <div v-if="acknowledging" class="modal">
-      <div class="modal-box modal-sm">
-        <h2>Acknowledge Drift</h2>
-        <p class="text-muted" style="margin:.25rem 0 .75rem">Device: <strong>{{ acknowledging.device_name ?? acknowledging.device }}</strong></p>
-        <label>
-          Reason <span style="color:#c00">*</span>
-          <textarea
-            v-model="ackReason"
-            rows="4"
-            placeholder="Explain why this drift is expected or acceptable…"
-            style="width:100%;margin-top:.35rem;resize:vertical"
-          ></textarea>
-        </label>
-        <p v-if="ackError" class="error" style="margin-top:.4rem">{{ ackError }}</p>
-        <div style="margin-top:1rem;display:flex;gap:.5rem">
-          <button class="btn-primary" :disabled="ackSaving" @click="submitAcknowledge">
-            {{ ackSaving ? 'Saving…' : 'Acknowledge' }}
-          </button>
-          <button @click="acknowledging = null; ackReason = ''; ackError = ''">Cancel</button>
-        </div>
-      </div>
-    </div>
+    <!-- Acknowledge dialog -->
+    <v-dialog v-model="ackOpen" max-width="460">
+      <v-card rounded="lg">
+        <v-card-title>Acknowledge Drift</v-card-title>
+        <v-card-subtitle v-if="acknowledging">Device: {{ acknowledging.device_name ?? acknowledging.device }}</v-card-subtitle>
+        <v-card-text>
+          <v-alert v-if="ackError" type="error" variant="tonal" density="compact" class="mb-3">{{ ackError }}</v-alert>
+          <v-textarea v-model="ackReason" label="Reason *" rows="4" placeholder="Explain why this drift is expected or acceptable…" />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="ackOpen = false">Cancel</v-btn>
+          <v-btn color="primary" :loading="ackSaving" @click="submitAcknowledge">Acknowledge</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useDriftStore } from '../stores/drift'
 import api from '../api'
 import DriftDiffViewer from '../components/DriftDiffViewer.vue'
-import PaginationBar from '../components/PaginationBar.vue'
 
 const store = useDriftStore()
 const devices = ref([])
+const deviceItems = computed(() => devices.value.map(d => ({ title: d.name, value: d.id })))
 
-const filters = reactive({ device: '', status: '' })
+const filters = reactive({ device: null, status: '' })
+
+function statusColor(status) {
+  return { success: 'success', resolved: 'success', failed: 'error', running: 'info',
+           pending: 'warning', new: 'error', acknowledged: 'warning', partial: 'warning',
+           cancelled: 'default' }[status] ?? 'default'
+}
 
 function applyFilters() {
   store.page = 1
@@ -121,16 +123,18 @@ function applyFilters() {
 }
 
 function clearFilters() {
-  Object.assign(filters, { device: '', status: '' })
+  Object.assign(filters, { device: null, status: '' })
   store.page = 1
   store.fetchEvents()
 }
 
 const selected = ref(null)
+const diffOpen = ref(false)
 const diffLoading = ref(false)
 
 async function openDiff(event) {
   selected.value = { ...event, baseline_data: null, result_data: null }
+  diffOpen.value = true
   diffLoading.value = true
   try {
     const [baselineRes, resultRes] = await Promise.all([
@@ -150,6 +154,7 @@ async function openDiff(event) {
 }
 
 const acknowledging = ref(null)
+const ackOpen = ref(false)
 const ackReason = ref('')
 const ackError = ref('')
 const ackSaving = ref(false)
@@ -158,17 +163,16 @@ function openAcknowledge(event) {
   acknowledging.value = event
   ackReason.value = ''
   ackError.value = ''
+  ackOpen.value = true
 }
 
 async function submitAcknowledge() {
-  if (!ackReason.value.trim()) {
-    ackError.value = 'A reason is required.'
-    return
-  }
+  if (!ackReason.value.trim()) { ackError.value = 'A reason is required.'; return }
   ackSaving.value = true
   ackError.value = ''
   try {
     await store.acknowledge(acknowledging.value.id, ackReason.value.trim())
+    ackOpen.value = false
     acknowledging.value = null
     ackReason.value = ''
   } catch (e) {
@@ -184,39 +188,3 @@ onMounted(async () => {
   store.fetchEvents()
 })
 </script>
-
-<style scoped>
-.filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .75rem;
-  align-items: flex-end;
-  margin-bottom: 1.25rem;
-  padding: 1rem 1.25rem;
-}
-.filter-bar label {
-  display: flex;
-  flex-direction: column;
-  font-size: .8rem;
-  font-weight: 600;
-  color: #555;
-  gap: .25rem;
-  margin: 0;
-}
-.filter-bar select,
-.filter-bar input {
-  padding: .35rem .6rem;
-  border: 1px solid #d0d0d0;
-  border-radius: 5px;
-  font-size: .875rem;
-  background: #fff;
-  min-width: 130px;
-  margin: 0;
-}
-.filter-actions {
-  display: flex;
-  gap: .4rem;
-  align-items: flex-end;
-  padding-bottom: 1px;
-}
-</style>
