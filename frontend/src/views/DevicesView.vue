@@ -16,38 +16,82 @@
     <!-- DEVICES TAB                                                        -->
     <!-- ══════════════════════════════════════════════════════════════════ -->
     <template v-if="activeTab === 'Devices'">
-      <button class="btn-primary" @click="openNewDevice" style="margin-bottom:1rem">+ Add Device</button>
+      <div class="card filter-bar">
+        <label>
+          Search
+          <input v-model="deviceSearch" placeholder="name, hostname, FQDN…" @keyup.enter="applyDeviceFilters" />
+        </label>
+        <label>
+          OS
+          <select v-model="deviceOsType" @change="applyDeviceFilters">
+            <option value="">All</option>
+            <option value="linux">Linux</option>
+            <option value="windows">Windows</option>
+            <option value="macos">macOS</option>
+            <option value="network">Network</option>
+          </select>
+        </label>
+        <label>
+          Connection
+          <select v-model="deviceConnType" @change="applyDeviceFilters">
+            <option value="">All</option>
+            <option value="ssh">SSH</option>
+            <option value="winrm">WinRM</option>
+            <option value="telnet">Telnet</option>
+            <option value="push">Push</option>
+          </select>
+        </label>
+        <label>
+          Active
+          <select v-model="deviceActive" @change="applyDeviceFilters">
+            <option value="">All</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </label>
+        <div class="filter-actions">
+          <button class="btn-primary" @click="applyDeviceFilters">Search</button>
+          <button @click="clearDeviceFilters">Clear</button>
+          <button class="btn-primary" @click="openNewDevice">+ Add Device</button>
+        </div>
+      </div>
 
       <div v-if="devStore.loading">Loading…</div>
-      <table v-else>
-        <thead>
-          <tr>
-            <th>Name</th><th>Hostname</th><th>Type</th><th>OS</th>
-            <th>Connection</th><th>Credential</th><th>Active</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="d in devStore.devices" :key="d.id" class="clickable-row" @click="openViewer(d)">
-            <td>{{ d.name }}</td>
-            <td>{{ d.hostname }}</td>
-            <td>{{ d.device_type }}</td>
-            <td>{{ d.os_type }}</td>
-            <td>{{ d.connection_type }}</td>
-            <td>{{ credName(d.credential) }}</td>
-            <td>{{ d.is_active ? 'Yes' : 'No' }}</td>
-            <td @click.stop>
-              <button @click="testConn(d)" :disabled="testing === d.id">
-                {{ testing === d.id ? 'Testing…' : 'Test' }}
-              </button>
-              <button @click="openEditDevice(d)">Edit</button>
-              <button class="btn-danger" @click="removeDevice(d.id)">Delete</button>
-            </td>
-          </tr>
-          <tr v-if="!devStore.devices.length">
-            <td colspan="8" style="color:#888;text-align:center">No devices yet.</td>
-          </tr>
-        </tbody>
-      </table>
+      <template v-else>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th><th>Hostname</th><th>Type</th><th>OS</th>
+              <th>Connection</th><th>Credential</th><th>Active</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="d in devStore.devices" :key="d.id" class="clickable-row" @click="openViewer(d)">
+              <td>{{ d.name }}</td>
+              <td>{{ d.hostname }}</td>
+              <td>{{ d.device_type }}</td>
+              <td>{{ d.os_type }}</td>
+              <td>{{ d.connection_type }}</td>
+              <td>{{ credName(d.credential) }}</td>
+              <td>{{ d.is_active ? 'Yes' : 'No' }}</td>
+              <td @click.stop>
+                <button @click="testConn(d)" :disabled="testing === d.id">
+                  {{ testing === d.id ? 'Testing…' : 'Test' }}
+                </button>
+                <button class="btn-primary" @click="collect(d)" :disabled="collecting === d.id">
+                  {{ collecting === d.id ? 'Collecting…' : 'Collect' }}
+                </button>
+                <button @click="openEditDevice(d)">Edit</button>
+                <button class="btn-danger" @click="removeDevice(d.id)">Delete</button>
+              </td>
+            </tr>
+            <tr v-if="!devStore.devices.length">
+              <td colspan="8" style="color:#888;text-align:center">No devices found.</td>
+            </tr>
+          </tbody>
+        </table>
+        <PaginationBar :page="devStore.page" :total-pages="devStore.totalPages" :total-count="devStore.totalCount" @go="devStore.goPage" />
+      </template>
 
       <!-- Test-connection result toast -->
       <div v-if="testResult" :style="`margin-top:.75rem;padding:.6rem 1rem;border-radius:4px;background:${testResult.ok ? '#d4edda' : '#f8d7da'};color:${testResult.ok ? '#155724' : '#721c24'}`">
@@ -284,8 +328,38 @@ import { ref, onMounted } from 'vue'
 import { useDevicesStore } from '../stores/devices'
 import api from '../api'
 import CanonicalViewer from '../components/CanonicalViewer.vue'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const devStore = useDevicesStore()
+
+// ── device filters ──────────────────────────────────────────────────────────
+const deviceSearch  = ref('')
+const deviceOsType  = ref('')
+const deviceConnType = ref('')
+const deviceActive  = ref('')
+
+function deviceFilterParams() {
+  const p = {}
+  if (deviceSearch.value)   p.search          = deviceSearch.value
+  if (deviceOsType.value)   p.os_type         = deviceOsType.value
+  if (deviceConnType.value) p.connection_type  = deviceConnType.value
+  if (deviceActive.value)   p.is_active        = deviceActive.value
+  return p
+}
+
+function applyDeviceFilters() {
+  devStore.page = 1
+  devStore.fetchDevices(deviceFilterParams())
+}
+
+function clearDeviceFilters() {
+  deviceSearch.value = ''
+  deviceOsType.value = ''
+  deviceConnType.value = ''
+  deviceActive.value = ''
+  devStore.page = 1
+  devStore.fetchDevices()
+}
 
 // ── tab ────────────────────────────────────────────────────────────────────
 const activeTab = ref('Devices')
@@ -374,6 +448,7 @@ async function removeCred(id) {
 // ── devices ────────────────────────────────────────────────────────────────
 const testing = ref(null)
 const testResult = ref(null)
+const collecting = ref(null)
 
 const DEFAULT_PORTS = { ssh: 22, telnet: 23, winrm: 5985, https: 443, push: null }
 const TESTABLE_TYPES = new Set(['ssh', 'telnet', 'winrm'])
@@ -452,6 +527,21 @@ async function saveDevice() {
 
 async function removeDevice(id) {
   if (confirm('Delete this device?')) await devStore.deleteDevice(id)
+}
+
+async function collect(device) {
+  collecting.value = device.id
+  testResult.value = null
+  try {
+    const { data } = await api.post(`/devices/${device.id}/collect/`)
+    testResult.value = { ok: true, msg: `✓ ${device.name}: ${data.detail}` }
+  } catch (e) {
+    const detail = e.response?.data?.detail ?? 'Failed to start collection.'
+    testResult.value = { ok: false, msg: `✗ ${device.name}: ${detail}` }
+  } finally {
+    collecting.value = null
+    setTimeout(() => { testResult.value = null }, 6000)
+  }
 }
 
 async function testConn(device) {

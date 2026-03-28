@@ -6,15 +6,20 @@ from rest_framework.response import Response
 from core.permissions import IsAdminOrReadOnly
 from .filters import JobFilter
 from .models import Job, DeviceJobResult
-from .serializers import JobSerializer, DeviceJobResultSerializer
+from .serializers import JobSerializer, JobListSerializer, DeviceJobResultSerializer
 
 
 class JobViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
-    queryset = Job.objects.prefetch_related('device_results__device').all()
+    queryset = Job.objects.prefetch_related('device_results__device').select_related('policy').all()
     serializer_class = JobSerializer
     filterset_class = JobFilter
     ordering_fields = ['created_at', 'started_at']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return JobListSerializer
+        return JobSerializer
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):

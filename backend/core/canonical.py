@@ -574,7 +574,7 @@ CANONICAL_SCHEMA = {
         'users', 'groups',
         'installed_software', 'packages',
         'services', 'filesystem',
-        'security', 'custom',
+        'security',
     ],
     'properties': {
         # ── SRD-required sections ─────────────────────────────────────────
@@ -667,6 +667,10 @@ VOLATILE_FIELDS: dict = {
     # PID is volatile; port, process_name, protocol, user are static
     'listening_services': {
         'items': {'pid'},
+    },
+    # open_ports is a runtime snapshot that changes with connections/services
+    'network': {
+        'fields': {'open_ports'},
     },
     # NTP sync state is volatile; configured servers are static
     'os': {

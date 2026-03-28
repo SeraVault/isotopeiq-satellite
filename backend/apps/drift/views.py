@@ -47,6 +47,18 @@ class DriftEventViewSet(viewsets.ReadOnlyModelViewSet):
         event.acknowledged_at = timezone.now()
         event.acknowledgement_reason = reason
         event.save()
+
+        # Promote the collection result that triggered this drift event
+        # as the new official baseline for the device.
+        result = event.job_result
+        if result and result.parsed_output:
+            from apps.baselines.models import Baseline
+            Baseline.objects.filter(device=event.device).update(
+                parsed_data=result.parsed_output,
+                source_result=result,
+                established_by=request.user.username,
+            )
+
         return Response(DriftEventSerializer(event).data)
 
     @action(detail=True, methods=['post'])

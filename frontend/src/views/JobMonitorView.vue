@@ -47,38 +47,48 @@
     </div>
 
     <div v-if="store.loading" class="text-muted" style="padding:1rem 0">Loading…</div>
-    <table v-else-if="store.jobs.length">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Policy</th>
-          <th>Triggered By</th>
-          <th>Status</th>
-          <th>Started</th>
-          <th>Duration</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="job in store.jobs" :key="job.id">
-          <td class="text-muted">{{ job.id }}</td>
-          <td>{{ job.policy_name ?? job.policy ?? '—' }}</td>
-          <td>{{ job.triggered_by }}</td>
-          <td><span :class="`badge badge-${job.status}`">{{ job.status }}</span></td>
-          <td>{{ job.started_at ? fmt(job.started_at) : '—' }}</td>
-          <td>{{ duration(job) }}</td>
-          <td>
-            <button @click="openDetail(job)">Details</button>
-            <button
-              v-if="job.status === 'running' || job.status === 'pending'"
-              class="btn-danger"
-              @click="cancel(job)"
-            >Cancel</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <p v-else class="text-muted">No jobs found.</p>
+    <template v-else>
+      <table v-if="store.jobs.length">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Policy</th>
+            <th>Triggered By</th>
+            <th>Status</th>
+            <th>Started</th>
+            <th>Duration</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="job in store.jobs" :key="job.id">
+            <td class="text-muted">{{ job.id }}</td>
+            <td>
+              {{ job.policy_name ?? (job.policy ? `Policy ${job.policy}` : '—') }}
+            </td>
+            <td>{{ job.triggered_by }}</td>
+            <td>
+              <span :class="`badge badge-${job.status}`">{{ job.status }}</span>
+              <span v-if="job.status === 'running' && job.current_device" class="text-muted" style="font-size:.78rem;margin-left:.4rem">
+                ↳ {{ job.current_device }}
+              </span>
+            </td>
+            <td>{{ job.started_at ? fmt(job.started_at) : '—' }}</td>
+            <td>{{ duration(job) }}</td>
+            <td>
+              <button @click="openDetail(job)">Details</button>
+              <button
+                v-if="job.status === 'running' || job.status === 'pending'"
+                class="btn-danger"
+                @click="cancel(job)"
+              >Cancel</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="text-muted">No jobs found.</p>
+      <PaginationBar :page="store.page" :total-pages="store.totalPages" :total-count="store.totalCount" @go="store.goPage" />
+    </template>
 
     <!-- Job detail modal -->
     <div v-if="selected" class="modal">
@@ -149,6 +159,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useJobsStore } from '../stores/jobs'
 import api from '../api'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const store = useJobsStore()
 const selected = ref(null)
@@ -174,9 +185,10 @@ function buildParams() {
   return p
 }
 
-function applyFilters() { store.fetchJobs(buildParams()) }
+function applyFilters() { store.page = 1; store.fetchJobs(buildParams()) }
 function clearFilters() {
   Object.assign(filters, { device: '', policy: '', script: '', status: '', created_after: '', created_before: '' })
+  store.page = 1
   store.fetchJobs()
 }
 

@@ -68,12 +68,7 @@
         </tbody>
       </table>
 
-      <!-- Pagination -->
-      <div v-if="totalPages > 1" style="display:flex;align-items:center;gap:.75rem;margin-top:1rem">
-        <button :disabled="page <= 1" @click="goPage(page - 1)">← Prev</button>
-        <span class="text-muted">Page {{ page }} of {{ totalPages }}</span>
-        <button :disabled="page >= totalPages" @click="goPage(page + 1)">Next →</button>
-      </div>
+      <PaginationBar :page="page" :total-pages="totalPages" :total-count="totalCount" @go="goPage" />
     </template>
   </div>
 </template>
@@ -81,11 +76,13 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import api from '../api'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const entries = ref([])
 const loading = ref(true)
 const page = ref(1)
 const totalPages = ref(1)
+const totalCount = ref(0)
 const PAGE_SIZE = 50
 
 const actions = ['login', 'logout', 'create', 'update', 'delete', 'action']
@@ -126,8 +123,8 @@ async function load() {
   try {
     const { data } = await api.get('/audit/', { params: buildParams() })
     entries.value = data.results ?? data
-    const count = data.count ?? entries.value.length
-    totalPages.value = Math.max(1, Math.ceil(count / PAGE_SIZE))
+    totalCount.value = data.count ?? entries.value.length
+    totalPages.value = Math.max(1, Math.ceil(totalCount.value / PAGE_SIZE))
   } finally {
     loading.value = false
   }

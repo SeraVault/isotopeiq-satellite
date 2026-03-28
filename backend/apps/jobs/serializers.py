@@ -7,10 +7,15 @@ class DeviceJobResultSerializer(serializers.ModelSerializer):
     # display raw data, parsed data, and drift results in a single request
     # (SRD §15.4).
     drift_event = serializers.SerializerMethodField()
+    device_name = serializers.CharField(source='device.name', read_only=True)
 
     class Meta:
         model = DeviceJobResult
-        fields = '__all__'
+        fields = [
+            'id', 'job', 'device', 'device_name', 'status',
+            'raw_output', 'parsed_output', 'error_message',
+            'started_at', 'finished_at', 'drift_event',
+        ]
 
     def get_drift_event(self, obj):
         from apps.drift.serializers import DriftEventSerializer
@@ -19,9 +24,34 @@ class DeviceJobResultSerializer(serializers.ModelSerializer):
         return DriftEventSerializer(event).data if event else None
 
 
+class DeviceJobResultListSerializer(serializers.ModelSerializer):
+    """Lightweight result serializer for the job list (no raw/parsed output)."""
+    device_name = serializers.CharField(source='device.name', read_only=True)
+
+    class Meta:
+        model = DeviceJobResult
+        fields = ['id', 'device', 'device_name', 'status', 'started_at', 'finished_at', 'error_message']
+
+
 class JobSerializer(serializers.ModelSerializer):
     device_results = DeviceJobResultSerializer(many=True, read_only=True)
+    policy_name = serializers.CharField(source='policy.name', read_only=True, default=None)
 
     class Meta:
         model = Job
-        fields = '__all__'
+        fields = [
+            'id', 'policy', 'policy_name', 'triggered_by', 'status',
+            'started_at', 'finished_at', 'created_at', 'celery_task_id',
+            'device_results',
+        ]
+
+
+class JobListSerializer(serializers.ModelSerializer):
+    """Lightweight job serializer for the list endpoint."""
+    policy_name = serializers.CharField(source='policy.name', read_only=True, default=None)
+    device_results = DeviceJobResultListSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Job
+        fields = ['id', 'policy', 'policy_name', 'triggered_by', 'status',
+                  'started_at', 'finished_at', 'created_at', 'device_results']

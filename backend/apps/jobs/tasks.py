@@ -76,7 +76,13 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
         started_at=timezone.now(),
         celery_task_id=self.request.id or '',
     )
-    _broadcast({'job_id': job.id, 'status': 'running'})
+    _broadcast({
+        'job_id': job.id,
+        'status': 'running',
+        'policy_name': policy.name,
+        'current_device': None,
+        'device_result': None,
+    })
 
     overall_ok = True
     devices = list(policy.devices.filter(is_active=True, connection_type__in=_SUPPORTED_CONNECTION_TYPES))
@@ -87,6 +93,21 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
             status='running',
             started_at=timezone.now(),
         )
+        _broadcast({
+            'job_id': job.id,
+            'status': 'running',
+            'policy_name': policy.name,
+            'current_device': device.name,
+            'device_result': {
+                'id': result.id,
+                'device': device.id,
+                'device_name': device.name,
+                'status': 'running',
+                'started_at': result.started_at.isoformat(),
+                'finished_at': None,
+                'error_message': '',
+            },
+        })
         try:
             collector = _get_collector(device)
             raw_output = collector.run(render_script(policy.collection_script.content, device))
@@ -105,6 +126,22 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
             result.finished_at = timezone.now()
             result.save()
 
+        _broadcast({
+            'job_id': job.id,
+            'status': 'running',
+            'policy_name': policy.name,
+            'current_device': device.name,
+            'device_result': {
+                'id': result.id,
+                'device': device.id,
+                'device_name': device.name,
+                'status': result.status,
+                'started_at': result.started_at.isoformat() if result.started_at else None,
+                'finished_at': result.finished_at.isoformat() if result.finished_at else None,
+                'error_message': result.error_message,
+            },
+        })
+
         if result.status == 'success':
             try:
                 _apply_baseline_and_drift(device, result)
@@ -118,4 +155,10 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
     job.status = 'success' if overall_ok else ('partial' if job.device_results.filter(status='success').exists() else 'failed')
     job.finished_at = timezone.now()
     job.save()
-    _broadcast({'job_id': job.id, 'status': job.status})
+    _broadcast({
+        'job_id': job.id,
+        'status': job.status,
+        'policy_name': policy.name,
+        'current_device': None,
+        'device_result': None,
+    })

@@ -24,6 +24,30 @@ class DeviceViewSet(viewsets.ModelViewSet):
     filterset_fields = ['device_type', 'os_type', 'connection_type', 'is_active']
     ordering_fields = ['name', 'created_at']
 
+    @action(detail=True, methods=['post'])
+    def collect(self, request, pk=None):
+        """Trigger an immediate collection for this device using one of its active policies."""
+        from apps.jobs.tasks import run_policy
+
+        device = self.get_object()
+        policy_id = request.data.get('policy_id')
+
+        policies = device.policies.filter(is_active=True).select_related('collection_script', 'parser_script')
+        if policy_id:
+            policy = policies.filter(pk=policy_id).first()
+            if not policy:
+                return Response({'detail': 'Policy not found or not active for this device.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            policy = policies.first()
+            if not policy:
+                return Response({'detail': 'No active policy assigned to this device.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not policy.collection_script or not policy.parser_script:
+            return Response({'detail': f'Policy "{policy.name}" requires both a collection and a parser script.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        task = run_policy.delay(policy.id, triggered_by='manual')
+        return Response({'detail': f'Collection started using policy "{policy.name}".', 'task_id': task.id}, status=status.HTTP_202_ACCEPTED)
+
     @action(detail=True, methods=['post'], url_path='test-connection')
     def test_connection(self, request, pk=None):
         """Test connection to a saved device using its stored credentials."""
