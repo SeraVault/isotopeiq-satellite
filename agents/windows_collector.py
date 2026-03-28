@@ -14,8 +14,6 @@ import os
 import re
 import socket
 import subprocess
-import sys
-
 try:
     import winreg
 except ImportError:
@@ -43,22 +41,107 @@ def run(cmd, timeout=30):
 
 def run_lines(cmd, timeout=30):
     """Run a command and return non-empty lines."""
-    return [l for l in run(cmd, timeout).splitlines() if l.strip()]
+    return [ln for ln in run(cmd, timeout).splitlines() if ln.strip()]
 
 
-def wmic(path, fields):
+def wmic(wmi_class, fields, where=''):
     """
-    Query WMI via wmic.exe CLI.
-    Returns a list of dicts, one per instance.
-    fields: list of property names to retrieve.
+    Query WMI and return a list of dicts, one per instance.
+
+    Tries PowerShell Get-CimInstance first (Windows 8+, works on 10/11).
+    Falls back to wmic.exe (Windows 7 / early Windows 10).
+
+    wmi_class: WMI class name, e.g. 'Win32_Processor'
+               Also accepts legacy wmic path syntax like 'cpu' or
+               'logicaldisk where DriveType=3' for the fallback.
+    fields:    list of property names to retrieve.
+    where:     optional WQL WHERE clause, e.g. "DriveType=3".
+    """
+    rows = _wmic_cim(wmi_class, fields, where)
+    if rows is None:
+        rows = _wmic_cli(wmi_class, fields)
+    return rows or []
+
+
+# Map legacy wmic.exe path aliases to proper WMI class names for CIM
+_WMIC_CLASS_MAP = {
+    'cpu':           'Win32_Processor',
+    'computersystem': 'Win32_ComputerSystem',
+    'bios':          'Win32_BIOS',
+    'os':            'Win32_OperatingSystem',
+    'useraccount':   'Win32_UserAccount',
+    'group':         'Win32_Group',
+    'service':       'Win32_Service',
+    'sysdriver':     'Win32_SystemDriver',
+    'logicaldisk':   'Win32_LogicalDisk',
+    'nicconfig':     'Win32_NetworkAdapterConfiguration',
+    'startup':       'Win32_StartupCommand',
+    'process':       'Win32_Process',
+}
+
+
+def _wmic_class_name(path):
+    """Resolve a wmic path alias or Win32_ class name."""
+    base = path.split()[0].lower()
+    return _WMIC_CLASS_MAP.get(base, path.split()[0])
+
+
+def _wmic_cim(wmi_class, fields, where=''):
+    """
+    Query via PowerShell Get-CimInstance.
+    Returns list of dicts, or None if PowerShell is unavailable.
+    """
+    cls = _wmic_class_name(wmi_class)
+    where_clause = ''
+    if where:
+        where_clause = ' -Filter "{}"'.format(where)
+    elif ' where ' in wmi_class.lower():
+        # Parse legacy wmic 'class where condition' syntax
+        parts = wmi_class.split(None, 2)
+        if len(parts) == 3 and parts[1].lower() == 'where':
+            where_clause = ' -Filter "{}"'.format(parts[2])
+
+    field_str = ', '.join(['$_.{}'.format(f) for f in fields])
+    sep = '|||'
+    ps_cmd = (
+        'Get-CimInstance -ClassName {cls}{where}'
+        ' | ForEach-Object {{ "{sep}" + ({fields} -join "|") }}'
+    ).format(
+        cls=cls,
+        where=where_clause,
+        fields=field_str,
+        sep=sep,
+    )
+    out = run('powershell -NoProfile -NonInteractive -Command "{}"'.format(
+        ps_cmd.replace('"', '\\"')
+    ))
+    if not out or 'not recognized' in out.lower() or 'error' in out.lower()[:50]:
+        return None
+    rows = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line.startswith(sep):
+            continue
+        parts = line[len(sep):].split('|')
+        row = {}
+        for i, f in enumerate(fields):
+            row[f] = parts[i].strip() if i < len(parts) else ''
+        rows.append(row)
+    return rows
+
+
+def _wmic_cli(path, fields):
+    """
+    Query via legacy wmic.exe. Returns list of dicts.
+    Works on Windows 7 through early Windows 10.
     """
     field_str = ','.join(fields)
     out = run('wmic {} get {} /format:csv'.format(path, field_str))
     rows = []
-    lines = [l for l in out.splitlines() if l.strip()]
+    lines = [ln for ln in out.splitlines() if ln.strip()]
     if len(lines) < 2:
         return rows
-    # First non-empty line is the header (Node,Field1,Field2,...)
+    # First non-empty line is the CSV header (Node,Field1,Field2,...)
     header = [h.strip() for h in lines[0].split(',')]
     for line in lines[1:]:
         parts = line.split(',')
@@ -734,7 +817,7 @@ def collect_security(output):
 
 def collect_scheduled_tasks(output):
     out = run('schtasks /query /fo CSV /v')
-    lines = [l for l in out.splitlines() if l.strip()]
+    lines = [ln for ln in out.splitlines() if ln.strip()]
     if len(lines) < 2:
         return
 
@@ -964,12 +1047,11 @@ def collect_sysctl(output):
 # ---------------------------------------------------------------------------
 
 def collect_startup_items(output):
-    rows = wmic('startup', ['Caption', 'Command', 'Location', 'User'])
+    rows = wmic('startup', ['Caption', 'Command', 'Location'])
     for row in rows:
         name = row.get('Caption', '').strip()
         cmd  = row.get('Command', '').strip()
         loc  = row.get('Location', '').strip()
-        user = row.get('User', '').strip()
         if not name:
             continue
         item_type = 'other'

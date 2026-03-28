@@ -1,0 +1,36 @@
+name: Build Windows Agent
+
+on:
+  push:
+    paths:
+      - 'agents/windows_collector.py'
+      - '.github/workflows/build-windows-agent.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up 32-bit Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          architecture: 'x86'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          cd agents
+          pyinstaller --onefile --name windows_collector windows_collector.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-collector
+          path: agents/dist/windows_collector.exe
+          retention-days: 30
