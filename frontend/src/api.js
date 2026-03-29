@@ -36,6 +36,8 @@ api.interceptors.response.use(
         try {
           const { data } = await axios.post('/api/token/refresh/', { refresh })
           setTokens(data.access, data.refresh || null)
+          // Notify the WS store so it can reconnect with the fresh token.
+          window.dispatchEvent(new CustomEvent('auth:tokenRefreshed'))
           error.config.headers.Authorization = `Bearer ${data.access}`
           return api(error.config)
         } catch {

@@ -30,10 +30,60 @@ export const useJobsStore = defineStore('jobs', {
       this.page = n
       this.fetchJobs(this.lastParams)
     },
-    connectWebSocket() {
+    _buildWsUrl() {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws'
       const token = localStorage.getItem('access_token') ?? ''
-      this.ws = new WebSocket(`${proto}://${location.host}/ws/jobs/?token=${encodeURIComponent(token)}`)
+      return `${proto}://${location.host}/ws/jobs/?token=${encodeURIComponent(token)}`
+    },
+
+    connectWebSocket() {
+      // Clean up any previous socket before opening a new one.
+      if (this.ws) {
+        this.ws.onclose = null
+        this.ws.onerror = null
+        this.ws.close()
+        this.ws = null
+      }
+
+      this._wsActive = true
+      this._wsRetryDelay = this._wsRetryDelay ?? 1000
+
+      this.ws = new WebSocket(this._buildWsUrl())
+
+      this.ws.onopen = () => {
+        // Reset backoff on successful connection.
+        this._wsRetryDelay = 1000
+      }
+
+      this.ws.onclose = () => {
+        this.ws = null
+        if (!this._wsActive) return
+        // Back off exponentially, cap at 30 s.
+        this._wsRetryTimer = setTimeout(() => {
+          if (this._wsActive) this.connectWebSocket()
+        }, this._wsRetryDelay)
+        this._wsRetryDelay = Math.min(this._wsRetryDelay * 2, 30000)
+      }
+
+      this.ws.onerror = () => {
+        // Let onclose handle the retry — just close cleanly.
+        if (this.ws) this.ws.close()
+      }
+
+      // When the HTTP interceptor silently refreshes the access token, the
+      // current WS is still authenticated with the old (now expired) token.
+      // Reconnect immediately so the new token is picked up.
+      if (!this._wsTokenListener) {
+        this._wsTokenListener = () => {
+          if (this._wsActive) {
+            clearTimeout(this._wsRetryTimer)
+            this._wsRetryDelay = 1000
+            this.connectWebSocket()
+          }
+        }
+        window.addEventListener('auth:tokenRefreshed', this._wsTokenListener)
+      }
+
       this.ws.onmessage = (event) => {
         const update = JSON.parse(event.data)
         const idx = this.jobs.findIndex((j) => j.id === update.job_id)
@@ -62,7 +112,15 @@ export const useJobsStore = defineStore('jobs', {
       }
     },
     disconnectWebSocket() {
+      this._wsActive = false
+      clearTimeout(this._wsRetryTimer)
+      if (this._wsTokenListener) {
+        window.removeEventListener('auth:tokenRefreshed', this._wsTokenListener)
+        this._wsTokenListener = null
+      }
       if (this.ws) {
+        this.ws.onclose = null
+        this.ws.onerror = null
         this.ws.close()
         this.ws = null
       }

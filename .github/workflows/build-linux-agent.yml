@@ -1,0 +1,70 @@
+name: Build Linux Agent
+
+on:
+  push:
+    paths:
+      - 'agents/linux_collector.py'
+      - '.github/workflows/build-linux-agent.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.suffix }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 64-bit — built inside manylinux_2_17 (glibc ≥ 2.17 = RHEL 7 / Ubuntu 14.04 era)
+          - suffix: amd64
+            platform: linux/amd64
+            image: quay.io/pypa/manylinux_2_17_x86_64
+            qemu: false
+
+          # 32-bit — same glibc baseline but i686 ABI
+          - suffix: i686
+            platform: linux/386
+            image: quay.io/pypa/manylinux_2_17_i686
+            qemu: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # QEMU is only needed for the 32-bit job (the runner is 64-bit only).
+      - name: Set up QEMU (i686 only)
+        if: matrix.qemu
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: 386
+
+      # Build inside the manylinux container so the resulting ELF is linked
+      # against glibc 2.17, which runs on any distro released after ~2013
+      # (RHEL 7, Ubuntu 14.04, Debian 8, etc.).
+      #
+      # The manylinux images ship several CPython builds under /opt/python/.
+      # We pin cp311 (Python 3.11) which is new enough for PyInstaller 6.x
+      # but compiles our Py2/3-compatible source without issues.
+      - name: Build binary (${{ matrix.suffix }})
+        run: |
+          docker run --rm \
+            --platform ${{ matrix.platform }} \
+            -v "${{ github.workspace }}/agents:/work" \
+            -w /work \
+            ${{ matrix.image }} \
+            bash -c "
+              export PATH=/opt/python/cp311-cp311/bin:\$PATH
+              pip install --quiet pyinstaller
+              pyinstaller --onefile \
+                          --name linux_collector_${{ matrix.suffix }} \
+                          linux_collector.py
+              # Move the ELF out of the nested dist/ so the upload path is simple
+              mv dist/linux_collector_${{ matrix.suffix }} linux_collector_${{ matrix.suffix }}
+            "
+
+      - name: Upload artifact (${{ matrix.suffix }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-collector-${{ matrix.suffix }}
+          path: agents/linux_collector_${{ matrix.suffix }}
+          retention-days: 30
