@@ -24,7 +24,7 @@ const vuetify = createVuetify({
       isotopeiq: {
         dark: false,
         colors: {
-          primary:    '#4fc3f7',
+          primary:    '#0288d1',
           secondary:  '#16213e',
           background: '#f0f2f5',
           surface:    '#ffffff',
@@ -37,7 +37,7 @@ const vuetify = createVuetify({
     },
   },
   defaults: {
-    VBtn: { variant: 'tonal', size: 'small' },
+    VBtn: { variant: 'elevated', size: 'small' },
     VTextField: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
     VSelect: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
     VTextarea: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },

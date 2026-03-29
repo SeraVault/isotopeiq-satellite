@@ -10,23 +10,26 @@ ok()   { echo -e "\033[1;32m[  OK  ]\033[0m $*"; }
 err()  { echo -e "\033[1;31m[ ERR  ]\033[0m $*" >&2; }
 die()  { err "$*"; exit 1; }
 
+SERVICES="db redis backend worker beat frontend"
+
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [COMMAND]
+Usage: $(basename "$0") [COMMAND] [SERVICE]
 
 Commands:
-  build       Build (or rebuild) all images
-  up          Build + start all services in the background
-  down        Stop and remove containers (data volumes are preserved)
-  restart     down + up
-  logs        Follow logs for all services (Ctrl-C to stop)
-  migrate     Run Django database migrations
-  createsuperuser   Create a Django admin superuser
-  shell       Open a bash shell in the backend container
-  status      Show running container status
-  reset-db    !! Destroy and recreate the postgres volume (ALL DATA LOST)
+  build                 Build (or rebuild) all images
+  up                    Build + start all services in the background
+  down                  Stop and remove containers (data volumes are preserved)
+  restart [SERVICE]     Restart all services, or a single one if specified
+  logs    [SERVICE]     Follow logs for all services, or a single one
+  migrate               Run Django database migrations
+  createsuperuser       Create a Django admin superuser
+  shell                 Open a bash shell in the backend container
+  status                Show running container status
+  reset-db              !! Destroy and recreate the postgres volume (ALL DATA LOST)
+  help                  Show this message
 
-  help        Show this message
+Services:  $SERVICES
 
 If no command is given, 'up' is assumed.
 EOF
@@ -43,6 +46,16 @@ require_env() {
 
 compose() {
   docker compose --file "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
+}
+
+# Resolve friendly name -> compose service name
+resolve_service() {
+  case "$1" in
+    db|redis|backend|frontend) echo "$1" ;;
+    worker)  echo "celery_worker" ;;
+    beat)    echo "celery_beat" ;;
+    *)       die "Unknown service '$1'. Valid services: $SERVICES" ;;
+  esac
 }
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -74,12 +87,28 @@ cmd_down() {
 }
 
 cmd_restart() {
-  cmd_down
-  cmd_up
+  local svc="${1:-}"
+  if [[ -n "$svc" ]]; then
+    local compose_svc
+    compose_svc="$(resolve_service "$svc")"
+    log "Restarting $svc…"
+    compose restart "$compose_svc"
+    ok "$svc restarted."
+  else
+    cmd_down
+    cmd_up
+  fi
 }
 
 cmd_logs() {
-  compose logs --follow --tail=100
+  local svc="${1:-}"
+  if [[ -n "$svc" ]]; then
+    local compose_svc
+    compose_svc="$(resolve_service "$svc")"
+    compose logs --follow --tail=100 "$compose_svc"
+  else
+    compose logs --follow --tail=100
+  fi
 }
 
 cmd_migrate() {
@@ -120,8 +149,8 @@ case "$COMMAND" in
   build)            cmd_build ;;
   up)               cmd_up ;;
   down)             cmd_down ;;
-  restart)          cmd_restart ;;
-  logs)             cmd_logs ;;
+  restart)          cmd_restart "${1:-}" ;;
+  logs)             cmd_logs "${1:-}" ;;
   migrate)          cmd_migrate ;;
   createsuperuser)  cmd_createsuperuser ;;
   shell)            cmd_shell ;;

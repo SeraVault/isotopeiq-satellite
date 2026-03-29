@@ -47,7 +47,7 @@
     </template>
 
     <!-- Baseline data dialog -->
-    <v-dialog v-model="viewOpen" max-width="900" scrollable>
+    <v-dialog v-model="viewOpen" max-width="1200" scrollable>
       <v-card v-if="viewing" rounded="lg">
         <v-card-title class="d-flex justify-space-between align-center">
           <span>Baseline — {{ viewing.device_name ?? viewing.device }}</span>

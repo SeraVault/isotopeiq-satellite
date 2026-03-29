@@ -2,7 +2,7 @@
   <div>
     <!-- ── Summary cards ──────────────────────────────────────────────── -->
     <v-row dense class="mb-3">
-      <v-col v-if="d.device && anyValues(d.device)" cols="12" sm="6" md="3">
+      <v-col v-if="d.device && anyValues(d.device)" cols="12" sm="6">
         <v-card variant="tonal" color="secondary" rounded="lg">
           <v-card-text class="pa-3">
             <div class="text-caption font-weight-bold text-uppercase text-primary mb-2" style="letter-spacing:.08em">Device</div>
@@ -10,7 +10,7 @@
           </v-card-text>
         </v-card>
       </v-col>
-      <v-col v-if="d.hardware && anyValues(d.hardware)" cols="12" sm="6" md="3">
+      <v-col v-if="d.hardware && anyValues(d.hardware)" cols="12" sm="6">
         <v-card variant="tonal" color="secondary" rounded="lg">
           <v-card-text class="pa-3">
             <div class="text-caption font-weight-bold text-uppercase text-primary mb-2" style="letter-spacing:.08em">Hardware</div>
@@ -18,7 +18,7 @@
           </v-card-text>
         </v-card>
       </v-col>
-      <v-col v-if="d.os && anyValues(d.os)" cols="12" sm="6" md="3">
+      <v-col v-if="d.os && anyValues(d.os)" cols="12" sm="6">
         <v-card variant="tonal" color="secondary" rounded="lg">
           <v-card-text class="pa-3">
             <div class="text-caption font-weight-bold text-uppercase text-primary mb-2" style="letter-spacing:.08em">OS</div>
@@ -26,7 +26,7 @@
           </v-card-text>
         </v-card>
       </v-col>
-      <v-col v-if="d.security && anyValues(d.security)" cols="12" sm="6" md="3">
+      <v-col v-if="d.security && anyValues(d.security)" cols="12" sm="6">
         <v-card variant="tonal" color="secondary" rounded="lg">
           <v-card-text class="pa-3">
             <div class="text-caption font-weight-bold text-uppercase text-primary mb-2" style="letter-spacing:.08em">Security</div>

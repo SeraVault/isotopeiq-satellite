@@ -10,7 +10,7 @@ from .serializers import PolicySerializer
 class PolicyViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
     queryset = Policy.objects.prefetch_related('devices').select_related(
-        'collection_script', 'parser_script'
+        'collection_script', 'parser_script', 'deployment_script'
     ).all()
     serializer_class = PolicySerializer
     search_fields = ['name', 'description']

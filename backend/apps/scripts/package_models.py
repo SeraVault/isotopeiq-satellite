@@ -3,12 +3,11 @@ from django.db import models
 
 class ScriptPackage(models.Model):
     """
-    A named pair of collection + parser scripts that belong together.
+    A named pair of collection + parser scripts for a given device family.
 
-    Packages are the primary authoring unit: you write the collector and
-    the parser side-by-side, test them against a real device, then assign
-    the package to a policy.  Individual Script records continue to exist
-    and can still be mixed freely in policies.
+    A Collection Profile defines *how* to collect and interpret configuration
+    data from a target OS.  Deployment scripts are managed separately and
+    assigned directly to Policies.
     """
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)

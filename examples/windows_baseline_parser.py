@@ -586,22 +586,6 @@ for line in lines("certificates"):
     })
 
 
-# ── appx_packages (Microsoft Store / AppX) → installed_software ──────────────
-
-# Format: name|version|publisher|architecture
-for line in lines("appx_packages"):
-    parts = line.split("|", 3)
-    if not parts[0].strip():
-        continue
-    output["installed_software"].append({
-        "name":         parts[0].strip(),
-        "version":      parts[1].strip() if len(parts) > 1 else "",
-        "vendor":       parts[2].strip() if len(parts) > 2 else "",
-        "install_date": "",
-        "source":       "other",
-    })
-
-
 # ── logging_targets ──────────────────────────────────────────────────────────
 
 output["logging_targets"] = []

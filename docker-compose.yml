@@ -2,6 +2,7 @@ version: '3.9'
 
 services:
   db:
+    container_name: iq-db
     image: postgres:16-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -13,11 +14,13 @@ services:
       - "5432:5432"
 
   redis:
+    container_name: iq-redis
     image: redis:7-alpine
     ports:
       - "6380:6379"
 
   backend:
+    container_name: iq-backend
     build: ./backend
     command: python -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --noreload
     volumes:
@@ -32,6 +35,7 @@ services:
       - redis
 
   celery_worker:
+    container_name: iq-worker
     build: ./backend
     command: celery -A config worker -l info --concurrency 4
     volumes:
@@ -42,6 +46,7 @@ services:
       - redis
 
   celery_beat:
+    container_name: iq-beat
     build: ./backend
     command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
@@ -52,6 +57,7 @@ services:
       - redis
 
   frontend:
+    container_name: iq-frontend
     build: ./frontend
     ports:
       - "5173:5173"

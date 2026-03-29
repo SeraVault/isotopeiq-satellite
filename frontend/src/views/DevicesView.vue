@@ -1,6 +1,104 @@
 <template>
   <div>
-    <div class="text-h5 font-weight-bold mb-4">Devices</div>
+    <div class="d-flex align-center mb-4">
+      <div class="text-h5 font-weight-bold">Devices</div>
+      <v-spacer />
+      <v-btn variant="tonal" prepend-icon="mdi-help-circle-outline" @click="showHelp = true">How it works</v-btn>
+    </div>
+
+    <!-- ── Help dialog ───────────────────────────────────────────────────── -->
+    <v-dialog v-model="showHelp" max-width="720" scrollable>
+      <v-card rounded="lg">
+        <v-card-title class="d-flex align-center pt-4 pb-2">
+          <v-icon icon="mdi-server-network" class="mr-2" color="primary" />
+          Devices &amp; Credentials
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" @click="showHelp = false" />
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pa-5" style="font-size:0.92rem;line-height:1.7">
+
+          <p class="mb-3">
+            A <strong>Device</strong> is any host, appliance, or network node that IsotopeIQ Satellite will
+            collect configuration data from. Devices are the foundational inventory — everything else
+            (Policies, Jobs, Baselines, Drift) is anchored to one or more devices.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">How collection works</div>
+          <p class="mb-3">
+            When a Policy runs, Satellite connects to each assigned device, executes the
+            <strong>Collection Script</strong> remotely, captures the raw output, then pipes it through
+            the <strong>Parser Script</strong> to produce a normalised canonical JSON document.
+            That document is validated against the canonical schema and stored as the job result.
+          </p>
+          <p class="mb-3">
+            Two collection modes are supported:
+          </p>
+          <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
+            <tbody>
+              <tr>
+                <td class="font-weight-medium" style="width:30%">Pull (SSH / WinRM)</td>
+                <td>Satellite initiates the connection and runs the script. Requires credentials.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">Push</td>
+                <td>The device calls <code>POST /api/push/</code> with its push token and sends the
+                  pre-collected JSON directly. Useful for devices behind NAT or firewalls.</td>
+              </tr>
+            </tbody>
+          </v-table>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">Credentials</div>
+          <p class="mb-3">
+            Credentials are stored separately from devices and encrypted at rest using Fernet symmetric
+            encryption. A single credential record can be shared across many devices (e.g. a domain
+            service account). Supported types:
+          </p>
+          <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
+            <tbody>
+              <tr><td class="font-weight-medium" style="width:30%">SSH Password</td><td>Username + password for Linux/Unix devices.</td></tr>
+              <tr><td class="font-weight-medium">SSH Key</td><td>Username + private key (PEM). Recommended for Linux/Unix.</td></tr>
+              <tr><td class="font-weight-medium">Windows / WinRM</td><td>Username + password for Windows devices using WinRM.</td></tr>
+              <tr><td class="font-weight-medium">API Token</td><td>Bearer token for HTTPS-based collection (network devices, REST APIs).</td></tr>
+            </tbody>
+          </v-table>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">Device fields</div>
+          <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
+            <tbody>
+              <tr><td class="font-weight-medium" style="width:30%">Name</td><td>Human-readable label used throughout the UI.</td></tr>
+              <tr><td class="font-weight-medium">Hostname / FQDN</td><td>Used as the connection target. FQDN is preferred where DNS is available.</td></tr>
+              <tr><td class="font-weight-medium">OS Type</td><td>Informs script selection and canonical section expectations — set this accurately so parsers can behave correctly.</td></tr>
+              <tr><td class="font-weight-medium">Connection Type</td><td>SSH, WinRM, HTTPS, or Push. Determines which transport Satellite uses.</td></tr>
+              <tr><td class="font-weight-medium">Credential</td><td>Link to a Credential record. Leave blank for push-only devices.</td></tr>
+              <tr><td class="font-weight-medium">Push Token</td><td>A secret token the device includes when calling the push endpoint. Generate a strong random value.</td></tr>
+              <tr><td class="font-weight-medium">SSH Host Key</td><td>Stored on first successful connection and pinned thereafter — Satellite will refuse connections if the key changes, alerting you to a potential MITM.</td></tr>
+              <tr><td class="font-weight-medium">Tags</td><td>Free-form JSON object for grouping, filtering, or passing context to scripts (e.g. <code>{"env":"prod","role":"db"}</code>).</td></tr>
+            </tbody>
+          </v-table>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">Typical setup flow</div>
+          <ol class="pl-4" style="line-height:2">
+            <li>Create a <strong>Credential</strong> (Credentials tab) for the account Satellite will use.</li>
+            <li>Add one or more <strong>Devices</strong>, selecting the credential and correct OS type.</li>
+            <li>Use <strong>Test Connection</strong> to verify SSH/WinRM reachability and cache the host key.</li>
+            <li>Create a <strong>Policy</strong> that assigns these devices to collection and parser scripts on a schedule.</li>
+            <li>Run the policy — results appear in <strong>Job Monitor</strong> and baselines are captured on first run.</li>
+            <li>Subsequent runs produce <strong>Drift</strong> reports comparing against the baseline.</li>
+          </ol>
+
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="pa-3">
+          <v-spacer />
+          <v-btn color="primary" variant="tonal" @click="showHelp = false">Got it</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <v-tabs v-model="activeTab" color="primary" class="mb-4">
       <v-tab value="devices">Devices</v-tab>
@@ -225,6 +323,9 @@ import api from '../api'
 import CanonicalViewer from '../components/CanonicalViewer.vue'
 
 const devStore = useDevicesStore()
+
+// ── help dialog ─────────────────────────────────────────────────────────────
+const showHelp = ref(false)
 
 // ── filter state ────────────────────────────────────────────────────────────
 const deviceSearch   = ref('')
