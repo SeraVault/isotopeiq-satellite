@@ -14,7 +14,7 @@ class PolicyViewSet(viewsets.ModelViewSet):
     ).all()
     serializer_class = PolicySerializer
     search_fields = ['name', 'description']
-    filterset_fields = ['is_active']
+    filterset_fields = ['is_active', 'devices']
     ordering_fields = ['name', 'created_at']
 
     @action(detail=True, methods=['post'])

@@ -109,75 +109,75 @@
     <v-window v-model="activeTab">
       <v-window-item value="CollectionProfiles">
         <div class="d-flex justify-space-between align-center mb-4">
-          <span class="text-body-2 text-medium-emphasis">{{ packages.length }} collection profile(s)</span>
+          <span class="text-body-2 text-medium-emphasis">{{ totalPackages }} collection profile(s)</span>
           <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewPackage">New Collection Profile</v-btn>
         </div>
 
-        <div v-if="pkgLoading" class="text-medium-emphasis pa-4">Loading…</div>
-        <v-card v-else-if="packages.length" rounded="lg" elevation="1">
-          <v-table density="compact">
-            <thead>
-              <tr>
-                <th>Name</th><th>Target OS</th><th>Version</th>
-                <th>Collection Script</th><th>Parser Script</th><th>Active</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="p in packages" :key="p.id">
-                <td class="font-weight-medium">{{ p.name }}</td>
-                <td>{{ p.target_os }}</td>
-                <td>{{ p.version }}</td>
-                <td class="text-medium-emphasis">{{ p.collection_script_detail?.name ?? '—' }}</td>
-                <td class="text-medium-emphasis">{{ p.parser_script_detail?.name ?? '—' }}</td>
-                <td>
-                  <v-chip :color="p.is_active ? 'success' : 'default'" size="x-small" label>
-                    {{ p.is_active ? 'Yes' : 'No' }}
-                  </v-chip>
-                </td>
-                <td>
-                  <v-btn size="x-small" variant="tonal" class="mr-1" @click="openEditor(p)">Edit / Test</v-btn>
-                  <v-btn size="x-small" color="error" variant="tonal" @click="removePkg(p.id)">Delete</v-btn>
-                </td>
-              </tr>
-            </tbody>
-          </v-table>
-        </v-card>
-        <div v-else class="pa-6 text-center text-medium-emphasis">No collection profiles yet.</div>
+        <v-data-table-server
+          v-model:options="pkgTableOptions"
+          :headers="pkgHeaders"
+          :items="packages"
+          :items-length="totalPackages"
+          :loading="pkgLoading"
+          :items-per-page-options="[25, 50, 100]"
+          density="compact"
+          rounded="lg"
+          elevation="1"
+          hover
+          @update:options="onPkgTableOptions"
+        >
+          <template #item.collection_script_detail="{ item }">
+            {{ item.collection_script_detail?.name ?? '—' }}
+          </template>
+          <template #item.parser_script_detail="{ item }">
+            {{ item.parser_script_detail?.name ?? '—' }}
+          </template>
+          <template #item.is_active="{ item }">
+            <v-chip :color="item.is_active ? 'success' : 'default'" size="x-small" label>
+              {{ item.is_active ? 'Yes' : 'No' }}
+            </v-chip>
+          </template>
+          <template #item.actions="{ item }">
+            <div class="d-flex ga-1">
+              <v-btn size="x-small" variant="tonal" @click="openEditor(item)">Edit / Test</v-btn>
+              <v-btn size="x-small" color="error" variant="tonal" @click="removePkg(item.id)">Delete</v-btn>
+            </div>
+          </template>
+        </v-data-table-server>
       </v-window-item>
 
       <!-- ── SCRIPTS TAB ────────────────────────────────────────────────────── -->
       <v-window-item value="Scripts">
         <div class="d-flex justify-space-between align-center mb-4">
-          <span class="text-body-2 text-medium-emphasis">{{ scripts.length }} script(s)</span>
+          <span class="text-body-2 text-medium-emphasis">{{ totalScripts }} script(s)</span>
           <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewScriptInEditor">New Script</v-btn>
         </div>
 
-        <div v-if="scrLoading" class="text-medium-emphasis pa-4">Loading…</div>
-        <v-card v-else-if="scripts.length" rounded="lg" elevation="1">
-          <v-table density="compact">
-            <thead>
-              <tr><th>Name</th><th>Type</th><th>Target OS</th><th>Version</th><th>Active</th><th></th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="s in scripts" :key="s.id">
-                <td class="font-weight-medium">{{ s.name }}</td>
-                <td>{{ s.script_type }}</td>
-                <td>{{ s.target_os }}</td>
-                <td>{{ s.version }}</td>
-                <td>
-                  <v-chip :color="s.is_active ? 'success' : 'default'" size="x-small" label>
-                    {{ s.is_active ? 'Yes' : 'No' }}
-                  </v-chip>
-                </td>
-                <td>
-                  <v-btn size="x-small" variant="tonal" class="mr-1" @click="openScriptInEditor(s)">Edit</v-btn>
-                  <v-btn size="x-small" color="error" variant="tonal" @click="removeScript(s.id)">Delete</v-btn>
-                </td>
-              </tr>
-            </tbody>
-          </v-table>
-        </v-card>
-        <div v-else class="pa-6 text-center text-medium-emphasis">No scripts yet.</div>
+        <v-data-table-server
+          v-model:options="scrTableOptions"
+          :headers="scrHeaders"
+          :items="scripts"
+          :items-length="totalScripts"
+          :loading="scrLoading"
+          :items-per-page-options="[25, 50, 100]"
+          density="compact"
+          rounded="lg"
+          elevation="1"
+          hover
+          @update:options="onScrTableOptions"
+        >
+          <template #item.is_active="{ item }">
+            <v-chip :color="item.is_active ? 'success' : 'default'" size="x-small" label>
+              {{ item.is_active ? 'Yes' : 'No' }}
+            </v-chip>
+          </template>
+          <template #item.actions="{ item }">
+            <div class="d-flex ga-1">
+              <v-btn size="x-small" variant="tonal" @click="openScriptInEditor(item)">Edit</v-btn>
+              <v-btn size="x-small" color="error" variant="tonal" @click="removeScript(item.id)">Delete</v-btn>
+            </div>
+          </template>
+        </v-data-table-server>
       </v-window-item>
     </v-window>
 
@@ -330,11 +330,31 @@
 
       </div>
     </div>
+
+    <!-- Confirm dialog -->
+    <v-dialog v-model="confirmDialog.open" max-width="400" persistent>
+      <v-card rounded="lg">
+        <v-card-title class="pt-4">Confirm</v-card-title>
+        <v-card-text>{{ confirmDialog.message }}</v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="confirmDialog.resolve(false)">Cancel</v-btn>
+          <v-btn color="error" variant="tonal" @click="confirmDialog.resolve(true)">Confirm</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+
+const confirmDialog = ref({ open: false, message: '', resolve: () => {} })
+function askConfirm(message) {
+  return new Promise(resolve => {
+    confirmDialog.value = { open: true, message, resolve: (val) => { confirmDialog.value.open = false; resolve(val) } }
+  })
+}
 import api from '../api'
 import CodeEditor from '../components/CodeEditor.vue'
 
@@ -389,6 +409,22 @@ onBeforeUnmount(() => {
 // ── packages ─────────────────────────────────────────────────────────────────
 const packages = ref([])
 const pkgLoading = ref(false)
+const totalPackages = ref(0)
+const pkgTableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
+const pkgHeaders = [
+  { title: 'Name',              key: 'name' },
+  { title: 'Target OS',         key: 'target_os' },
+  { title: 'Version',           key: 'version' },
+  { title: 'Collection Script', key: 'collection_script_detail', sortable: false },
+  { title: 'Parser Script',     key: 'parser_script_detail',     sortable: false },
+  { title: 'Active',            key: 'is_active',                sortable: false },
+  { title: '',                  key: 'actions',                  sortable: false, align: 'end' },
+]
+
+function onPkgTableOptions(options) {
+  pkgTableOptions.value = options
+  loadPackages(options)
+}
 const testDevices = ref([])
 const deviceSearchLoading = ref(false)
 let deviceSearchTimer = null
@@ -418,20 +454,23 @@ async function searchTestDevices(q) {
   }
 }
 
-async function loadPackages() {
+async function loadPackages(options = pkgTableOptions.value) {
   pkgLoading.value = true
   try {
-    const { data } = await api.get('/scripts/packages/')
-    packages.value = data.results ?? data
+    const { data } = await api.get('/scripts/packages/', {
+      params: { page: options.page, page_size: options.itemsPerPage },
+    })
+    packages.value      = data.results ?? data
+    totalPackages.value = data.count   ?? packages.value.length
   } finally {
     pkgLoading.value = false
   }
 }
 
 async function removePkg(id) {
-  if (!confirm('Delete this collection profile? The underlying scripts will not be deleted.')) return
+  if (!await askConfirm('Delete this collection profile? The underlying scripts will not be deleted.')) return
   await api.delete(`/scripts/packages/${id}/`)
-  packages.value = packages.value.filter(p => p.id !== id)
+  loadPackages()
 }
 
 // ── package editor ────────────────────────────────────────────────────────────
@@ -492,14 +531,12 @@ async function savePackage({ requireParser = true } = {}) {
     }
     if (editor.value.id) {
       const { data } = await api.patch(`/scripts/packages/${editor.value.id}/`, payload)
-      const idx = packages.value.findIndex(p => p.id === editor.value.id)
-      if (idx !== -1) packages.value[idx] = data
       editor.value.id = data.id
     } else {
       const { data } = await api.post('/scripts/packages/', payload)
-      packages.value.push(data)
       editor.value.id = data.id
     }
+    loadPackages()
   } catch (e) {
     editor.value.saveError = JSON.stringify(e.response?.data ?? 'Save failed.')
   } finally {
@@ -577,12 +614,10 @@ async function _upsertScript(id, name, type, content) {
   } else {
     try {
       const { data } = await api.post('/scripts/', payload)
-      scripts.value.push(data)
       return data.id
     } catch (e) {
       if (e.response?.data?.name) {
         const { data } = await api.post('/scripts/', { ...payload, name: `${name} (${Date.now()})` })
-        scripts.value.push(data)
         return data.id
       }
       throw e
@@ -593,21 +628,39 @@ async function _upsertScript(id, name, type, content) {
 // ── individual scripts ────────────────────────────────────────────────────────
 const scripts = ref([])
 const scrLoading = ref(false)
+const totalScripts = ref(0)
+const scrTableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
+const scrHeaders = [
+  { title: 'Name',      key: 'name' },
+  { title: 'Type',      key: 'script_type' },
+  { title: 'Target OS', key: 'target_os' },
+  { title: 'Version',   key: 'version' },
+  { title: 'Active',    key: 'is_active',  sortable: false },
+  { title: '',          key: 'actions',    sortable: false, align: 'end' },
+]
 
-async function loadScripts() {
+function onScrTableOptions(options) {
+  scrTableOptions.value = options
+  loadScripts(options)
+}
+
+async function loadScripts(options = scrTableOptions.value) {
   scrLoading.value = true
   try {
-    const { data } = await api.get('/scripts/')
-    scripts.value = data.results ?? data
+    const { data } = await api.get('/scripts/', {
+      params: { page: options.page, page_size: options.itemsPerPage },
+    })
+    scripts.value      = data.results ?? data
+    totalScripts.value = data.count   ?? scripts.value.length
   } finally {
     scrLoading.value = false
   }
 }
 
 async function removeScript(id) {
-  if (!confirm('Delete this script?')) return
+  if (!await askConfirm('Delete this script?')) return
   await api.delete(`/scripts/${id}/`)
-  scripts.value = scripts.value.filter(s => s.id !== id)
+  loadScripts()
 }
 
 function openNewScriptInEditor() {
@@ -654,13 +707,11 @@ async function saveStandaloneScript() {
   try {
     const id = idMap[tab]
     if (id) {
-      const { data } = await api.patch(`/scripts/${id}/`, payload)
-      const idx = scripts.value.findIndex(s => s.id === id)
-      if (idx !== -1) scripts.value[idx] = data
+      await api.patch(`/scripts/${id}/`, payload)
     } else {
-      const { data } = await api.post('/scripts/', payload)
-      scripts.value.push(data)
+      await api.post('/scripts/', payload)
     }
+    loadScripts()
     editor.value.show = false
   } catch (e) {
     editor.value.saveError = JSON.stringify(e.response?.data ?? 'Save failed.')
@@ -672,8 +723,7 @@ async function saveStandaloneScript() {
 // ── init ─────────────────────────────────────────────────────────────────────
 onMounted(async () => {
   editorHeight.value = Math.floor(window.innerHeight * 0.6)
-  await Promise.all([loadPackages(), loadScripts()])
-  // Pre-populate with first page so the picker isn't empty on first open
+  // Pre-populate test device picker
   searchTestDevices('')
 })
 </script>

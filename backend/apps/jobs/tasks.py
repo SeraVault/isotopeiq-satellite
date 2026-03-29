@@ -34,6 +34,17 @@ def _broadcast(data: dict) -> None:
         async_to_sync(layer.group_send)('jobs', {'type': 'job.update', 'data': data})
 
 
+def _broadcast_drift(event) -> None:
+    """Push a drift event update to all connected drift WebSocket clients."""
+    layer = get_channel_layer()
+    if not layer:
+        return
+    from apps.drift.serializers import DriftEventSerializer
+    data = DriftEventSerializer(event).data
+    # Serializer returns DRF Field objects; coerce to plain dict for JSON.
+    async_to_sync(layer.group_send)('drift', {'type': 'drift.event', 'data': dict(data)})
+
+
 def _apply_baseline_and_drift(device, result) -> None:
     from apps.baselines.models import Baseline
     from apps.drift.detector import detect_drift
@@ -48,23 +59,32 @@ def _apply_baseline_and_drift(device, result) -> None:
         logger.info('Baseline established for device "%s".', device)
         return
 
-    diffs = detect_drift(baseline.parsed_data, result.parsed_output)
+    baseline_data = baseline.parsed_data
+    diffs = detect_drift(baseline_data, result.parsed_output)
     if diffs:
         # Reuse an existing open event rather than piling up one per collection run.
         existing = DriftEvent.objects.filter(device=device, status='new').order_by('-created_at').first()
         if existing:
             existing.diff = diffs
             existing.job_result = result
-            existing.save(update_fields=['diff', 'job_result'])
+            existing.baseline_snapshot = baseline_data
+            existing.save(update_fields=['diff', 'job_result', 'baseline_snapshot'])
             logger.warning('Drift updated for device "%s" (event %s).', device, existing.pk)
+            _broadcast_drift(existing)
         else:
-            event = DriftEvent.objects.create(device=device, job_result=result, diff=diffs)
+            event = DriftEvent.objects.create(
+                device=device,
+                job_result=result,
+                diff=diffs,
+                baseline_snapshot=baseline_data,
+            )
             SyslogNotifier().notify_drift(device, event)
             logger.warning('Drift detected for device "%s" (event %s).', device, event.pk)
+            _broadcast_drift(event)
 
 
 @shared_task(bind=True)
-def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
+def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id: int = None):
     from apps.policies.models import Policy
 
     policy = (
@@ -77,24 +97,30 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
     if not policy.collection_script or not policy.parser_script:
         raise ValueError(f'Policy {policy_id} requires both a collection and a parser script.')
 
-    job = Job.objects.create(
-        policy=policy,
-        triggered_by=triggered_by,
-        status='running',
-        started_at=timezone.now(),
-        celery_task_id=self.request.id or '',
-    )
-    _broadcast({
-        'job_id': job.id,
-        'status': 'running',
-        'policy_name': policy.name,
-        'current_device': None,
-        'device_result': None,
-    })
-
-    overall_ok = True
     devices = list(policy.devices.filter(is_active=True, connection_type__in=_SUPPORTED_CONNECTION_TYPES))
+    if device_id is not None:
+        devices = [d for d in devices if d.id == device_id]
+
+    # One independent Job per device so history and status are tracked at the
+    # device level rather than being aggregated under a single policy run.
     for idx, device in enumerate(devices):
+        job = Job.objects.create(
+            policy=policy,
+            device=device,
+            triggered_by=triggered_by,
+            status='running',
+            started_at=timezone.now(),
+            celery_task_id=self.request.id or '',
+        )
+        _broadcast({
+            'job_id': job.id,
+            'status': 'running',
+            'policy_name': policy.name,
+            'device_id': device.id,
+            'device_name': device.name,
+            'device_result': None,
+        })
+
         result = DeviceJobResult.objects.create(
             job=job,
             device=device,
@@ -105,7 +131,8 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
             'job_id': job.id,
             'status': 'running',
             'policy_name': policy.name,
-            'current_device': device.name,
+            'device_id': device.id,
+            'device_name': device.name,
             'device_result': {
                 'id': result.id,
                 'device': device.id,
@@ -116,6 +143,7 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
                 'error_message': '',
             },
         })
+
         try:
             collector = _get_collector(device)
             raw_output = collector.run(render_script(policy.collection_script.content, device))
@@ -129,16 +157,20 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
             logger.exception('Error processing device "%s" in job %s.', device, job.id)
             result.status = 'failed'
             result.error_message = str(exc)
-            overall_ok = False
         finally:
             result.finished_at = timezone.now()
             result.save()
 
+        job.status = result.status
+        job.finished_at = timezone.now()
+        job.save()
+
         _broadcast({
             'job_id': job.id,
-            'status': 'running',
+            'status': job.status,
             'policy_name': policy.name,
-            'current_device': device.name,
+            'device_id': device.id,
+            'device_name': device.name,
             'device_result': {
                 'id': result.id,
                 'device': device.id,
@@ -159,14 +191,3 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler'):
         # Respect inter-device delay (skip after the last device).
         if policy.delay_between_devices and idx < len(devices) - 1:
             time.sleep(policy.delay_between_devices)
-
-    job.status = 'success' if overall_ok else ('partial' if job.device_results.filter(status='success').exists() else 'failed')
-    job.finished_at = timezone.now()
-    job.save()
-    _broadcast({
-        'job_id': job.id,
-        'status': job.status,
-        'policy_name': policy.name,
-        'current_device': None,
-        'device_result': None,
-    })

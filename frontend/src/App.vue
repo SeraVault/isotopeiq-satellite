@@ -24,29 +24,30 @@
 
       <v-list density="compact" nav class="pt-2">
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Overview</v-list-subheader>
-        <v-list-item to="/dashboard" prepend-icon="mdi-view-dashboard-outline" title="Dashboard" active-color="primary" />
+        <v-list-item to="/dashboard" prepend-icon="mdi-view-dashboard-outline" title="Dashboard" color="primary" />
 
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Infrastructure</v-list-subheader>
-        <v-list-item to="/devices" prepend-icon="mdi-server" title="Devices" active-color="primary" />
-        <v-list-item to="/policies" prepend-icon="mdi-shield-check-outline" title="Policies" active-color="primary" />
-        <v-list-item to="/scripts" prepend-icon="mdi-code-braces" title="Scripts" active-color="primary" />
+        <v-list-item to="/devices" prepend-icon="mdi-server" title="Devices" color="primary" />
+        <v-list-item to="/policies" prepend-icon="mdi-shield-check-outline" title="Policies" color="primary" />
+        <v-list-item to="/scripts" prepend-icon="mdi-code-braces" title="Scripts" color="primary" />
 
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Operations</v-list-subheader>
-        <v-list-item to="/jobs" prepend-icon="mdi-play-circle-outline" title="Job Monitor" active-color="primary">
+        <v-list-item to="/jobs" prepend-icon="mdi-play-circle-outline" title="Job Monitor" color="primary">
           <template #append>
             <v-badge v-if="runningJobs > 0" :content="runningJobs" color="primary" inline />
           </template>
         </v-list-item>
-        <v-list-item to="/drift" prepend-icon="mdi-lightning-bolt" title="Drift" active-color="primary">
+        <v-list-item to="/drift" prepend-icon="mdi-lightning-bolt" title="Drift" color="primary">
           <template #append>
             <v-badge v-if="newDrift > 0" :content="newDrift" color="error" inline />
           </template>
         </v-list-item>
-        <v-list-item to="/baselines" prepend-icon="mdi-database-check-outline" title="Baselines" active-color="primary" />
+        <v-list-item to="/baselines" prepend-icon="mdi-database-check-outline" title="Baselines" color="primary" />
 
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">System</v-list-subheader>
-        <v-list-item to="/audit" prepend-icon="mdi-format-list-bulleted" title="Audit Log" active-color="primary" />
-        <v-list-item to="/retention" prepend-icon="mdi-clock-outline" title="Retention" active-color="primary" />
+        <v-list-item to="/audit" prepend-icon="mdi-format-list-bulleted" title="Audit Log" color="primary" />
+        <v-list-item to="/retention" prepend-icon="mdi-clock-outline" title="Retention" color="primary" />
+        <v-list-item to="/volatile-rules" prepend-icon="mdi-tune" title="Volatile Rules" color="primary" />
       </v-list>
 
       <!-- Footer -->
@@ -69,29 +70,29 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import api, { isLoggedIn, clearTokens } from './api'
+import { isLoggedIn, clearTokens } from './api'
+import { useDashboardStore } from './stores/dashboard'
 
 const router   = useRouter()
 const username = ref(localStorage.getItem('username') || '')
-const runningJobs = ref(0)
-const newDrift    = ref(0)
+const dashboardStore = useDashboardStore()
+
 const drawer = ref(true)
 const rail   = ref(false)
+
+// All badges derive from the central dashboard store.
+// Immediate mutations (WS messages, acknowledge, resolve) patch dashboardStore.stats directly.
+const runningJobs = computed(() => dashboardStore.stats.running_jobs)
+const newDrift    = computed(() => dashboardStore.stats.new_drift)
 
 let pollTimer = null
 
 async function pollBadges() {
   if (!isLoggedIn.value) return
-  try {
-    const [jobsRes, driftRes] = await Promise.all([
-      api.get('/jobs/',  { params: { status: 'running', page_size: 1 } }),
-      api.get('/drift/', { params: { status: 'new',     page_size: 1 } }),
-    ])
-    runningJobs.value = jobsRes.data.count  ?? 0
-    newDrift.value    = driftRes.data.count ?? 0
-  } catch { /* interceptor handles token expiry */ }
+  // Single call — refreshes all counts, badges, and dashboard panels.
+  dashboardStore.refresh()
 }
 
 watch(isLoggedIn, (val) => {

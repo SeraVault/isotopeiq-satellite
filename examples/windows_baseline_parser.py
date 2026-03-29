@@ -597,3 +597,56 @@ for line in lines("logging_targets"):
         "protocol":    proto,
         "enabled":     True,
     })
+
+
+# ── pci_devices ──────────────────────────────────────────────────────────────
+# Format: slot|class|vendor|device  (pipe-separated, from Win32_PnPEntity PCI\*)
+
+output["pci_devices"] = []
+for line in lines("pci_devices"):
+    parts = [p.strip() for p in line.split("|")]
+    slot = parts[0] if parts else ""
+    if not slot:
+        continue
+    entry = {"slot": slot}
+    if len(parts) > 1 and parts[1]: entry["class"]  = parts[1]
+    if len(parts) > 2 and parts[2]: entry["vendor"] = parts[2]
+    if len(parts) > 3 and parts[3]: entry["device"] = parts[3]
+    output["pci_devices"].append(entry)
+
+
+# ── storage_devices ──────────────────────────────────────────────────────────
+# Format: type|name|model|vendor|size|serial|interface|removable
+
+output["storage_devices"] = []
+for line in lines("storage_devices"):
+    parts = [p.strip() for p in line.split("|")]
+    if len(parts) < 2 or not parts[1]:
+        continue
+    dev_type = parts[0] if parts[0] else "disk"
+    name     = parts[1]
+    entry = {"name": name, "type": dev_type}
+    if len(parts) > 2 and parts[2]: entry["model"]     = parts[2]
+    if len(parts) > 3 and parts[3]: entry["vendor"]    = parts[3]
+    if len(parts) > 4 and parts[4]: entry["size"]      = parts[4]
+    if len(parts) > 5 and parts[5]: entry["serial"]    = parts[5]
+    if len(parts) > 6 and parts[6]: entry["interface"] = parts[6]
+    if len(parts) > 7:              entry["removable"]  = parts[7] == "1"
+    output["storage_devices"].append(entry)
+
+
+# ── usb_devices ──────────────────────────────────────────────────────────────
+# Format: bus_id|vendor_id|product_id|manufacturer|product
+
+output["usb_devices"] = []
+for line in lines("usb_devices"):
+    parts = [p.strip() for p in line.split("|")]
+    bus_id = parts[0] if parts else ""
+    if not bus_id:
+        continue
+    entry = {"bus_id": bus_id}
+    if len(parts) > 1 and parts[1]: entry["vendor_id"]    = parts[1]
+    if len(parts) > 2 and parts[2]: entry["product_id"]   = parts[2]
+    if len(parts) > 3 and parts[3]: entry["manufacturer"] = parts[3]
+    if len(parts) > 4 and parts[4]: entry["product"]      = parts[4]
+    output["usb_devices"].append(entry)

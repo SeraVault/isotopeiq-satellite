@@ -1,63 +1,151 @@
 <template>
   <div>
-    <div class="text-h5 font-weight-bold mb-5">Drift Events</div>
+    <div class="d-flex align-center mb-4">
+      <div class="text-h5 font-weight-bold">Drift Events</div>
+      <v-spacer />
+      <v-btn variant="tonal" prepend-icon="mdi-help-circle-outline" @click="showHelp = true">How it works</v-btn>
+    </div>
 
-    <!-- Filters -->
-    <v-card rounded="lg" elevation="1" class="mb-5 pa-4">
-      <v-row dense align="end">
-        <v-col cols="12" sm="6" md="3">
-          <v-select v-model="filters.device" label="Device" :items="deviceItems" item-title="title" item-value="value" clearable @update:model-value="applyFilters" />
-        </v-col>
-        <v-col cols="12" sm="6" md="3">
-          <v-select v-model="filters.status" label="Status" :items="['new','acknowledged','resolved']" clearable @update:model-value="applyFilters" />
-        </v-col>
-        <v-col cols="12" sm="auto">
-          <v-btn color="primary" class="mr-2" @click="applyFilters">Refresh</v-btn>
-          <v-btn @click="clearFilters">Clear</v-btn>
-        </v-col>
-      </v-row>
-    </v-card>
+    <!-- How it works dialog -->
+    <v-dialog v-model="showHelp" max-width="720" scrollable>
+      <v-card rounded="lg">
+        <v-card-title class="d-flex align-center pt-4 pb-2">
+          <v-icon icon="mdi-compare-horizontal" class="mr-2" color="primary" />
+          Drift Detection
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" @click="showHelp = false" />
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pa-5" style="font-size:0.92rem;line-height:1.7">
 
-    <div v-if="store.loading" class="text-medium-emphasis pa-4">Loading…</div>
-    <template v-else>
-      <v-card v-if="store.events.length" rounded="lg" elevation="1">
-        <v-table density="compact">
-          <thead>
-            <tr>
-              <th>Device</th><th>Status</th><th>Detected</th>
-              <th>Acknowledged By</th><th>Diff Keys</th><th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="event in store.events" :key="event.id">
-              <td class="font-weight-medium">{{ event.device_name ?? event.device }}</td>
-              <td><v-chip :color="statusColor(event.status)" size="x-small" label>{{ event.status }}</v-chip></td>
-              <td class="text-medium-emphasis text-caption">{{ new Date(event.created_at).toLocaleString() }}</td>
-              <td>
-                <span v-if="event.acknowledged_by">
-                  {{ event.acknowledged_by }}
-                  <span v-if="event.acknowledgement_reason" class="text-medium-emphasis text-caption"> — {{ event.acknowledgement_reason }}</span>
-                </span>
-                <span v-else class="text-medium-emphasis">—</span>
-              </td>
-              <td class="text-caption text-medium-emphasis">{{ Object.keys(event.diff || {}).join(', ') || '—' }}</td>
-              <td>
-                <v-btn size="x-small" variant="tonal" class="mr-1" @click="openDiff(event)">View Diff</v-btn>
-                <v-btn v-if="event.status === 'new' && reviewedIds.includes(event.id)" size="x-small" variant="tonal" @click="openAcknowledge(event)">Acknowledge</v-btn>
-              </td>
-            </tr>
-          </tbody>
-        </v-table>
+          <p class="mb-3">
+            <strong>Drift</strong> is any difference between a device's current configuration and its
+            stored <strong>baseline</strong> snapshot. IsotopeIQ Satellite detects, records, and
+            surfaces these differences so you can decide whether a change was expected or requires
+            investigation.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">1. Baseline snapshot</div>
+          <p class="mb-3">
+            The first time a policy runs successfully for a device, the parsed collection output is
+            stored as the authoritative baseline. All future collections for that policy+device pair
+            are compared against this snapshot. You can view and manage baselines on the
+            <strong>Baselines</strong> page.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">2. Comparison &amp; diff</div>
+          <p class="mb-3">
+            Each subsequent collection is diffed section-by-section against the baseline. Changes
+            are classified as <em>changed</em>, <em>added</em>, or <em>removed</em> at the field
+            or array-item level. Click <strong>View Diff</strong> on any event to inspect the
+            side-by-side comparison.
+          </p>
+          <p class="mb-0">
+            Fields covered by a <strong>volatile rule</strong> are silently excluded before comparison
+            so expected, high-churn values (e.g. disk free space, PIDs, entropy pool) never
+            trigger false positives. Use the
+            <v-icon icon="mdi-eye-off-outline" size="x-small" /> ignore button inside any diff
+            to permanently promote a noisy field to a volatile rule.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">3. Event lifecycle</div>
+          <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
+            <tbody>
+              <tr>
+                <td class="font-weight-medium" style="width:30%">new</td>
+                <td>Drift was detected and has not yet been reviewed.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">acknowledged</td>
+                <td>A user has reviewed the event and recorded a reason — the change was expected or accepted.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">resolved</td>
+                <td>The device's configuration has returned to match the baseline on a subsequent collection.</td>
+              </tr>
+            </tbody>
+          </v-table>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">Volatile rules</div>
+          <p class="mb-0">
+            Volatile rules tell Satellite which fields to ignore during comparison. They are managed
+            on the <strong>Volatile Rules</strong> page and applied globally across all devices.
+            Rules can target a top-level section field, a per-item field in an array section, a
+            nested sub-field, or a specific key in key-value sections like <code>sysctl</code>.
+          </p>
+
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="pa-3">
+          <v-spacer />
+          <v-btn color="primary" variant="tonal" @click="showHelp = false">Got it</v-btn>
+        </v-card-actions>
       </v-card>
-      <div v-else class="pa-6 text-center text-medium-emphasis">No drift events.</div>
+    </v-dialog>
 
-      <!-- Pagination -->
-      <div class="d-flex align-center justify-center ga-2 mt-4">
-        <v-btn size="small" variant="text" :disabled="store.page <= 1" @click="store.goPage(store.page - 1)">← Prev</v-btn>
-        <span class="text-caption text-medium-emphasis">Page {{ store.page }} of {{ store.totalPages }} &nbsp;({{ store.totalCount }} total)</span>
-        <v-btn size="small" variant="text" :disabled="store.page >= store.totalPages" @click="store.goPage(store.page + 1)">Next →</v-btn>
-      </div>
-    </template>
+    <v-data-table-server
+      v-model:options="tableOptions"
+      :headers="headers"
+      :items="store.events"
+      :items-length="store.totalCount"
+      :loading="store.loading"
+      :items-per-page-options="[25, 50, 100]"
+      density="compact"
+      rounded="lg"
+      elevation="1"
+      no-data-text="No drift events."
+      @update:options="onTableOptions"
+    >
+      <!-- Filters embedded in table top slot -->
+      <template #top>
+        <v-row dense align="end" class="pa-3 pb-0">
+          <v-col cols="12" sm="6" md="3">
+            <v-select v-model="filters.device" label="Device" :items="deviceItems" item-title="title" item-value="value"
+              clearable density="compact" hide-details variant="outlined" @update:model-value="resetAndFetch" />
+          </v-col>
+          <v-col cols="12" sm="6" md="3">
+            <v-select v-model="filters.status" label="Status" :items="['new','acknowledged','resolved']"
+              clearable density="compact" hide-details variant="outlined" @update:model-value="resetAndFetch" />
+          </v-col>
+          <v-col cols="12" sm="auto" class="d-flex align-center">
+            <v-btn size="small" variant="tonal" @click="clearFilters">Clear</v-btn>
+          </v-col>
+        </v-row>
+      </template>
+
+      <template #item.device_name="{ item }">
+        <span class="font-weight-medium">{{ item.device_name ?? item.device }}</span>
+      </template>
+
+      <template #item.status="{ item }">
+        <v-chip :color="statusColor(item.status)" size="x-small" label>{{ item.status }}</v-chip>
+      </template>
+
+      <template #item.created_at="{ item }">
+        <span class="text-medium-emphasis text-caption">{{ new Date(item.created_at).toLocaleString() }}</span>
+      </template>
+
+      <template #item.acknowledged_by="{ item }">
+        <span v-if="item.acknowledged_by">
+          {{ item.acknowledged_by }}
+          <span v-if="item.acknowledgement_reason" class="text-medium-emphasis text-caption"> — {{ item.acknowledgement_reason }}</span>
+        </span>
+        <span v-else class="text-medium-emphasis">—</span>
+      </template>
+
+      <template #item.diff="{ item }">
+        <span class="text-caption text-medium-emphasis">{{ Object.keys(item.diff || {}).join(', ') || '—' }}</span>
+      </template>
+
+      <template #item.actions="{ item }">
+        <v-btn size="x-small" variant="tonal" class="mr-1" @click="openDiff(item)">View Diff</v-btn>
+        <v-btn v-if="item.status === 'new' && reviewedIds.includes(item.id)" size="x-small" variant="tonal" @click="openAcknowledge(item)">Acknowledge</v-btn>
+      </template>
+    </v-data-table-server>
 
     <!-- Diff detail dialog -->
     <v-dialog v-model="diffOpen" max-width="1100" scrollable>
@@ -72,13 +160,24 @@
         <v-card-subtitle>{{ new Date(selected.created_at).toLocaleString() }}</v-card-subtitle>
         <v-card-text>
           <div v-if="diffLoading" class="text-medium-emphasis pa-4">Loading diff data…</div>
-          <DriftDiffViewer v-else :baseline="selected.baseline_data" :current="selected.result_data" :volatile-fields="store.volatileFields" />
+          <DriftDiffViewer
+            v-else
+            :baseline="selected.baseline_data"
+            :current="selected.result_data"
+            :volatile-fields="store.volatileFields"
+            @rule-created="onRuleCreated"
+          />
         </v-card-text>
+        <v-card-actions>
+          <v-btn v-if="selected.status === 'new'" color="primary" variant="tonal" @click="acknowledgeFromDiff">Acknowledge</v-btn>
+          <v-spacer />
+          <v-btn @click="diffOpen = false">Close</v-btn>
+        </v-card-actions>
       </v-card>
     </v-dialog>
 
     <!-- Acknowledge dialog -->
-    <v-dialog v-model="ackOpen" max-width="460">
+    <v-dialog v-model="ackOpen" max-width="460" persistent>
       <v-card rounded="lg">
         <v-card-title>Acknowledge Drift</v-card-title>
         <v-card-subtitle v-if="acknowledging">Device: {{ acknowledging.device_name ?? acknowledging.device }}</v-card-subtitle>
@@ -97,39 +196,77 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useDriftStore } from '../stores/drift'
 import api from '../api'
 import DriftDiffViewer from '../components/DriftDiffViewer.vue'
 
 const store = useDriftStore()
+const showHelp = ref(false)
 const devices = ref([])
 const deviceItems = computed(() => devices.value.map(d => ({ title: d.name, value: d.id })))
-
 const filters = reactive({ device: null, status: '' })
 
-function statusColor(status) {
-  return { success: 'success', resolved: 'success', failed: 'error', running: 'info',
-           pending: 'warning', new: 'error', acknowledged: 'warning', partial: 'warning',
-           cancelled: 'default' }[status] ?? 'default'
+const headers = [
+  { title: 'Device',         key: 'device_name',     sortable: true  },
+  { title: 'Status',         key: 'status',           sortable: true  },
+  { title: 'Detected',       key: 'created_at',       sortable: true  },
+  { title: 'Acknowledged By',key: 'acknowledged_by',  sortable: false },
+  { title: 'Diff Keys',      key: 'diff',             sortable: false },
+  { title: 'Actions',        key: 'actions',          sortable: false },
+]
+
+// Maps Vuetify column keys to DRF ordering field names
+const SORT_FIELD = {
+  device_name: 'device__name',
+  status:      'status',
+  created_at:  'created_at',
 }
 
-function applyFilters() {
-  store.page = 1
-  const p = {}
-  if (filters.device) p.device = filters.device
-  if (filters.status) p.status = filters.status
-  store.fetchEvents(p)
+const tableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [{ key: 'created_at', order: 'desc' }] })
+
+function buildParams(options = tableOptions.value) {
+  const params = {
+    page:      options.page,
+    page_size: options.itemsPerPage,
+  }
+  if (filters.device) params.device = filters.device
+  if (filters.status) params.status = filters.status
+  if (options.sortBy?.length) {
+    const { key, order } = options.sortBy[0]
+    const field = SORT_FIELD[key] ?? key
+    params.ordering = order === 'desc' ? `-${field}` : field
+  }
+  return params
+}
+
+function onTableOptions(options) {
+  tableOptions.value = options
+  store.fetchEvents(buildParams(options))
+}
+
+function resetAndFetch() {
+  const opts = { ...tableOptions.value, page: 1 }
+  tableOptions.value = opts
+  store.fetchEvents(buildParams(opts))
 }
 
 function clearFilters() {
   Object.assign(filters, { device: null, status: '' })
-  store.page = 1
-  store.fetchEvents()
+  resetAndFetch()
 }
 
-const reviewedIds = ref([])
+function statusColor(status) {
+  return {
+    new: 'error', acknowledged: 'warning', resolved: 'success',
+    success: 'success', failed: 'error', running: 'info',
+    pending: 'warning', partial: 'warning', cancelled: 'default',
+  }[status] ?? 'default'
+}
 
+// ── Diff dialog ───────────────────────────────────────────────────────────────
+
+const reviewedIds = ref([])
 const selected = ref(null)
 const diffOpen = ref(false)
 const diffLoading = ref(false)
@@ -138,24 +275,26 @@ async function openDiff(event) {
   if (!reviewedIds.value.includes(event.id)) {
     reviewedIds.value = [...reviewedIds.value, event.id]
   }
-  selected.value = { ...event, baseline_data: null, result_data: null }
+  selected.value = { ...event }
   diffOpen.value = true
   diffLoading.value = true
   try {
-    const [baselineRes, resultRes] = await Promise.all([
-      api.get('/baselines/', { params: { device: event.device } }),
-      api.get(`/jobs/results/${event.job_result}/`),
+    const [detailRes] = await Promise.all([
+      api.get(`/drift/${event.id}/`),
       store.fetchVolatileFields(),
     ])
-    const baselines = baselineRes.data.results ?? baselineRes.data
-    selected.value = {
-      ...event,
-      baseline_data: baselines[0]?.parsed_data ?? null,
-      result_data: resultRes.data.parsed_output ?? null,
-    }
+    selected.value = detailRes.data
   } finally {
     diffLoading.value = false
   }
+}
+
+// ── Acknowledge dialog ────────────────────────────────────────────────────────
+
+function onRuleCreated() {
+  // Force re-fetch volatile fields on next open (clears the cache so the new rule is shown)
+  store.volatileFields = null
+  store.fetchVolatileFields()
 }
 
 const acknowledging = ref(null)
@@ -169,6 +308,13 @@ function openAcknowledge(event) {
   ackReason.value = ''
   ackError.value = ''
   ackOpen.value = true
+}
+
+async function acknowledgeFromDiff() {
+  const event = selected.value
+  diffOpen.value = false
+  await nextTick()
+  setTimeout(() => openAcknowledge(event), 150)
 }
 
 async function submitAcknowledge() {
@@ -187,9 +333,17 @@ async function submitAcknowledge() {
   }
 }
 
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
+
 onMounted(async () => {
   const { data } = await api.get('/devices/', { params: { page_size: 500 } })
   devices.value = data.results ?? data
-  store.fetchEvents()
+  // Initial fetch — onTableOptions will also fire from v-data-table-server mount,
+  // but fetch here ensures devices are loaded first.
+  store.startPolling()
+})
+
+onUnmounted(() => {
+  store.stopPolling()
 })
 </script>

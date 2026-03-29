@@ -35,23 +35,26 @@ class DeviceJobResultListSerializer(serializers.ModelSerializer):
 
 class JobSerializer(serializers.ModelSerializer):
     device_results = DeviceJobResultSerializer(many=True, read_only=True)
+    device_name = serializers.CharField(source='device.name', read_only=True, default=None)
     policy_name = serializers.CharField(source='policy.name', read_only=True, default=None)
 
     class Meta:
         model = Job
         fields = [
-            'id', 'policy', 'policy_name', 'triggered_by', 'status',
-            'started_at', 'finished_at', 'created_at', 'celery_task_id',
-            'device_results',
+            'id', 'device', 'device_name', 'policy', 'policy_name',
+            'triggered_by', 'status', 'started_at', 'finished_at',
+            'created_at', 'celery_task_id', 'device_results',
         ]
 
 
 class JobListSerializer(serializers.ModelSerializer):
     """Lightweight job serializer for the list endpoint."""
+    device_name = serializers.CharField(source='device.name', read_only=True, default=None)
     policy_name = serializers.CharField(source='policy.name', read_only=True, default=None)
     device_results = DeviceJobResultListSerializer(many=True, read_only=True)
 
     class Meta:
         model = Job
-        fields = ['id', 'policy', 'policy_name', 'triggered_by', 'status',
-                  'started_at', 'finished_at', 'created_at', 'device_results']
+        fields = ['id', 'device', 'device_name', 'policy', 'policy_name',
+                  'triggered_by', 'status', 'started_at', 'finished_at',
+                  'created_at', 'device_results']

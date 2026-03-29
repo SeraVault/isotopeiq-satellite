@@ -11,7 +11,7 @@ from .serializers import JobSerializer, JobListSerializer, DeviceJobResultSerial
 
 class JobViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
-    queryset = Job.objects.prefetch_related('device_results__device').select_related('policy').all()
+    queryset = Job.objects.prefetch_related('device_results__device').select_related('policy', 'device').all()
     serializer_class = JobSerializer
     filterset_class = JobFilter
     ordering_fields = ['created_at', 'started_at']
@@ -55,6 +55,14 @@ class JobViewSet(viewsets.ReadOnlyModelViewSet):
             status='cancelled',
             finished_at=now,
         )
+
+        # Also cancel any sibling jobs that share the same Celery task
+        # (created in the same run_policy invocation but not yet started).
+        if job.celery_task_id:
+            Job.objects.filter(
+                celery_task_id=job.celery_task_id,
+                status__in=['pending', 'running'],
+            ).exclude(pk=job.pk).update(status='cancelled', finished_at=now)
 
         return Response({'detail': 'Job cancelled.'}, status=status.HTTP_200_OK)
 

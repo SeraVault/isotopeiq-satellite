@@ -1,38 +1,27 @@
 <template>
-  <div class="drift-diff-viewer">
-    <div class="d-flex align-center flex-wrap ga-4 mb-3 pa-3 rounded-lg" style="background:#f5f5f5;border:1px solid #e8e8e8">
-      <v-checkbox v-model="sideBySide" label="Side by side" density="compact" hide-details />
-      <v-select
-        v-model="context"
-        label="Context lines"
-        :items="[{title:'3',value:3},{title:'10',value:10},{title:'50',value:50},{title:'All',value:999999}]"
-        item-title="title"
-        item-value="value"
-        density="compact"
-        variant="outlined"
-        hide-details
-        style="max-width:130px"
-      />
-      <v-checkbox v-if="volatileFields" v-model="hideVolatile" label="Hide volatile fields" density="compact" hide-details />
+  <div>
+    <div v-if="volatileFields" class="mb-3">
+      <v-checkbox v-model="hideVolatile" label="Hide volatile fields" density="compact" hide-details />
     </div>
-
-    <div class="diff-body">
-      <CodeDiff
-        :old-string="oldJson"
-        :new-string="newJson"
-        :output-format="sideBySide ? 'side-by-side' : 'line-by-line'"
-        :context="context"
-        language="json"
-        theme="light"
-        :highlight="true"
-      />
-    </div>
+    <CanonicalDiffViewer
+      :baseline="filteredBaseline"
+      :current="filteredCurrent"
+      :allow-ignore="true"
+      @ignore-field="onIgnoreField"
+    />
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="4000" location="bottom right">
+      {{ snackbar.msg }}
+      <template #actions>
+        <v-btn variant="text" @click="snackbar.show = false">Dismiss</v-btn>
+      </template>
+    </v-snackbar>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { CodeDiff } from 'v-code-diff'
+import api from '../api'
+import CanonicalDiffViewer from './CanonicalDiffViewer.vue'
 
 const props = defineProps({
   baseline:       { type: Object, default: null },
@@ -40,15 +29,37 @@ const props = defineProps({
   volatileFields: { type: Object, default: null },
 })
 
-const sideBySide   = ref(true)
-const context      = ref(10)
+const emit = defineEmits(['rule-created'])
+
 const hideVolatile = ref(true)
+const snackbar = ref({ show: false, msg: '', color: 'success' })
+
+async function onIgnoreField({ section, spec_type, field_name, aux }) {
+  try {
+    await api.post('/drift/volatile-rules/', { section, spec_type, field_name, aux, is_active: true })
+    snackbar.value = {
+      show: true,
+      color: 'success',
+      msg: `Volatile rule added: ${section} › ${field_name}`,
+    }
+    emit('rule-created')
+  } catch (e) {
+    const detail = e.response?.data?.non_field_errors?.[0]
+      ?? e.response?.data?.detail
+      ?? 'Failed to create rule'
+    snackbar.value = { show: true, color: 'error', msg: detail }
+  }
+}
 
 function stripVolatile(data) {
   if (!props.volatileFields || !data) return data
   data = JSON.parse(JSON.stringify(data))
   for (const [section, spec] of Object.entries(props.volatileFields)) {
     if (!(section in data)) continue
+    if (spec.exclude_section) {
+      delete data[section]
+      continue
+    }
     const sectionData = data[section]
     if (spec.fields && typeof sectionData === 'object' && !Array.isArray(sectionData)) {
       for (const f of spec.fields) delete sectionData[f]
@@ -57,6 +68,10 @@ function stripVolatile(data) {
       for (const item of sectionData)
         if (item && typeof item === 'object')
           for (const f of spec.items) delete item[f]
+    }
+    if (spec.exclude_keys && Array.isArray(sectionData)) {
+      const { key_field, values } = spec.exclude_keys
+      data[section] = sectionData.filter(item => !values.includes(item?.[key_field]))
     }
     if (spec.nested) {
       const items = Array.isArray(sectionData) ? sectionData : [sectionData]
@@ -72,30 +87,10 @@ function stripVolatile(data) {
   return data
 }
 
-const oldJson = computed(() => {
-  const data = hideVolatile.value ? stripVolatile(props.baseline) : props.baseline
-  return JSON.stringify(data ?? {}, null, 2)
-})
-
-const newJson = computed(() => {
-  const data = hideVolatile.value ? stripVolatile(props.current) : props.current
-  return JSON.stringify(data ?? {}, null, 2)
-})
+const filteredBaseline = computed(() =>
+  hideVolatile.value ? stripVolatile(props.baseline) : props.baseline
+)
+const filteredCurrent = computed(() =>
+  hideVolatile.value ? stripVolatile(props.current) : props.current
+)
 </script>
-
-<style scoped>
-.drift-diff-viewer {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.diff-body {
-  overflow: auto;
-  max-height: 65vh;
-}
-:deep(.d2h-wrapper),
-:deep(.d2h-file-wrapper) {
-  max-height: none;
-  overflow: visible;
-}
-</style>

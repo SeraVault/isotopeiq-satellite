@@ -264,6 +264,70 @@ _KERNEL_MODULE_SCHEMA = {
     'additionalProperties': False,
 }
 
+_PCI_DEVICE_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        # PCI slot address, e.g. "00:02.0" or "0000:00:1f.2"
+        'slot':    {'type': 'string'},
+        # PCI device class string, e.g. "VGA compatible controller"
+        'class':   {'type': 'string'},
+        # Vendor name or ID string
+        'vendor':  {'type': 'string'},
+        # Device/product name or ID string
+        'device':  {'type': 'string'},
+        # Kernel driver in use, e.g. "i915", "ahci"
+        'driver':  {'type': 'string'},
+        # Subsystem vendor string (optional)
+        'subsystem_vendor': {'type': 'string'},
+        # Subsystem device string (optional)
+        'subsystem_device': {'type': 'string'},
+    },
+    'required': ['slot'],
+    'additionalProperties': False,
+}
+
+_STORAGE_DEVICE_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        # Device node or path, e.g. "sda", "nvme0n1", "\\\\.\\PHYSICALDRIVE0"
+        'name':      {'type': 'string'},
+        # Device category: "disk", "optical", "flash"
+        'type':      {'type': 'string'},
+        # Model string as reported by the drive/OS
+        'model':     {'type': 'string'},
+        # Manufacturer/vendor name
+        'vendor':    {'type': 'string'},
+        # Capacity with unit suffix, e.g. "500G", "1T", "32G"
+        'size':      {'type': 'string'},
+        # Drive serial number
+        'serial':    {'type': 'string'},
+        # Transport/bus type: "sata", "nvme", "usb", "ide", "scsi", "ata"
+        'interface': {'type': 'string'},
+        # True for removable media (USB stick, card reader, optical, etc.)
+        'removable': {'type': 'boolean'},
+    },
+    'required': ['name'],
+    'additionalProperties': False,
+}
+
+_USB_DEVICE_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        # Bus and device address, e.g. "001/002"
+        'bus_id':       {'type': 'string'},
+        # 4-hex-digit USB vendor ID, e.g. "8087"
+        'vendor_id':    {'type': 'string'},
+        # 4-hex-digit USB product ID, e.g. "0024"
+        'product_id':   {'type': 'string'},
+        # Manufacturer name string, if available
+        'manufacturer': {'type': 'string'},
+        # Product/device name string
+        'product':      {'type': 'string'},
+    },
+    'required': ['bus_id'],
+    'additionalProperties': False,
+}
+
 _LISTENING_SERVICE_SCHEMA = {
     'type': 'object',
     'properties': {
@@ -595,6 +659,9 @@ CANONICAL_SCHEMA = {
         'startup_items':      {'type': 'array', 'items': _STARTUP_ITEM_SCHEMA},
         'ssh_keys':           {'type': 'array', 'items': _SSH_KEY_SCHEMA},
         'kernel_modules':     {'type': 'array', 'items': _KERNEL_MODULE_SCHEMA},
+        'pci_devices':        {'type': 'array', 'items': _PCI_DEVICE_SCHEMA},
+        'storage_devices':    {'type': 'array', 'items': _STORAGE_DEVICE_SCHEMA},
+        'usb_devices':        {'type': 'array', 'items': _USB_DEVICE_SCHEMA},
         'listening_services': {'type': 'array', 'items': _LISTENING_SERVICE_SCHEMA},
         'certificates':       {'type': 'array', 'items': _CERTIFICATE_SCHEMA},
         'firewall_rules':     {'type': 'array', 'items': _FIREWALL_RULE_SCHEMA},
@@ -646,7 +713,9 @@ CANONICAL_EMPTY: dict = {
 #       'items'   : set of fields to drop from every item when the section is
 #                   an array, OR
 #       'nested'  : dict mapping an item field name to a further 'items' set
-#                   for one level of nesting within array items
+#                   for one level of nesting within array items, OR
+#       'exclude_keys': {'key_field': str, 'values': set[str]} — remove entire
+#                   items from an array whose `key_field` is in `values`
 
 VOLATILE_FIELDS: dict = {
     # Disk utilisation changes constantly; mount/type/options/suid are static
@@ -698,47 +767,96 @@ VOLATILE_FIELDS: dict = {
             'ports': {'role', 'state'},
         },
     },
+    # These sysctl entries are kernel runtime counters, not tunable config.
+    # They change every few seconds regardless of any admin action and would
+    # flood drift events if tracked.
+    'sysctl': {
+        'exclude_keys': {
+            'key_field': 'key',
+            'values': {
+                # VFS dentry/inode cache hit/miss counters
+                'fs.dentry-state',
+                'fs.inode-state',
+                # Open file descriptor counts (runtime, not a limit)
+                'fs.file-nr',
+                'fs.inode-nr',
+                # Kernel PID counter — increments with every fork
+                'kernel.ns_last_pid',
+                # Entropy pool levels — change continuously
+                'kernel.random.entropy_avail',
+                'kernel.random.write_wakeup_threshold',
+                # UUIDs — different on every read
+                'kernel.random.uuid',
+                'kernel.random.boot_id',
+                # netfilter connection tracking counters
+                'net.netfilter.nf_conntrack_count',
+                'net.netfilter.nf_conntrack_expect_count',
+                # NFS-related runtime counters (not present on most hosts)
+                'fs.nfs.nfs_congestion_kb',
+            },
+        },
+    },
 }
 
 
-def strip_volatile(data: dict) -> dict:
+def strip_volatile(data: dict, spec: dict | None = None) -> dict:
     """
     Return a deep copy of a canonical document with all volatile fields removed.
-    Use this before comparing two snapshots for drift detection.
+
+    If `spec` is supplied it overrides the built-in VOLATILE_FIELDS dict; pass
+    the result of drift.volatile_utils.get_volatile_spec() to use DB-managed
+    rules.  Falls back to VOLATILE_FIELDS when spec is None.
     """
     import copy
     data = copy.deepcopy(data)
+    effective = spec if spec is not None else VOLATILE_FIELDS
 
-    for section, spec in VOLATILE_FIELDS.items():
+    for section, spec_entry in effective.items():
         if section not in data:
+            continue
+
+        # Remove the entire section from comparison
+        if spec_entry.get('exclude_section'):
+            del data[section]
             continue
 
         section_data = data[section]
 
         # Scalar fields on a section object (e.g. os.ntp_synced)
-        if 'fields' in spec and isinstance(section_data, dict):
-            for field in spec['fields']:
+        if 'fields' in spec_entry and isinstance(section_data, dict):
+            for field in spec_entry['fields']:
                 section_data.pop(field, None)
 
         # Fields on every item in an array section (e.g. filesystem[*].free_gb)
-        if 'items' in spec and isinstance(section_data, list):
+        if 'items' in spec_entry and isinstance(section_data, list):
             for item in section_data:
                 if isinstance(item, dict):
-                    for field in spec['items']:
+                    for field in spec_entry['items']:
                         item.pop(field, None)
 
         # Fields within a nested array inside each item
         # (e.g. routing_protocols[*].neighbors[*].state)
-        if 'nested' in spec:
+        if 'nested' in spec_entry:
             items = section_data if isinstance(section_data, list) else [section_data]
             for item in items:
                 if not isinstance(item, dict):
                     continue
-                for nested_key, nested_fields in spec['nested'].items():
+                for nested_key, nested_fields in spec_entry['nested'].items():
                     for nested_item in item.get(nested_key, []):
                         if isinstance(nested_item, dict):
                             for field in nested_fields:
                                 nested_item.pop(field, None)
+
+        # Exclude entire items whose key field is in a known-volatile set
+        # (e.g. sysctl entries that are runtime counters, not config)
+        if 'exclude_keys' in spec_entry and isinstance(section_data, list):
+            cfg = spec_entry['exclude_keys']
+            key_field   = cfg['key_field']
+            exclude_set = cfg['values']
+            data[section] = [
+                item for item in section_data
+                if not (isinstance(item, dict) and item.get(key_field) in exclude_set)
+            ]
 
     return data
 

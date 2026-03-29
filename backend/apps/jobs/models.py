@@ -11,7 +11,16 @@ class Job(models.Model):
         ('cancelled', 'Cancelled'),
     ]
 
-    # Null for push-initiated jobs that have no associated policy.
+    # The device this job ran against.  Nullable only to preserve existing rows
+    # created before this field was added; all new jobs set this explicitly.
+    device = models.ForeignKey(
+        'devices.Device',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='jobs',
+    )
+    # Policy that triggered this job (null for ad-hoc / push jobs).
     policy = models.ForeignKey(
         'policies.Policy',
         on_delete=models.SET_NULL,

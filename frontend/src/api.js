@@ -26,6 +26,10 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// Single in-flight refresh promise — prevents the 6 simultaneous dashboard
+// poll requests from all trying to refresh the token at the same time.
+let refreshPromise = null
+
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
@@ -33,15 +37,27 @@ api.interceptors.response.use(
       const refresh = localStorage.getItem('refresh_token')
       if (refresh && !error.config._retry) {
         error.config._retry = true
+        if (!refreshPromise) {
+          refreshPromise = axios.post('/api/token/refresh/', { refresh })
+            .then(({ data }) => {
+              setTokens(data.access, data.refresh || null)
+              window.dispatchEvent(new CustomEvent('auth:tokenRefreshed'))
+              return data.access
+            })
+            .catch((err) => {
+              clearTokens()
+              return Promise.reject(err)
+            })
+            .finally(() => {
+              refreshPromise = null
+            })
+        }
         try {
-          const { data } = await axios.post('/api/token/refresh/', { refresh })
-          setTokens(data.access, data.refresh || null)
-          // Notify the WS store so it can reconnect with the fresh token.
-          window.dispatchEvent(new CustomEvent('auth:tokenRefreshed'))
-          error.config.headers.Authorization = `Bearer ${data.access}`
+          const access = await refreshPromise
+          error.config.headers.Authorization = `Bearer ${access}`
           return api(error.config)
         } catch {
-          clearTokens()
+          return Promise.reject(error)
         }
       } else {
         clearTokens()

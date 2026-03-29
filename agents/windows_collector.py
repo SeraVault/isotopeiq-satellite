@@ -265,6 +265,9 @@ def empty_canonical():
         'startup_items': [],
         'ssh_keys': [],
         'kernel_modules': [],
+        'pci_devices': [],
+        'storage_devices': [],
+        'usb_devices': [],
         'listening_services': [],
         'firewall_rules': [],
         'sysctl': [],
@@ -913,6 +916,91 @@ def collect_kernel_modules(output):
 
 
 # ---------------------------------------------------------------------------
+# PCI devices
+# ---------------------------------------------------------------------------
+
+def collect_pci_devices(output):
+    """Collect PCI devices via Win32_PnPEntity (WMI)."""
+    rows = wmic(
+        'Win32_PnPEntity',
+        ['PNPDeviceID', 'PNPClass', 'Manufacturer', 'Name'],
+        where="PNPDeviceID LIKE 'PCI\\\\%'",
+    )
+    for row in rows:
+        slot = row.get('PNPDeviceID', '').strip()
+        if not slot:
+            continue
+        output['pci_devices'].append({
+            'slot':   slot,
+            'class':  row.get('PNPClass', '').strip(),
+            'vendor': row.get('Manufacturer', '').strip(),
+            'device': row.get('Name', '').strip(),
+        })
+
+
+# ---------------------------------------------------------------------------
+# listening services
+# ---------------------------------------------------------------------------
+
+def collect_storage_devices(output):
+    """Collect physical drives and optical media via WMI."""
+    rows = wmic('Win32_DiskDrive', ['DeviceID', 'Model', 'Manufacturer', 'Size', 'SerialNumber', 'InterfaceType'])
+    for row in rows:
+        name = row.get('DeviceID', '').strip()
+        if not name:
+            continue
+        size_bytes = row.get('Size', '').strip()
+        try:
+            size = f"{round(int(size_bytes) / (1024**3), 2)}G"
+        except (ValueError, TypeError):
+            size = ''
+        iface = row.get('InterfaceType', '').strip().lower()
+        entry = {'name': name, 'type': 'disk'}
+        if row.get('Model'):        entry['model']     = row['Model'].strip()
+        if row.get('Manufacturer'): entry['vendor']    = row['Manufacturer'].strip()
+        if size:                    entry['size']      = size
+        if row.get('SerialNumber'): entry['serial']    = row['SerialNumber'].strip()
+        if iface:                   entry['interface'] = iface
+        entry['removable'] = False
+        output['storage_devices'].append(entry)
+
+    rows = wmic('Win32_CDROMDrive', ['Drive', 'Caption', 'Manufacturer'])
+    for row in rows:
+        name = row.get('Drive', '').strip() or 'CDROM'
+        entry = {'name': name, 'type': 'optical', 'removable': True, 'interface': 'ide'}
+        if row.get('Caption'):      entry['model']  = row['Caption'].strip()
+        if row.get('Manufacturer'): entry['vendor'] = row['Manufacturer'].strip()
+        output['storage_devices'].append(entry)
+
+
+def collect_usb_devices(output):
+    """Collect USB devices via Win32_PnPEntity."""
+    rows = wmic(
+        'Win32_PnPEntity',
+        ['PNPDeviceID', 'Manufacturer', 'Name'],
+        where="PNPDeviceID LIKE 'USB\\\\VID%'",
+    )
+    for row in rows:
+        bus_id = row.get('PNPDeviceID', '').strip()
+        if not bus_id:
+            continue
+        vid = ''
+        pid = ''
+        m = re.search(r'VID_([0-9A-Fa-f]+)', bus_id)
+        if m:
+            vid = m.group(1).lower()
+        m = re.search(r'PID_([0-9A-Fa-f]+)', bus_id)
+        if m:
+            pid = m.group(1).lower()
+        entry = {'bus_id': bus_id}
+        if vid: entry['vendor_id']    = vid
+        if pid: entry['product_id']   = pid
+        if row.get('Manufacturer'): entry['manufacturer'] = row['Manufacturer'].strip()
+        if row.get('Name'):         entry['product']      = row['Name'].strip()
+        output['usb_devices'].append(entry)
+
+
+# ---------------------------------------------------------------------------
 # listening services
 # ---------------------------------------------------------------------------
 
@@ -1207,6 +1295,9 @@ COLLECTORS = [
     ('scheduled_tasks',    collect_scheduled_tasks),
     ('ssh_keys',           collect_ssh_keys),
     ('kernel_modules',     collect_kernel_modules),
+    ('pci_devices',        collect_pci_devices),
+    ('storage_devices',    collect_storage_devices),
+    ('usb_devices',        collect_usb_devices),
     ('listening_services', collect_listening_services),
     ('firewall_rules',     collect_firewall_rules),
     ('sysctl',             collect_sysctl),

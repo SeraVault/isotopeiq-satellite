@@ -1,6 +1,76 @@
 <template>
   <div>
-    <div class="text-h5 font-weight-bold mb-5">Baselines</div>
+    <div class="d-flex align-center mb-4">
+      <div class="text-h5 font-weight-bold">Baselines</div>
+      <v-spacer />
+      <v-btn variant="tonal" prepend-icon="mdi-help-circle-outline" @click="showHelp = true">How it works</v-btn>
+    </div>
+
+    <!-- How it works dialog -->
+    <v-dialog v-model="showHelp" max-width="720" scrollable>
+      <v-card rounded="lg">
+        <v-card-title class="d-flex align-center pt-4 pb-2">
+          <v-icon icon="mdi-camera-outline" class="mr-2" color="primary" />
+          Baselines
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" @click="showHelp = false" />
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pa-5" style="font-size:0.92rem;line-height:1.7">
+
+          <p class="mb-3">
+            A <strong>baseline</strong> is a point-in-time snapshot of a device's canonical
+            configuration. All future collections for the same policy+device pair are compared
+            against this snapshot to detect <strong>drift</strong>.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">How a baseline is established</div>
+          <p class="mb-3">
+            When a job completes successfully and no baseline exists yet for that device + policy
+            combination, Satellite automatically stores the parsed output as the baseline.
+            Baselines are never overwritten automatically — only a manual re-baseline action
+            replaces them, giving you full control over the comparison reference point.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">What is stored</div>
+          <p class="mb-3">
+            The baseline stores the fully <em>parsed</em> canonical JSON document produced by the
+            parser script — not raw collector output. This means the diff engine works with
+            structured, normalised data (e.g. services as an array of objects, sysctl as key-value
+            pairs) rather than raw text.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">Viewing &amp; re-baselining</div>
+          <p class="mb-3">
+            Click <strong>View Data</strong> to open the full canonical snapshot in an interactive
+            section viewer so you can inspect every field stored in the baseline.
+          </p>
+          <p class="mb-0">
+            To re-baseline a device, go to the <strong>Drift</strong> page and acknowledge the
+            relevant drift event — from there you can promote the current collection result as the
+            new baseline reference.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">Relationship to drift</div>
+          <p class="mb-0">
+            Every <strong>Drift Event</strong> references the baseline that was active when the
+            difference was detected. If you re-baseline a device, new events will be measured
+            against the updated snapshot; historical events retain a reference to the baseline
+            that was in place at the time they were created.
+          </p>
+
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="pa-3">
+          <v-spacer />
+          <v-btn color="primary" variant="tonal" @click="showHelp = false">Got it</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- Filters -->
     <v-card rounded="lg" elevation="1" class="mb-5 pa-4">
@@ -15,36 +85,29 @@
       </v-row>
     </v-card>
 
-    <div v-if="loading" class="text-medium-emphasis pa-4">Loading…</div>
-    <template v-else>
-      <v-card v-if="baselines.length" rounded="lg" elevation="1">
-        <v-table density="compact">
-          <thead>
-            <tr>
-              <th>Device</th><th>Established</th><th>Established By</th><th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="b in baselines" :key="b.id">
-              <td class="font-weight-medium">{{ b.device_name ?? b.device }}</td>
-              <td class="text-medium-emphasis text-caption">{{ fmt(b.established_at) }}</td>
-              <td class="text-medium-emphasis">{{ b.established_by }}</td>
-              <td>
-                <v-btn size="x-small" variant="tonal" @click="viewBaseline(b)">View Data</v-btn>
-              </td>
-            </tr>
-          </tbody>
-        </v-table>
-      </v-card>
-      <div v-else class="pa-6 text-center text-medium-emphasis">No baselines yet. Run a policy to establish one.</div>
-
-      <!-- Pagination -->
-      <div class="d-flex align-center justify-center ga-2 mt-4">
-        <v-btn size="small" variant="text" :disabled="page <= 1" @click="goPage(page - 1)">← Prev</v-btn>
-        <span class="text-caption text-medium-emphasis">Page {{ page }} of {{ totalPages }} &nbsp;({{ totalCount }} total)</span>
-        <v-btn size="small" variant="text" :disabled="page >= totalPages" @click="goPage(page + 1)">Next →</v-btn>
-      </div>
-    </template>
+    <v-data-table-server
+      v-model:options="tableOptions"
+      :headers="headers"
+      :items="baselines"
+      :items-length="totalCount"
+      :loading="loading"
+      :items-per-page-options="[25, 50, 100]"
+      density="compact"
+      rounded="lg"
+      elevation="1"
+      no-data-text="No baselines yet. Run a policy to establish one."
+      @update:options="onTableOptions"
+    >
+      <template #item.device_name="{ item }">
+        <span class="font-weight-medium">{{ item.device_name ?? item.device }}</span>
+      </template>
+      <template #item.established_at="{ item }">
+        <span class="text-medium-emphasis text-caption">{{ fmt(item.established_at) }}</span>
+      </template>
+      <template #item.actions="{ item }">
+        <v-btn size="x-small" variant="tonal" @click="viewBaseline(item)">View Data</v-btn>
+      </template>
+    </v-data-table-server>
 
     <!-- Baseline data dialog -->
     <v-dialog v-model="viewOpen" max-width="1200" scrollable>
@@ -67,44 +130,82 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import api from '../api'
 import CanonicalViewer from '../components/CanonicalViewer.vue'
 
-const PAGE_SIZE = 50
+const showHelp = ref(false)
+
+const headers = [
+  { title: 'Device',          key: 'device_name',    sortable: true  },
+  { title: 'Established',     key: 'established_at', sortable: true  },
+  { title: 'Established By',  key: 'established_by', sortable: false },
+  { title: '',                key: 'actions',        sortable: false, align: 'end' },
+]
+
+const SORT_FIELD = {
+  device_name:    'device__name',
+  established_at: 'established_at',
+}
+
 const baselines  = ref([])
 const loading    = ref(false)
 const viewing    = ref(null)
 const viewOpen   = ref(false)
 const devices    = ref([])
-const page       = ref(1)
 const totalCount = ref(0)
-const totalPages = ref(1)
 const filters    = reactive({ device: null })
+
+const tableOptions = ref({ page: 1, itemsPerPage: 50, sortBy: [{ key: 'established_at', order: 'desc' }] })
 
 const deviceItems = computed(() => devices.value.map(d => ({ title: d.name, value: d.id })))
 
 function fmt(iso) { return new Date(iso).toLocaleString() }
 
-async function load() {
+function buildParams(options = tableOptions.value) {
+  const params = { page: options.page, page_size: options.itemsPerPage }
+  if (filters.device) params.device = filters.device
+  if (options.sortBy?.length) {
+    const { key, order } = options.sortBy[0]
+    const field = SORT_FIELD[key] ?? key
+    params.ordering = order === 'desc' ? `-${field}` : field
+  }
+  return params
+}
+
+async function load(params) {
   loading.value = true
   try {
-    const params = { page: page.value, page_size: PAGE_SIZE }
-    if (filters.device) params.device = filters.device
     const { data } = await api.get('/baselines/', { params })
     baselines.value  = data.results ?? data
     totalCount.value = data.count ?? baselines.value.length
-    totalPages.value = Math.max(1, Math.ceil(totalCount.value / PAGE_SIZE))
   } finally {
     loading.value = false
   }
 }
 
-function applyFilters() { page.value = 1; load() }
-function clearFilters()  { filters.device = null; page.value = 1; load() }
-function goPage(n)       { page.value = n; load() }
+function onTableOptions(options) {
+  tableOptions.value = options
+  load(buildParams(options))
+}
 
-function viewBaseline(b) { viewing.value = b; viewOpen.value = true }
+function resetAndFetch() {
+  const opts = { ...tableOptions.value, page: 1 }
+  tableOptions.value = opts
+  load(buildParams(opts))
+}
+
+function applyFilters() { resetAndFetch() }
+function clearFilters()  { filters.device = null; resetAndFetch() }
+
+async function viewBaseline(b) {
+  viewing.value = b
+  viewOpen.value = true
+  if (!b.parsed_data) {
+    const { data } = await api.get(`/baselines/${b.id}/`)
+    viewing.value = data
+  }
+}
 
 onMounted(async () => {
   const { data } = await api.get('/devices/', { params: { page_size: 500 } })
   devices.value = data.results ?? data
-  load()
+  // initial load triggered by @update:options
 })
 </script>

@@ -1024,6 +1024,62 @@ try {
 } catch {}
 
 # ---------------------------------------------------------------------------
+# PCI DEVICES
+# ---------------------------------------------------------------------------
+section "pci_devices"
+try {
+    $pciDevices = Get-WmiObject -Class Win32_PnPEntity -ErrorAction SilentlyContinue |
+        Where-Object { $_.PNPDeviceID -like 'PCI\*' }
+    foreach ($dev in $pciDevices) {
+        $slot    = if ($dev.PNPDeviceID)   { $dev.PNPDeviceID }   else { "" }
+        $class   = if ($dev.PNPClass)      { $dev.PNPClass }       else { "" }
+        $vendor  = if ($dev.Manufacturer)  { $dev.Manufacturer }   else { "" }
+        $device  = if ($dev.Name)          { $dev.Name }           else { "" }
+        Write-Output "$slot|$class|$vendor|$device"
+    }
+} catch {}
+
+# ---------------------------------------------------------------------------
+# STORAGE DEVICES
+# Format: type|name|model|vendor|size|serial|interface|removable
+# ---------------------------------------------------------------------------
+section "storage_devices"
+try {
+    Get-WmiObject -Class Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
+        $name   = if ($_.DeviceID)      { $_.DeviceID }                                          else { "" }
+        $model  = if ($_.Model)         { $_.Model }                                             else { "" }
+        $vendor = if ($_.Manufacturer)  { $_.Manufacturer }                                     else { "" }
+        $size   = if ($_.Size)          { "$([math]::Round([long]$_.Size / 1GB, 2))G" }         else { "" }
+        $serial = if ($_.SerialNumber)  { $_.SerialNumber.Trim() }                              else { "" }
+        $iface  = if ($_.InterfaceType) { $_.InterfaceType.ToLower() }                          else { "" }
+        Write-Output "disk|$name|$model|$vendor|$size|$serial|$iface|0"
+    }
+    Get-WmiObject -Class Win32_CDROMDrive -ErrorAction SilentlyContinue | ForEach-Object {
+        $name   = if ($_.Drive)         { $_.Drive }         else { "CDROM" }
+        $model  = if ($_.Caption)       { $_.Caption }       else { "" }
+        $vendor = if ($_.Manufacturer)  { $_.Manufacturer }  else { "" }
+        Write-Output "optical|$name|$model|$vendor|||ide|1"
+    }
+} catch {}
+
+# ---------------------------------------------------------------------------
+# USB DEVICES
+# Format: bus_id|vendor_id|product_id|manufacturer|product
+# ---------------------------------------------------------------------------
+section "usb_devices"
+try {
+    Get-WmiObject -Class Win32_PnPEntity -ErrorAction SilentlyContinue |
+        Where-Object { $_.PNPDeviceID -like 'USB\VID*' } |
+        ForEach-Object {
+            $vid = if ($_.PNPDeviceID -match 'VID_([0-9A-Fa-f]+)') { $Matches[1].ToLower() } else { "" }
+            $pid = if ($_.PNPDeviceID -match 'PID_([0-9A-Fa-f]+)') { $Matches[1].ToLower() } else { "" }
+            $mfr = if ($_.Manufacturer) { $_.Manufacturer } else { "" }
+            $prd = if ($_.Name)         { $_.Name }         else { "" }
+            Write-Output "$($_.PNPDeviceID)|$vid|$pid|$mfr|$prd"
+        }
+} catch {}
+
+# ---------------------------------------------------------------------------
 # END
 # ---------------------------------------------------------------------------
 Write-Output "$SEP[END]"

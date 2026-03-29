@@ -17,11 +17,10 @@ class JobFilter(django_filters.FilterSet):
     # Pass script ID → match jobs whose policy references that script
     script = django_filters.NumberFilter(method='filter_by_script', label='Script ID')
 
-    # Device ID → jobs that have at least one result for that device
+    # Device ID → filter directly on the Job.device FK
     device = django_filters.NumberFilter(
-        field_name='device_results__device',
+        field_name='device',
         label='Device ID',
-        distinct=True,
     )
 
     # Date range on created_at

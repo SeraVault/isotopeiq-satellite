@@ -129,6 +129,16 @@ CHANNEL_LAYERS = {
     }
 }
 
+# JWT token lifetimes — long enough to survive a working session without
+# constant expiry-induced 401 storms on the 3-second dashboard poll.
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME':  timedelta(hours=8),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS':  False,
+    'UPDATE_LAST_LOGIN':      True,
+}
+
 # Django REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -142,8 +152,8 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 50,
+    'DEFAULT_PAGINATION_CLASS': 'config.pagination.PageNumberPagination',
+    'PAGE_SIZE': 25,
 }
 
 # Encryption key for sensitive Device fields.

@@ -332,6 +332,33 @@ priv grep -v "^#" /etc/ssh/sshd_config 2>/dev/null | grep -v "^$" || echo ""
 section "kernel_modules"
 lsmod 2>/dev/null | tail -n +2 || echo ""
 
+# ── PCI Devices ──────────────────────────────────────────────────────────────
+section "pci_devices"
+# lspci -vmm produces a machine-parseable multi-record listing.
+# Each device block ends with a blank line.
+if command -v lspci &>/dev/null; then
+    lspci -vmm 2>/dev/null || echo ""
+else
+    echo ""
+fi
+
+# ── Storage / Block Devices ───────────────────────────────────────────────────
+section "storage_devices"
+# lsblk -d lists only whole disks (no partitions); -P gives key="value" pairs.
+if command -v lsblk &>/dev/null; then
+    lsblk -d -n -P -o NAME,TYPE,SIZE,MODEL,VENDOR,SERIAL,TRAN,RM 2>/dev/null || echo ""
+else
+    echo ""
+fi
+
+# ── USB Devices ───────────────────────────────────────────────────────────────
+section "usb_devices"
+if command -v lsusb &>/dev/null; then
+    lsusb 2>/dev/null || echo ""
+else
+    echo ""
+fi
+
 # ── Listening Services ────────────────────────────────────────────────────────
 section "listening_services"
 if command -v ss &>/dev/null; then
@@ -352,7 +379,13 @@ fi
 
 # ── Sysctl ────────────────────────────────────────────────────────────────────
 section "sysctl"
-priv sysctl -a 2>/dev/null || echo ""
+# Filter out per-interface entries for ephemeral virtual interfaces
+# (veth*, br-<hex>, docker*, virbr*, cni*, flannel*, cali*, tunl*, vxlan*).
+# These change every time containers or VMs restart and produce false-positive
+# drift.  Physical/stable interfaces (eth*, ens*, enp*, bond*, lo) are kept.
+priv sysctl -a 2>/dev/null \
+  | grep -Ev '\.(veth[0-9a-f]+|br-[0-9a-f]+|docker[0-9]+|virbr[0-9]+|cni[0-9]+|flannel[^.]*|cali[0-9a-f]+|tunl[0-9]+|vxlan[^.]*)(\.|[[:space:]]|$)' \
+  || echo ""
 
 # ── Logging Targets ───────────────────────────────────────────────────────────
 section "logging_targets"

@@ -140,6 +140,9 @@ def empty_canonical():
         'startup_items': [],
         'ssh_keys': [],
         'kernel_modules': [],
+        'pci_devices': [],
+        'storage_devices': [],
+        'usb_devices': [],
         'listening_services': [],
         'firewall_rules': [],
         'sysctl': [],
@@ -1188,6 +1191,113 @@ def collect_kernel_modules(output):
 
 
 # ---------------------------------------------------------------------------
+# PCI devices
+# ---------------------------------------------------------------------------
+
+def collect_pci_devices(output):
+    """Parse lspci -vmm output into pci_devices list."""
+    if not which('lspci'):
+        return
+    out = run('lspci -vmm 2>/dev/null')
+    if not out:
+        return
+    current = {}
+    field_map = {
+        'Slot':    'slot',
+        'Class':   'class',
+        'Vendor':  'vendor',
+        'Device':  'device',
+        'SVendor': 'subsystem_vendor',
+        'SDevice': 'subsystem_device',
+    }
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            if current.get('slot'):
+                output['pci_devices'].append(current)
+            current = {}
+            continue
+        if ':' in line:
+            key, _, val = line.partition(':')
+            key = key.strip()
+            val = val.strip()
+            canon = field_map.get(key)
+            if canon:
+                current[canon] = val
+    # Flush last block if file didn't end with blank line
+    if current.get('slot'):
+        output['pci_devices'].append(current)
+    # Attach kernel driver from lspci -k (one line per device)
+    # Format: "<slot> <class>: <desc>\n\tKernel driver in use: <driver>"
+    out_k = run('lspci -k 2>/dev/null')
+    driver_map = {}
+    cur_slot = None
+    for line in out_k.splitlines():
+        if line and not line.startswith('\t') and not line.startswith(' '):
+            cur_slot = line.split()[0]
+        elif cur_slot and 'Kernel driver in use:' in line:
+            driver_map[cur_slot] = line.split(':', 1)[1].strip()
+    for dev in output['pci_devices']:
+        if dev.get('slot') in driver_map:
+            dev['driver'] = driver_map[dev['slot']]
+
+
+# ---------------------------------------------------------------------------
+# storage devices
+# ---------------------------------------------------------------------------
+
+def collect_storage_devices(output):
+    """Collect block/storage devices via lsblk."""
+    if not which('lsblk'):
+        return
+    out = run('lsblk -d -n -P -o NAME,TYPE,SIZE,MODEL,VENDOR,SERIAL,TRAN,RM 2>/dev/null')
+    if not out:
+        return
+    import re as _re
+    for line in out.splitlines():
+        kv = dict(_re.findall(r'(\w+)="([^"]*)"', line))
+        name = kv.get('NAME', '').strip()
+        if not name:
+            continue
+        entry = {'name': name}
+        if kv.get('TYPE'):   entry['type']      = kv['TYPE'].strip()
+        if kv.get('MODEL'):  entry['model']      = kv['MODEL'].strip()
+        if kv.get('VENDOR'): entry['vendor']     = kv['VENDOR'].strip()
+        if kv.get('SIZE'):   entry['size']       = kv['SIZE'].strip()
+        if kv.get('SERIAL'): entry['serial']     = kv['SERIAL'].strip()
+        if kv.get('TRAN'):   entry['interface']  = kv['TRAN'].strip()
+        if kv.get('RM'):     entry['removable']  = kv['RM'].strip() == '1'
+        output['storage_devices'].append(entry)
+
+
+# ---------------------------------------------------------------------------
+# USB devices
+# ---------------------------------------------------------------------------
+
+def collect_usb_devices(output):
+    """Collect USB devices via lsusb."""
+    if not which('lsusb'):
+        return
+    out = run('lsusb 2>/dev/null')
+    if not out:
+        return
+    import re as _re
+    pat = _re.compile(
+        r'Bus (\d+) Device (\d+): ID ([0-9a-fA-F]+):([0-9a-fA-F]+)\s+(.*)'
+    )
+    for line in out.splitlines():
+        m = pat.match(line.strip())
+        if not m:
+            continue
+        output['usb_devices'].append({
+            'bus_id':     f'{m.group(1)}/{m.group(2)}',
+            'vendor_id':  m.group(3).lower(),
+            'product_id': m.group(4).lower(),
+            'product':    m.group(5).strip(),
+        })
+
+
+# ---------------------------------------------------------------------------
 # listening services
 # ---------------------------------------------------------------------------
 
@@ -1454,15 +1564,36 @@ def _parse_nft(text, output):
 # ---------------------------------------------------------------------------
 
 def collect_sysctl(output):
-    # sysctl -a dumps all kernel parameters
+    # sysctl -a dumps all kernel parameters including per-interface entries
+    # under net.ipv4.conf.<iface>.*, net.ipv6.neigh.<iface>.*, etc.
+    # Virtual/ephemeral interface names change every time containers or VMs
+    # restart, producing constant false-positive drift.  We only keep sysctl
+    # keys that are either non-interface-scoped or scoped to a physical/stable
+    # interface (eth*, ens*, enp*, em*, bond*, team*, lo, wlan*).
+    _VIRTUAL_IFACE_RE = re.compile(
+        r'\.(veth[0-9a-f]+'    # Docker/K8s veth pairs
+        r'|br-[0-9a-f]+'       # Docker bridge networks (br-<id>)
+        r'|docker[0-9]+'       # docker0, docker1, …
+        r'|virbr[0-9]+'        # libvirt bridges
+        r'|cni[0-9]+'          # CNI plugin interfaces
+        r'|flannel'            # Flannel overlay
+        r'|cali[0-9a-f]+'      # Calico interfaces
+        r'|tunl[0-9]+'         # IP-in-IP tunnels
+        r'|vxlan'              # VXLAN overlays
+        r')(\.|$)'
+    )
     sysctl_out = priv('sysctl -a 2>/dev/null')
     for line in sysctl_out.splitlines():
-        if '=' in line:
-            k, _, v = line.partition('=')
-            output['sysctl'].append({
-                'key':   k.strip(),
-                'value': v.strip(),
-            })
+        if '=' not in line:
+            continue
+        k, _, v = line.partition('=')
+        k = k.strip()
+        if _VIRTUAL_IFACE_RE.search(k):
+            continue
+        output['sysctl'].append({
+            'key':   k,
+            'value': v.strip(),
+        })
 
 
 # ---------------------------------------------------------------------------
@@ -1667,6 +1798,9 @@ COLLECTORS = [
     ('ssh_keys',           collect_ssh_keys),
     ('ssh_config',         collect_ssh_config),
     ('kernel_modules',     collect_kernel_modules),
+    ('pci_devices',        collect_pci_devices),
+    ('storage_devices',    collect_storage_devices),
+    ('usb_devices',        collect_usb_devices),
     ('listening_services', collect_listening_services),
     ('firewall_rules',     collect_firewall_rules),
     ('sysctl',             collect_sysctl),

@@ -106,33 +106,52 @@
       </v-card>
     </v-dialog>
 
-    <div v-if="loading" class="text-medium-emphasis pa-4">Loading…</div>
-    <v-card v-else-if="policies.length" rounded="lg" elevation="1">
-      <v-table density="compact">
-        <thead>
-          <tr><th>Name</th><th>Schedule</th><th>Devices</th><th>Active</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in policies" :key="p.id">
-            <td class="font-weight-medium">{{ p.name }}</td>
-            <td><code>{{ p.cron_schedule }}</code></td>
-            <td>{{ p.devices?.length ?? 0 }}</td>
-            <td>
-              <v-chip :color="p.is_active ? 'success' : 'default'" size="x-small" label>
-                {{ p.is_active ? 'Yes' : 'No' }}
-              </v-chip>
-            </td>
-            <td>
-              <v-btn size="x-small" variant="tonal" class="mr-1" :loading="running === p.id" @click="runNow(p.id)">Run Now</v-btn>
-              <v-btn size="x-small" variant="tonal" class="mr-1" :disabled="!p.deployment_script" :loading="deploying === p.id" @click="deployNow(p)">Deploy</v-btn>
-              <v-btn size="x-small" variant="tonal" class="mr-1" @click="openEdit(p)">Edit</v-btn>
-              <v-btn size="x-small" color="error" variant="tonal" @click="remove(p.id)">Delete</v-btn>
-            </td>
-          </tr>
-        </tbody>
-      </v-table>
-    </v-card>
-    <div v-else class="pa-6 text-center text-medium-emphasis">No policies yet.</div>
+    <v-data-table-server
+      v-model:options="tableOptions"
+      :headers="policyHeaders"
+      :items="policies"
+      :items-length="totalPolicies"
+      :loading="loading"
+      :items-per-page-options="[25, 50, 100]"
+      density="compact"
+      rounded="lg"
+      elevation="1"
+      hover
+      @update:options="onTableOptions"
+    >
+      <template #item.cron_schedule="{ item }">
+        <code>{{ item.cron_schedule }}</code>
+      </template>
+      <template #item.devices="{ item }">
+        {{ item.devices?.length ?? 0 }}
+      </template>
+      <template #item.is_active="{ item }">
+        <v-chip :color="item.is_active ? 'success' : 'default'" size="x-small" label>
+          {{ item.is_active ? 'Yes' : 'No' }}
+        </v-chip>
+      </template>
+      <template #item.actions="{ item }">
+        <div class="d-flex ga-1">
+          <v-btn size="x-small" variant="tonal" :loading="running === item.id" @click="runNow(item.id)">Run Now</v-btn>
+          <v-btn size="x-small" variant="tonal" :disabled="!item.deployment_script" :loading="deploying === item.id" @click="deployNow(item)">Deploy</v-btn>
+          <v-btn size="x-small" variant="tonal" @click="openEdit(item)">Edit</v-btn>
+          <v-btn size="x-small" color="error" variant="tonal" @click="remove(item.id)">Delete</v-btn>
+        </div>
+      </template>
+    </v-data-table-server>
+
+    <!-- Confirm dialog -->
+    <v-dialog v-model="confirmDialog.open" max-width="400" persistent>
+      <v-card rounded="lg">
+        <v-card-title class="pt-4">Confirm</v-card-title>
+        <v-card-text>{{ confirmDialog.message }}</v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="confirmDialog.resolve(false)">Cancel</v-btn>
+          <v-btn color="error" variant="tonal" @click="confirmDialog.resolve(true)">Confirm</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- ── Policy form dialog ─────────────────────────────────────────────── -->
     <v-dialog v-model="showForm" max-width="920" scrollable>
@@ -351,6 +370,13 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 
+const confirmDialog = ref({ open: false, message: '', resolve: () => {} })
+function askConfirm(message) {
+  return new Promise(resolve => {
+    confirmDialog.value = { open: true, message, resolve: (val) => { confirmDialog.value.open = false; resolve(val) } }
+  })
+}
+
 // ── Scheduler state ───────────────────────────────────────────────────────────
 
 const FREQ_OPTIONS = ['Hourly', 'Daily', 'Weekly', 'Monthly', 'Custom']
@@ -510,16 +536,45 @@ async function loadMoreDevices() {
 
 // ── Policy form ───────────────────────────────────────────────────────────────
 
-const policies         = ref([])
+const policies          = ref([])
+const totalPolicies     = ref(0)
 const collectionScripts = ref([])
 const parserScripts     = ref([])
 const deploymentScripts = ref([])
-const loading  = ref(false)
-const showHelp = ref(false)
-const showForm = ref(false)
-const running  = ref(null)
+const loading   = ref(false)
+const showHelp  = ref(false)
+const showForm  = ref(false)
+const running   = ref(null)
 const deploying = ref(null)
-const form = ref(blank())
+const form      = ref(blank())
+
+const tableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
+
+const policyHeaders = [
+  { title: 'Name',     key: 'name' },
+  { title: 'Schedule', key: 'cron_schedule', sortable: false },
+  { title: 'Devices',  key: 'devices',       sortable: false },
+  { title: 'Active',   key: 'is_active',     sortable: false },
+  { title: '',         key: 'actions',       sortable: false, align: 'end' },
+]
+
+function onTableOptions(options) {
+  tableOptions.value = options
+  fetchPolicies(options)
+}
+
+async function fetchPolicies(options = tableOptions.value) {
+  loading.value = true
+  try {
+    const { data } = await api.get('/policies/', {
+      params: { page: options.page, page_size: options.itemsPerPage },
+    })
+    policies.value     = data.results ?? data
+    totalPolicies.value = data.count   ?? policies.value.length
+  } finally {
+    loading.value = false
+  }
+}
 
 function blank() {
   return {
@@ -531,12 +586,8 @@ function blank() {
 }
 
 onMounted(async () => {
-  loading.value = true
   try {
     await Promise.all([
-      api.get('/policies/').then(r => {
-        policies.value = r.data.results ?? r.data
-      }),
       api.get('/scripts/').then(r => {
         const scripts = r.data.results ?? r.data
         collectionScripts.value  = scripts.filter(s => s.script_type === 'collection'  && s.is_active)
@@ -545,9 +596,7 @@ onMounted(async () => {
       }),
       fetchDevices(),
     ])
-  } finally {
-    loading.value = false
-  }
+  } finally {}
 })
 
 function openNew() {
@@ -579,20 +628,18 @@ function cancel() { showForm.value = false }
 async function save() {
   const payload = { ...form.value, devices: selectedDevices.value.map(d => d.id) }
   if (form.value.id) {
-    const { data } = await api.patch(`/policies/${form.value.id}/`, payload)
-    const idx = policies.value.findIndex(p => p.id === form.value.id)
-    policies.value[idx] = data
+    await api.patch(`/policies/${form.value.id}/`, payload)
   } else {
-    const { data } = await api.post('/policies/', payload)
-    policies.value.push(data)
+    await api.post('/policies/', payload)
   }
   cancel()
+  fetchPolicies()
 }
 
 async function remove(id) {
-  if (!confirm('Delete this policy?')) return
+  if (!await askConfirm('Delete this policy?')) return
   await api.delete(`/policies/${id}/`)
-  policies.value = policies.value.filter(p => p.id !== id)
+  fetchPolicies()
 }
 
 async function runNow(id) {
@@ -602,7 +649,7 @@ async function runNow(id) {
 }
 
 async function deployNow(p) {
-  if (!confirm(`Run deployment script on all devices in "${p.name}"?`)) return
+  if (!await askConfirm(`Run deployment script on all devices in "${p.name}"?`)) return
   deploying.value = p.id
   try { await api.post(`/policies/${p.id}/deploy/`) }
   finally { setTimeout(() => { deploying.value = null }, 2000) }

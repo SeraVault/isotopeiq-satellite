@@ -4,7 +4,7 @@ from rest_framework.response import Response
 
 from core.permissions import IsAdminOrReadOnly
 from .models import Baseline
-from .serializers import BaselineSerializer
+from .serializers import BaselineSerializer, BaselineListSerializer
 
 
 class BaselineViewSet(viewsets.ReadOnlyModelViewSet):
@@ -13,6 +13,11 @@ class BaselineViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = BaselineSerializer
     filterset_fields = ['device']
     ordering_fields = ['device__name', 'established_at']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return BaselineListSerializer
+        return BaselineSerializer
 
     @action(detail=True, methods=['post'])
     def promote(self, request, pk=None):

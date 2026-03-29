@@ -593,3 +593,67 @@ for line in lines("logging_targets"):
             "protocol":    "tcp" if tcp else "udp",
             "enabled":     True,
         })
+
+
+# ── pci_devices ───────────────────────────────────────────────────────────────
+# lspci -vmm emits device records separated by blank lines.
+# Each line within a block is "Key:\tValue".
+
+output["pci_devices"] = []
+_pci_raw = sections.get("pci_devices", "").strip()
+if _pci_raw:
+    for block in re.split(r'\n\n+', _pci_raw):
+        kv = {}
+        for ln in block.splitlines():
+            if ':' in ln:
+                k, _, v = ln.partition(':')
+                kv[k.strip()] = v.strip()
+        slot = kv.get('Slot', '').strip()
+        if not slot:
+            continue
+        entry = {'slot': slot}
+        if kv.get('Class'):   entry['class']             = kv['Class']
+        if kv.get('Vendor'):  entry['vendor']            = kv['Vendor']
+        if kv.get('Device'):  entry['device']            = kv['Device']
+        if kv.get('Driver'):  entry['driver']            = kv['Driver']
+        if kv.get('SVendor'): entry['subsystem_vendor']  = kv['SVendor']
+        if kv.get('SDevice'): entry['subsystem_device']  = kv['SDevice']
+        output["pci_devices"].append(entry)
+
+
+# ── storage_devices ───────────────────────────────────────────────────────────
+# lsblk -d -n -P outputs: NAME="sda" TYPE="disk" SIZE="500G" MODEL="..." ...
+
+output["storage_devices"] = []
+for line in lines("storage_devices"):
+    kv = dict(re.findall(r'(\w+)="([^"]*)"', line))
+    name = kv.get('NAME', '').strip()
+    if not name:
+        continue
+    entry = {'name': name}
+    if kv.get('TYPE'):   entry['type']      = kv['TYPE'].strip()
+    if kv.get('MODEL'):  entry['model']     = kv['MODEL'].strip()
+    if kv.get('VENDOR'): entry['vendor']    = kv['VENDOR'].strip()
+    if kv.get('SIZE'):   entry['size']      = kv['SIZE'].strip()
+    if kv.get('SERIAL'): entry['serial']    = kv['SERIAL'].strip()
+    if kv.get('TRAN'):   entry['interface'] = kv['TRAN'].strip()
+    if kv.get('RM'):     entry['removable'] = kv['RM'].strip() == '1'
+    output["storage_devices"].append(entry)
+
+
+# ── usb_devices ───────────────────────────────────────────────────────────────
+# lsusb format: Bus 001 Device 002: ID 8087:0024 Intel Corp. Hub
+
+output["usb_devices"] = []
+_usb_pat = re.compile(
+    r'Bus (\d+) Device (\d+): ID ([0-9a-fA-F]+):([0-9a-fA-F]+)\s+(.*)'
+)
+for line in lines("usb_devices"):
+    m = _usb_pat.match(line.strip())
+    if m:
+        output["usb_devices"].append({
+            "bus_id":     f"{m.group(1)}/{m.group(2)}",
+            "vendor_id":  m.group(3).lower(),
+            "product_id": m.group(4).lower(),
+            "product":    m.group(5).strip(),
+        })

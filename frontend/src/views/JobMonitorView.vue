@@ -27,84 +27,86 @@
       </v-row>
     </v-card>
 
-    <div v-if="store.loading" class="text-medium-emphasis pa-4">Loading…</div>
-    <template v-else>
-      <v-card v-if="store.jobs.length" rounded="lg" elevation="1">
-        <v-table density="compact">
-          <thead>
-            <tr>
-              <th>#</th><th>Policy</th><th>Triggered By</th><th>Status</th>
-              <th>Started</th><th>Duration</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="job in store.jobs" :key="job.id">
-              <td class="text-medium-emphasis">#{{ job.id }}</td>
-              <td>{{ job.policy_name ?? (job.policy ? `Policy ${job.policy}` : '—') }}</td>
-              <td>{{ job.triggered_by }}</td>
-              <td>
-                <v-chip :color="statusColor(job.status)" size="x-small" label>{{ job.status }}</v-chip>
-                <span v-if="job.status === 'running' && job.current_device" class="text-medium-emphasis text-caption ml-2">
-                  ↳ {{ job.current_device }}
-                </span>
-              </td>
-              <td class="text-medium-emphasis text-caption">{{ job.started_at ? fmt(job.started_at) : '—' }}</td>
-              <td class="text-medium-emphasis text-caption">{{ duration(job) }}</td>
-              <td>
-                <v-btn size="x-small" variant="tonal" class="mr-1" @click="openDetail(job)">Details</v-btn>
-                <v-btn
-                  v-if="job.status === 'running' || job.status === 'pending'"
-                  size="x-small" color="error" variant="tonal"
-                  @click="cancel(job)"
-                >Cancel</v-btn>
-              </td>
-            </tr>
-          </tbody>
-        </v-table>
-      </v-card>
-      <div v-else class="pa-6 text-center text-medium-emphasis">No jobs found.</div>
+    <v-data-table-server
+      v-model:options="tableOptions"
+      :headers="headers"
+      :items="store.jobs"
+      :items-length="store.totalCount"
+      :loading="store.loading"
+      :items-per-page-options="[25, 50, 100]"
+      density="compact"
+      rounded="lg"
+      elevation="1"
+      no-data-text="No jobs found."
+      hover
+      @update:options="onTableOptions"
+    >
+      <template #item.id="{ item }">
+        <span class="text-medium-emphasis">#{{ item.id }}</span>
+      </template>
+      <template #item.device_name="{ item }">
+        <span class="font-weight-medium">{{ item.device_name ?? (item.device ? `Device ${item.device}` : '—') }}</span>
+      </template>
+      <template #item.policy_name="{ item }">{{ item.policy_name ?? '—' }}</template>
+      <template #item.status="{ item }">
+        <v-chip :color="statusColor(item.status)" size="x-small" label>{{ item.status }}</v-chip>
+      </template>
+      <template #item.started_at="{ item }">
+        <span class="text-medium-emphasis text-caption">{{ item.started_at ? fmt(item.started_at) : '—' }}</span>
+      </template>
+      <template #item.duration="{ item }">
+        <span class="text-medium-emphasis text-caption">{{ duration(item) }}</span>
+      </template>
+      <template #item.actions="{ item }">
+        <v-btn size="x-small" variant="tonal" class="mr-1" @click="openDetail(item)">Details</v-btn>
+        <v-btn
+          v-if="item.status === 'running' || item.status === 'pending'"
+          size="x-small" color="error" variant="tonal"
+          @click="cancel(item)"
+        >Cancel</v-btn>
+      </template>
+    </v-data-table-server>
 
-      <!-- Pagination -->
-      <div class="d-flex align-center justify-center ga-2 mt-4">
-        <v-btn size="small" variant="text" :disabled="store.page <= 1" @click="store.goPage(store.page - 1)">← Prev</v-btn>
-        <span class="text-caption text-medium-emphasis">Page {{ store.page }} of {{ store.totalPages }} &nbsp;({{ store.totalCount }} total)</span>
-        <v-btn size="small" variant="text" :disabled="store.page >= store.totalPages" @click="store.goPage(store.page + 1)">Next →</v-btn>
-      </div>
-    </template>
+    <!-- Confirm dialog -->
+    <v-dialog v-model="confirmDialog.open" max-width="400" persistent>
+      <v-card rounded="lg">
+        <v-card-title class="pt-4">Confirm</v-card-title>
+        <v-card-text>{{ confirmDialog.message }}</v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="confirmDialog.resolve(false)">Cancel</v-btn>
+          <v-btn color="error" variant="tonal" @click="confirmDialog.resolve(true)">Confirm</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- Job detail dialog -->
     <v-dialog v-model="detailOpen" max-width="760" scrollable>
       <v-card v-if="selected" rounded="lg">
         <v-card-title class="d-flex justify-space-between align-center">
           <div>
-            <span>Job #{{ selected.id }}</span>
+            <span>{{ selected.device_name ?? (selected.device ? `Device ${selected.device}` : `Job #${selected.id}`) }}</span>
             <v-chip :color="statusColor(selected.status)" size="x-small" label class="ml-2">{{ selected.status }}</v-chip>
           </div>
           <v-btn icon="mdi-close" variant="text" size="small" @click="detailOpen = false" />
         </v-card-title>
         <v-card-subtitle>
-          {{ selected.policy_name ?? (selected.policy ? `Policy ${selected.policy}` : 'Push job') }}
+          {{ selected.policy_name ? `Policy: ${selected.policy_name}` : 'Ad-hoc / push' }}
           · triggered by {{ selected.triggered_by }}
           · {{ selected.started_at ? fmt(selected.started_at) : '—' }}
         </v-card-subtitle>
         <v-card-text>
-          <v-card
-            v-for="result in selected.device_results"
-            :key="result.id"
-            :border="`${resultColor(result.status)} md`"
-            rounded="lg"
-            class="mb-3"
-          >
-            <v-card-title class="d-flex align-center ga-2 pa-3 pb-2">
-              <span class="text-body-2 font-weight-bold">{{ result.device_name ?? `Device ${result.device}` }}</span>
-              <v-chip :color="statusColor(result.status)" size="x-small" label>{{ result.status }}</v-chip>
-              <span class="text-caption text-medium-emphasis ml-auto">
-                {{ result.started_at ? fmt(result.started_at) : '' }}
-                {{ result.finished_at ? '→ ' + fmt(result.finished_at) : '' }}
-              </span>
-            </v-card-title>
-            <v-card-text class="pa-3 pt-0">
-              <v-alert v-if="result.error_message" type="error" variant="tonal" density="compact" class="mb-2">
+          <!-- Single device result, shown inline -->
+          <template v-if="selected.device_results && selected.device_results.length">
+            <div v-for="result in selected.device_results" :key="result.id">
+              <div class="d-flex align-center ga-2 mb-3">
+                <v-chip :color="statusColor(result.status)" size="x-small" label>{{ result.status }}</v-chip>
+                <span class="text-caption text-medium-emphasis">
+                  {{ result.started_at ? fmt(result.started_at) : '' }}
+                  {{ result.finished_at ? ' → ' + fmt(result.finished_at) : '' }}
+                </span>
+              </div>
+              <v-alert v-if="result.error_message" type="error" variant="tonal" density="compact" class="mb-3">
                 {{ result.error_message }}
               </v-alert>
               <v-expansion-panels variant="accordion">
@@ -127,8 +129,9 @@
               <div v-if="!result.drift_event && result.status === 'success'" class="text-success text-body-2 mt-2">
                 ✓ No drift detected
               </div>
-            </v-card-text>
-          </v-card>
+            </div>
+          </template>
+          <div v-else class="text-medium-emphasis pa-2">No result data yet.</div>
         </v-card-text>
       </v-card>
     </v-dialog>
@@ -136,18 +139,84 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useJobsStore } from '../stores/jobs'
 import api from '../api'
 
 const store = useJobsStore()
+
+const headers = [
+  { title: '#',            key: 'id',           sortable: false },
+  { title: 'Device',       key: 'device_name',  sortable: true  },
+  { title: 'Policy',       key: 'policy_name',  sortable: false },
+  { title: 'Triggered By', key: 'triggered_by', sortable: false },
+  { title: 'Status',       key: 'status',       sortable: false },
+  { title: 'Started',      key: 'started_at',   sortable: true  },
+  { title: 'Duration',     key: 'duration',     sortable: false },
+  { title: '',             key: 'actions',      sortable: false, align: 'end' },
+]
+
+const SORT_FIELD = {
+  device_name: 'device__name',
+  started_at:  'started_at',
+}
+
+const tableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [{ key: 'started_at', order: 'desc' }] })
+
+function buildParams(options = tableOptions.value) {
+  const params = { page: options.page, page_size: options.itemsPerPage }
+  if (filters.device)         params.device         = filters.device
+  if (filters.policy)         params.policy         = filters.policy
+  if (filters.status)         params.status         = filters.status
+  if (filters.created_after)  params.created_after  = new Date(filters.created_after).toISOString()
+  if (filters.created_before) params.created_before = new Date(filters.created_before).toISOString()
+  if (options.sortBy?.length) {
+    const { key, order } = options.sortBy[0]
+    const field = SORT_FIELD[key] ?? key
+    params.ordering = order === 'desc' ? `-${field}` : field
+  }
+  return params
+}
+
+function onTableOptions(options) {
+  tableOptions.value = options
+  store.fetchJobs(buildParams(options))
+}
+
+function resetAndFetch() {
+  const opts = { ...tableOptions.value, page: 1 }
+  tableOptions.value = opts
+  store.fetchJobs(buildParams(opts))
+}
+
 const selectedId = ref(null)
 const detailOpen = ref(false)
 
-// Derived from the store so every WS patch is immediately visible in the modal.
-const selected = computed(() =>
-  selectedId.value == null ? null : store.jobs.find(j => j.id === selectedId.value) ?? null
-)
+const confirmDialog = ref({ open: false, message: '', resolve: () => {} })
+function askConfirm(message) {
+  return new Promise(resolve => {
+    confirmDialog.value = { open: true, message, resolve: (val) => { confirmDialog.value.open = false; resolve(val) } }
+  })
+}
+
+// Local ref holds the full detail (raw_output/parsed_output) from the detail endpoint.
+// We do NOT derive it from the store because the list-poll serializer strips those fields.
+const selected = ref(null)
+
+// When the poll refreshes store.jobs, merge only lightweight fields into the detail ref
+// so the modal shows live status without losing the rich data we fetched from the detail endpoint.
+watch(() => store.jobs, (jobs) => {
+  if (!selected.value) return
+  const fresh = jobs.find(j => j.id === selected.value.id)
+  if (fresh) {
+    selected.value = {
+      ...selected.value,
+      status:      fresh.status,
+      started_at:  fresh.started_at,
+      finished_at: fresh.finished_at,
+    }
+  }
+}, { deep: true })
 
 const devices = ref([])
 const policies = ref([])
@@ -171,21 +240,10 @@ function resultColor(status) {
   return { success: 'success', failed: 'error', running: 'info', partial: 'warning' }[status] ?? 'default'
 }
 
-function buildParams() {
-  const p = {}
-  if (filters.device)         p.device         = filters.device
-  if (filters.policy)         p.policy         = filters.policy
-  if (filters.status)         p.status         = filters.status
-  if (filters.created_after)  p.created_after  = new Date(filters.created_after).toISOString()
-  if (filters.created_before) p.created_before = new Date(filters.created_before).toISOString()
-  return p
-}
-
-function applyFilters() { store.page = 1; store.fetchJobs(buildParams()) }
+function applyFilters() { resetAndFetch() }
 function clearFilters() {
   Object.assign(filters, { device: null, policy: null, status: '', created_after: '', created_before: '' })
-  store.page = 1
-  store.fetchJobs()
+  resetAndFetch()
 }
 
 function fmt(iso) { return new Date(iso).toLocaleString() }
@@ -200,20 +258,13 @@ function duration(job) {
 
 async function openDetail(job) {
   const { data } = await api.get(`/jobs/${job.id}/`)
-  // Merge full detail (device_results etc.) back into the store so the
-  // computed `selected` stays in sync with future WS patches.
-  const idx = store.jobs.findIndex(j => j.id === data.id)
-  if (idx !== -1) {
-    store.jobs[idx] = { ...store.jobs[idx], ...data }
-  } else {
-    store.jobs.unshift(data)
-  }
+  selected.value  = data
   selectedId.value = data.id
   detailOpen.value = true
 }
 
 async function cancel(job) {
-  if (!confirm(`Cancel job ${job.id}?`)) return
+  if (!await askConfirm(`Cancel job ${job.id}?`)) return
   await api.post(`/jobs/${job.id}/cancel/`)
   applyFilters()
   if (selectedId.value === job.id) detailOpen.value = false
@@ -226,10 +277,9 @@ onMounted(async () => {
   ])
   devices.value  = dRes.data.results ?? dRes.data
   policies.value = pRes.data.results ?? pRes.data
-  store.fetchJobs()
-  store.connectWebSocket()
+  store.startPolling()
 })
-onUnmounted(() => store.disconnectWebSocket())
+onUnmounted(() => store.stopPolling())
 </script>
 
 <style scoped>

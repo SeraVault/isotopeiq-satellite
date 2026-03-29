@@ -9,6 +9,7 @@ import DriftView from '../views/DriftView.vue'
 import BaselinesView from '../views/BaselinesView.vue'
 import RetentionView from '../views/RetentionView.vue'
 import AuditLogView from '../views/AuditLogView.vue'
+import VolatileRulesView from '../views/VolatileRulesView.vue'
 
 const routes = [
   { path: '/login', component: LoginView, meta: { public: true } },
@@ -19,6 +20,7 @@ const routes = [
   { path: '/policies', component: PoliciesView },
   { path: '/jobs', component: JobMonitorView },
   { path: '/drift', component: DriftView },
+  { path: '/volatile-rules', component: VolatileRulesView },
   { path: '/baselines', component: BaselinesView },
   { path: '/audit', component: AuditLogView },
   { path: '/retention', component: RetentionView },

@@ -45,7 +45,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if not policy.collection_script or not policy.parser_script:
             return Response({'detail': f'Policy "{policy.name}" requires both a collection and a parser script.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        task = run_policy.delay(policy.id, triggered_by='manual')
+        task = run_policy.delay(policy.id, triggered_by='manual', device_id=device.id)
         return Response({'detail': f'Collection started using policy "{policy.name}".', 'task_id': task.id}, status=status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=['post'], url_path='test-connection')

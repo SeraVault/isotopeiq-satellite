@@ -136,14 +136,19 @@
           {{ snackbar.msg }}
         </v-snackbar>
 
-        <v-card elevation="1" rounded="lg">
-          <v-data-table
+        <v-data-table-server
+            v-model:options="tableOptions"
             :headers="deviceHeaders"
             :items="devStore.devices"
+            :items-length="devStore.totalCount"
             :loading="devStore.loading"
-            hide-default-footer
+            :items-per-page-options="[25, 50, 100]"
+            density="compact"
+            rounded="lg"
+            elevation="1"
             hover
             @click:row="(_, { item }) => openViewer(item)"
+            @update:options="onTableOptions"
           >
             <template #item.is_active="{ item }">
               <v-chip :color="item.is_active ? 'success' : 'default'" size="x-small" label>{{ item.is_active ? 'Yes' : 'No' }}</v-chip>
@@ -156,12 +161,7 @@
                 <v-btn size="x-small" variant="tonal" color="error" @click="removeDevice(item.id)">Delete</v-btn>
               </div>
             </template>
-          </v-data-table>
-          <div class="d-flex align-center justify-space-between px-4 py-2 border-t">
-            <span class="text-caption text-medium-emphasis">{{ devStore.totalCount }} total</span>
-            <v-pagination v-model="devStore.page" :length="devStore.totalPages" density="compact" @update:modelValue="devStore.goPage" />
-          </div>
-        </v-card>
+          </v-data-table-server>
 
         <!-- Device form dialog -->
         <v-dialog v-model="deviceForm.show" max-width="700" scrollable>
@@ -222,6 +222,31 @@
               <v-spacer />
               <v-btn @click="deviceForm.show = false">Cancel</v-btn>
               <v-btn color="primary" @click="saveDevice">Save</v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-dialog>
+
+        <!-- Collect: policy picker dialog -->
+        <v-dialog v-model="collectDialog.show" max-width="420">
+          <v-card rounded="lg">
+            <v-card-title>Collect — {{ collectDialog.device?.name }}</v-card-title>
+            <v-card-subtitle>Select which policy to run</v-card-subtitle>
+            <v-card-text>
+              <div v-if="collectDialog.loading" class="text-medium-emphasis py-2">Loading policies…</div>
+              <v-radio-group v-else v-model="collectDialog.policyId" hide-details>
+                <v-radio
+                  v-for="p in collectDialog.policies"
+                  :key="p.id"
+                  :label="p.name"
+                  :value="p.id"
+                />
+              </v-radio-group>
+              <v-alert v-if="collectDialog.error" type="error" variant="tonal" density="compact" class="mt-3">{{ collectDialog.error }}</v-alert>
+            </v-card-text>
+            <v-card-actions>
+              <v-spacer />
+              <v-btn @click="collectDialog.show = false">Cancel</v-btn>
+              <v-btn color="primary" :disabled="!collectDialog.policyId" :loading="collectDialog.running" @click="submitCollect">Run</v-btn>
             </v-card-actions>
           </v-card>
         </v-dialog>
@@ -312,6 +337,18 @@
         </v-dialog>
       </v-window-item>
     </v-window>
+    <!-- Confirm dialog -->
+    <v-dialog v-model="confirmDialog.open" max-width="400" persistent>
+      <v-card rounded="lg">
+        <v-card-title class="pt-4">Confirm</v-card-title>
+        <v-card-text>{{ confirmDialog.message }}</v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="confirmDialog.resolve(false)">Cancel</v-btn>
+          <v-btn color="error" variant="tonal" @click="confirmDialog.resolve(true)">Confirm</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -320,6 +357,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useDevicesStore } from '../stores/devices'
 import api from '../api'
 import CanonicalViewer from '../components/CanonicalViewer.vue'
+
+const confirmDialog = ref({ open: false, message: '', resolve: () => {} })
+function askConfirm(message) {
+  return new Promise(resolve => {
+    confirmDialog.value = { open: true, message, resolve: (val) => { confirmDialog.value.open = false; resolve(val) } }
+  })
+}
 
 const devStore = useDevicesStore()
 
@@ -336,24 +380,44 @@ const osItems     = [{ title: 'All', value: '' }, { title: 'Linux', value: 'linu
 const connItems   = [{ title: 'All', value: '' }, { title: 'SSH', value: 'ssh' }, { title: 'WinRM', value: 'winrm' }, { title: 'Telnet', value: 'telnet' }, { title: 'Push', value: 'push' }]
 const activeItems = [{ title: 'All', value: '' }, { title: 'Yes', value: 'true' }, { title: 'No', value: 'false' }]
 
-function deviceFilterParams() {
-  const p = {}
-  if (deviceSearch.value)   p.search           = deviceSearch.value
-  if (deviceOsType.value)   p.os_type          = deviceOsType.value
-  if (deviceConnType.value) p.connection_type   = deviceConnType.value
-  if (deviceActive.value)   p.is_active         = deviceActive.value
-  return p
+const SORT_FIELD = { name: 'name', created_at: 'created_at' }
+
+const tableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
+
+function buildDeviceParams(options = tableOptions.value) {
+  const params = { page: options.page, page_size: options.itemsPerPage }
+  if (deviceSearch.value)   params.search          = deviceSearch.value
+  if (deviceOsType.value)   params.os_type         = deviceOsType.value
+  if (deviceConnType.value) params.connection_type  = deviceConnType.value
+  if (deviceActive.value)   params.is_active        = deviceActive.value
+  if (options.sortBy?.length) {
+    const { key, order } = options.sortBy[0]
+    const field = SORT_FIELD[key] ?? key
+    params.ordering = order === 'desc' ? `-${field}` : field
+  }
+  return params
 }
 
-function applyDeviceFilters() { devStore.page = 1; devStore.fetchDevices(deviceFilterParams()) }
+function onTableOptions(options) {
+  tableOptions.value = options
+  devStore.fetchDevices(buildDeviceParams(options))
+}
+
+function resetAndFetchDevices() {
+  const opts = { ...tableOptions.value, page: 1 }
+  tableOptions.value = opts
+  devStore.fetchDevices(buildDeviceParams(opts))
+}
+
+function applyDeviceFilters() { resetAndFetchDevices() }
 function clearDeviceFilters() {
   deviceSearch.value = ''; deviceOsType.value = ''; deviceConnType.value = ''; deviceActive.value = ''
-  devStore.page = 1; devStore.fetchDevices()
+  resetAndFetchDevices()
 }
 
 // ── table headers ────────────────────────────────────────────────────────────
 const deviceHeaders = [
-  { title: 'Name',       key: 'name' },
+  { title: 'Name',       key: 'name',            sortable: true  },
   { title: 'Hostname',   key: 'hostname' },
   { title: 'Type',       key: 'device_type' },
   { title: 'OS',         key: 'os_type' },
@@ -478,7 +542,7 @@ async function saveCred() {
 }
 
 async function removeCred(id) {
-  if (!confirm('Delete this credential?')) return
+  if (!await askConfirm('Delete this credential?')) return
   await api.delete(`/devices/credentials/${id}/`)
   credentials.value = credentials.value.filter(c => c.id !== id)
 }
@@ -544,16 +608,54 @@ async function saveDevice() {
 }
 
 async function removeDevice(id) {
-  if (confirm('Delete this device?')) await devStore.deleteDevice(id)
+  if (await askConfirm('Delete this device?')) await devStore.deleteDevice(id)
 }
+
+// ── collect dialog ─────────────────────────────────────────────────────────
+const collectDialog = ref({ show: false, device: null, policies: [], policyId: null, loading: false, running: false, error: '' })
 
 async function collect(device) {
   collecting.value = device.id
+  collectDialog.value = { show: false, device, policies: [], policyId: null, loading: true, running: false, error: '' }
   try {
-    const { data } = await api.post(`/devices/${device.id}/collect/`)
+    const { data } = await api.get('/policies/', { params: { devices: device.id, is_active: true, page_size: 500 } })
+    const policies = data.results ?? data
+    if (policies.length === 0) {
+      showSnack(false, `✗ ${device.name}: No active policies assigned.`)
+      return
+    }
+    collectDialog.value.policies = policies
+    collectDialog.value.policyId = policies[0].id
+    collectDialog.value.loading = false
+    collectDialog.value.show = true
+  } catch (e) {
+    console.error('[collect] error:', e)
+    showSnack(false, `✗ ${device?.name ?? 'Device'}: Failed to load policies.`)
+  } finally {
+    collecting.value = null
+  }
+}
+
+async function submitCollect() {
+  collectDialog.value.running = true
+  collectDialog.value.error = ''
+  await runCollect(collectDialog.value.device, collectDialog.value.policyId)
+  collectDialog.value.show = false
+  collectDialog.value.running = false
+}
+
+async function runCollect(device, policyId) {
+  collecting.value = device.id
+  try {
+    const { data } = await api.post(`/devices/${device.id}/collect/`, { policy_id: policyId })
     showSnack(true, `✓ ${device.name}: ${data.detail}`)
   } catch (e) {
-    showSnack(false, `✗ ${device.name}: ${e.response?.data?.detail ?? 'Failed to start collection.'}`)
+    const msg = e.response?.data?.detail ?? 'Failed to start collection.'
+    if (collectDialog.value.show) {
+      collectDialog.value.error = msg
+    } else {
+      showSnack(false, `✗ ${device.name}: ${msg}`)
+    }
   } finally {
     collecting.value = null
   }
@@ -591,7 +693,7 @@ async function testConnInModal() {
 }
 
 onMounted(() => {
-  devStore.fetchDevices()
+  // initial device fetch triggered by @update:options
   loadCredentials()
 })
 </script>

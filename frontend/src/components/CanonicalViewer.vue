@@ -93,6 +93,18 @@
         <CvTable :rows="d.kernel_modules" :cols="['name','type','description','signed']" :format="{ signed: v => v === true ? 'Yes' : v === false ? 'No' : '' }" searchable />
       </CvSection>
 
+      <CvSection v-if="d.pci_devices?.length" value="pci_devices" title="PCI Devices" :count="d.pci_devices.length">
+        <CvTable :rows="d.pci_devices" :cols="['slot','class','vendor','device','driver']" searchable />
+      </CvSection>
+
+      <CvSection v-if="d.storage_devices?.length" value="storage_devices" title="Storage Devices" :count="d.storage_devices.length">
+        <CvTable :rows="d.storage_devices" :cols="['name','type','model','vendor','size','serial','interface','removable']" :format="{ removable: v => v === true ? 'Yes' : v === false ? 'No' : '' }" searchable />
+      </CvSection>
+
+      <CvSection v-if="d.usb_devices?.length" value="usb_devices" title="USB Devices" :count="d.usb_devices.length">
+        <CvTable :rows="d.usb_devices" :cols="['bus_id','vendor_id','product_id','manufacturer','product']" searchable />
+      </CvSection>
+
       <CvSection v-if="d.sysctl?.length" value="sysctl" title="System Parameters" :count="d.sysctl.length">
         <CvTable :rows="d.sysctl" :cols="['key','value']" searchable />
       </CvSection>
@@ -134,7 +146,7 @@
 import { computed, defineComponent, resolveComponent, h, ref } from 'vue'
 
 const props = defineProps({
-  data: { type: Object, required: true },
+  data: { type: Object, default: () => ({}) },
 })
 
 const d = computed(() => props.data ?? {})

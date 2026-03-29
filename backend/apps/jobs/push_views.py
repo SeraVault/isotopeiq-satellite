@@ -53,6 +53,7 @@ class PushDataView(APIView):
 
         job = Job.objects.create(
             policy=policy,
+            device=device,
             triggered_by='push',
             status='running',
             started_at=timezone.now(),
