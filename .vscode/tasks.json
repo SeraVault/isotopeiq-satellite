@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Docker: Compose Up",
+      "type": "shell",
+      "command": "docker compose up --build 2>&1 | while IFS= read -r line; do echo \"$line\"; if [[ \"$line\" == *'Starting development server at'* ]]; then echo ''; echo '  Frontend : http://localhost:5173'; echo '  Backend  : http://localhost:8000'; echo '  Debugpy  : localhost:5678'; echo ''; fi; done",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "docker-compose",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^(\\[\\+\\]|Building|Pulling|Creating|Starting|✔)",
+          "endsPattern": "Starting development server at"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "docker"
+      }
+    },
+    {
+      "label": "Docker: Compose Down",
+      "type": "shell",
+      "command": "docker compose down",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "docker"
+      }
+    }
+  ]
+}

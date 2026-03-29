@@ -29,6 +29,7 @@
               <thead>
                 <tr>
                   <th>Device</th><th>Status</th><th>Detected</th><th>Keys</th><th></th>
+
                 </tr>
               </thead>
               <tbody>
@@ -38,7 +39,7 @@
                   <td class="text-medium-emphasis text-caption">{{ fmt(e.created_at) }}</td>
                   <td class="text-medium-emphasis text-caption">{{ diffKeys(e.diff) }}</td>
                   <td>
-                    <v-btn v-if="e.status === 'new'" size="x-small" variant="tonal" @click="openAcknowledge(e)">Acknowledge</v-btn>
+                    <router-link to="/drift" class="text-primary text-caption text-decoration-none">Review →</router-link>
                   </td>
                 </tr>
               </tbody>
@@ -75,22 +76,7 @@
       </v-col>
     </v-row>
 
-    <!-- Acknowledge dialog -->
-    <v-dialog v-model="ackDialog" max-width="460">
-      <v-card rounded="lg">
-        <v-card-title>Acknowledge Drift</v-card-title>
-        <v-card-subtitle v-if="acknowledging">Device: {{ acknowledging.device_name ?? acknowledging.device }}</v-card-subtitle>
-        <v-card-text>
-          <v-alert v-if="ackError" type="error" variant="tonal" density="compact" class="mb-3">{{ ackError }}</v-alert>
-          <v-textarea v-model="ackReason" label="Reason *" rows="4" placeholder="Explain why this drift is expected or acceptable…" />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn @click="ackDialog = false">Cancel</v-btn>
-          <v-btn color="primary" :loading="ackSaving" @click="submitAcknowledge">Acknowledge</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+
   </div>
 </template>
 
@@ -103,12 +89,6 @@ const driftEvents  = ref([])
 const recentJobs   = ref([])
 const loadingDrift = ref(true)
 const loadingJobs  = ref(true)
-
-const acknowledging = ref(null)
-const ackDialog     = ref(false)
-const ackReason     = ref('')
-const ackError      = ref('')
-const ackSaving     = ref(false)
 
 const statCards = computed(() => [
   { label: 'Devices',          value: stats.value.devices,      alert: false },
@@ -130,29 +110,6 @@ function statusColor(status) {
   return { success: 'success', resolved: 'success', failed: 'error', running: 'info',
            pending: 'warning', new: 'error', acknowledged: 'warning', partial: 'warning',
            cancelled: 'default' }[status] ?? 'default'
-}
-
-function openAcknowledge(event) {
-  acknowledging.value = event
-  ackReason.value = ''
-  ackError.value  = ''
-  ackDialog.value = true
-}
-
-async function submitAcknowledge() {
-  if (!ackReason.value.trim()) { ackError.value = 'A reason is required.'; return }
-  ackSaving.value = true
-  ackError.value  = ''
-  try {
-    await api.post(`/drift/${acknowledging.value.id}/acknowledge/`, { reason: ackReason.value.trim() })
-    acknowledging.value.status = 'acknowledged'
-    stats.value.new_drift = Math.max(0, stats.value.new_drift - 1)
-    ackDialog.value = false
-  } catch (e) {
-    ackError.value = e.response?.data?.error ?? 'Failed to acknowledge.'
-  } finally {
-    ackSaving.value = false
-  }
 }
 
 onMounted(async () => {

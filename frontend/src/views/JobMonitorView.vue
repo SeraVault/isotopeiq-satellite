@@ -141,8 +141,13 @@ import { useJobsStore } from '../stores/jobs'
 import api from '../api'
 
 const store = useJobsStore()
-const selected = ref(null)
+const selectedId = ref(null)
 const detailOpen = ref(false)
+
+// Derived from the store so every WS patch is immediately visible in the modal.
+const selected = computed(() =>
+  selectedId.value == null ? null : store.jobs.find(j => j.id === selectedId.value) ?? null
+)
 
 const devices = ref([])
 const policies = ref([])
@@ -195,7 +200,15 @@ function duration(job) {
 
 async function openDetail(job) {
   const { data } = await api.get(`/jobs/${job.id}/`)
-  selected.value = data
+  // Merge full detail (device_results etc.) back into the store so the
+  // computed `selected` stays in sync with future WS patches.
+  const idx = store.jobs.findIndex(j => j.id === data.id)
+  if (idx !== -1) {
+    store.jobs[idx] = { ...store.jobs[idx], ...data }
+  } else {
+    store.jobs.unshift(data)
+  }
+  selectedId.value = data.id
   detailOpen.value = true
 }
 
@@ -203,7 +216,7 @@ async function cancel(job) {
   if (!confirm(`Cancel job ${job.id}?`)) return
   await api.post(`/jobs/${job.id}/cancel/`)
   applyFilters()
-  if (selected.value?.id === job.id) detailOpen.value = false
+  if (selectedId.value === job.id) detailOpen.value = false
 }
 
 onMounted(async () => {

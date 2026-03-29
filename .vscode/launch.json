@@ -5,6 +5,8 @@
       "name": "Django (Docker)",
       "type": "debugpy",
       "request": "attach",
+      "preLaunchTask": "Docker: Compose Up",
+      "postDebugTask": "Docker: Compose Down",
       "connect": {
         "host": "localhost",
         "port": 5678

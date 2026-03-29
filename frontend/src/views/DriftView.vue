@@ -43,7 +43,7 @@
               <td class="text-caption text-medium-emphasis">{{ Object.keys(event.diff || {}).join(', ') || '—' }}</td>
               <td>
                 <v-btn size="x-small" variant="tonal" class="mr-1" @click="openDiff(event)">View Diff</v-btn>
-                <v-btn v-if="event.status === 'new'" size="x-small" variant="tonal" @click="openAcknowledge(event)">Acknowledge</v-btn>
+                <v-btn v-if="event.status === 'new' && reviewedIds.includes(event.id)" size="x-small" variant="tonal" @click="openAcknowledge(event)">Acknowledge</v-btn>
               </td>
             </tr>
           </tbody>
@@ -128,11 +128,16 @@ function clearFilters() {
   store.fetchEvents()
 }
 
+const reviewedIds = ref([])
+
 const selected = ref(null)
 const diffOpen = ref(false)
 const diffLoading = ref(false)
 
 async function openDiff(event) {
+  if (!reviewedIds.value.includes(event.id)) {
+    reviewedIds.value = [...reviewedIds.value, event.id]
+  }
   selected.value = { ...event, baseline_data: null, result_data: null }
   diffOpen.value = true
   diffLoading.value = true
