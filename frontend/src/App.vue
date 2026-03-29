@@ -104,7 +104,7 @@ watch(isLoggedIn, (val) => {
 onMounted(() => {
   if (isLoggedIn.value) {
     pollBadges()
-    pollTimer = setInterval(pollBadges, 15000)
+    pollTimer = setInterval(pollBadges, 3000)
   }
 })
 

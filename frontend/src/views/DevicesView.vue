@@ -151,7 +151,6 @@
             <template #item.credential="{ item }">{{ credName(item.credential) }}</template>
             <template #item.actions="{ item }">
               <div class="d-flex ga-1" @click.stop>
-                <v-btn size="x-small" variant="tonal" :loading="testing === item.id" @click="testConn(item)">Test</v-btn>
                 <v-btn size="x-small" variant="tonal" color="primary" :loading="collecting === item.id" @click="collect(item)">Collect</v-btn>
                 <v-btn size="x-small" variant="tonal" @click="openEditDevice(item)">Edit</v-btn>
                 <v-btn size="x-small" variant="tonal" color="error" @click="removeDevice(item.id)">Delete</v-btn>
