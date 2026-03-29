@@ -9,6 +9,7 @@
         </div>
       </div>
       <v-spacer />
+      <v-btn variant="tonal" prepend-icon="mdi-help-circle-outline" class="mr-2" @click="showHelp = true">How it works</v-btn>
       <v-btn color="primary" prepend-icon="mdi-plus" @click="openNew">Add Rule</v-btn>
     </div>
 
@@ -162,6 +163,91 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- ── Help dialog ─────────────────────────────────────────────────────── -->
+    <v-dialog v-model="showHelp" max-width="720" scrollable>
+      <v-card rounded="lg">
+        <v-card-title class="d-flex align-center pt-4 pb-2">
+          <v-icon icon="mdi-tune" class="mr-2" color="primary" />
+          Volatile Field Rules
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" @click="showHelp = false" />
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pa-5" style="font-size:0.92rem;line-height:1.7">
+
+          <p class="mb-3">
+            <strong>Volatile Field Rules</strong> tell IsotopeIQ Satellite which fields to ignore during
+            drift comparison. Some values change legitimately on every collection run — timestamps,
+            lease counters, uptime — and without exclusion rules they would generate constant false-positive
+            drift alerts.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">How it works</div>
+          <p class="mb-3">
+            Each rule targets a <strong>Section</strong> of the canonical document (e.g. <code>network</code>,
+            <code>services</code>) and specifies which field — or which nested field — to exclude.
+            Rules are loaded by the drift engine before any comparison; matched fields are stripped from
+            both the stored baseline and the new result before diffing, so they never appear as drift.
+          </p>
+          <p class="mb-2">
+            Rules take effect within 60 seconds without a server restart.
+            Disabling a rule re-enables drift detection for that field immediately on the next policy run.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">Rule types</div>
+          <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
+            <tbody>
+              <tr>
+                <td class="font-weight-medium" style="width:28%">Exact field</td>
+                <td>Excludes a single named field on every item in the section. Use for simple scalar
+                  fields like <code>last_seen</code> or <code>uptime</code>.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">Regex field</td>
+                <td>Excludes any field whose name matches a regular expression. Useful when a set of
+                  related fields share a naming pattern.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">Nested field</td>
+                <td>Excludes a field inside a nested array within each section item. Specify the
+                  <em>nested array key</em> (e.g. <code>neighbors</code>) and the field within
+                  each nested item to ignore.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">Exclude key</td>
+                <td>Excludes items from a key=value section (e.g. <code>sysctl</code>) where the
+                  item's key field matches. Useful for volatile kernel parameters.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">Exclude section</td>
+                <td>Skips the entire section during drift comparison. Use sparingly — this silences
+                  all drift for that section.</td>
+              </tr>
+            </tbody>
+          </v-table>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">Common examples</div>
+          <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
+            <tbody>
+              <tr><td class="font-weight-medium" style="width:28%"><code>os</code> / exact / <code>uptime</code></td><td>Ignores the uptime counter which increments on every collection.</td></tr>
+              <tr><td class="font-weight-medium"><code>network</code> / exact / <code>leases</code></td><td>Ignores DHCP lease counts that fluctuate continuously.</td></tr>
+              <tr><td class="font-weight-medium"><code>services</code> / regex / <code>.*_pid$</code></td><td>Ignores any field ending in <code>_pid</code> across all service entries.</td></tr>
+              <tr><td class="font-weight-medium"><code>sysctl</code> / exclude key / <code>kernel.random.entropy_avail</code></td><td>Ignores the entropy counter sysctl entry.</td></tr>
+            </tbody>
+          </v-table>
+
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="pa-3">
+          <v-spacer />
+          <v-btn color="primary" variant="tonal" @click="showHelp = false">Got it</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -170,6 +256,8 @@ import { ref } from 'vue'
 import { useVolatileRulesStore } from '../stores/volatileRules'
 
 const store = useVolatileRulesStore()
+
+const showHelp = ref(false)
 
 // ── Table ─────────────────────────────────────────────────────────────────────
 

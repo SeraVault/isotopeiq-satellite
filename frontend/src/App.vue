@@ -29,7 +29,6 @@
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Infrastructure</v-list-subheader>
         <v-list-item to="/devices" prepend-icon="mdi-server" title="Devices" color="primary" />
         <v-list-item to="/policies" prepend-icon="mdi-shield-check-outline" title="Policies" color="primary" />
-        <v-list-item to="/scripts" prepend-icon="mdi-code-braces" title="Scripts" color="primary" />
 
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Operations</v-list-subheader>
         <v-list-item to="/jobs" prepend-icon="mdi-play-circle-outline" title="Job Monitor" color="primary">
@@ -45,6 +44,7 @@
         <v-list-item to="/baselines" prepend-icon="mdi-database-check-outline" title="Baselines" color="primary" />
 
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">System</v-list-subheader>
+        <v-list-item to="/scripts" prepend-icon="mdi-code-braces" title="Scripts" color="primary" />
         <v-list-item to="/audit" prepend-icon="mdi-format-list-bulleted" title="Audit Log" color="primary" />
         <v-list-item to="/retention" prepend-icon="mdi-clock-outline" title="Retention" color="primary" />
         <v-list-item to="/volatile-rules" prepend-icon="mdi-tune" title="Volatile Rules" color="primary" />

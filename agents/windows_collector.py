@@ -921,14 +921,12 @@ def collect_kernel_modules(output):
 
 def collect_pci_devices(output):
     """Collect PCI devices via Win32_PnPEntity (WMI)."""
-    rows = wmic(
-        'Win32_PnPEntity',
-        ['PNPDeviceID', 'PNPClass', 'Manufacturer', 'Name'],
-        where="PNPDeviceID LIKE 'PCI\\\\%'",
-    )
+    # Fetch all PnPEntity rows and filter in Python to avoid WQL backslash/
+    # percent escaping issues when the command passes through cmd.exe.
+    rows = wmic('Win32_PnPEntity', ['PNPDeviceID', 'PNPClass', 'Manufacturer', 'Name'])
     for row in rows:
         slot = row.get('PNPDeviceID', '').strip()
-        if not slot:
+        if not slot.upper().startswith('PCI\\'):
             continue
         output['pci_devices'].append({
             'slot':   slot,
@@ -975,12 +973,11 @@ def collect_storage_devices(output):
 
 def collect_usb_devices(output):
     """Collect USB devices via Win32_PnPEntity."""
-    rows = wmic(
-        'Win32_PnPEntity',
-        ['PNPDeviceID', 'Manufacturer', 'Name'],
-        where="PNPDeviceID LIKE 'USB\\\\VID%'",
-    )
+    # Filter in Python — avoids WQL backslash/percent escaping through cmd.exe.
+    rows = wmic('Win32_PnPEntity', ['PNPDeviceID', 'Manufacturer', 'Name'])
     for row in rows:
+        if 'VID_' not in row.get('PNPDeviceID', '').upper():
+            continue
         bus_id = row.get('PNPDeviceID', '').strip()
         if not bus_id:
             continue
