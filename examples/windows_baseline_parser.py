@@ -495,49 +495,42 @@ direction_map = {"in": "in", "inbound": "in", "out": "out", "outbound": "out"}
 action_map    = {"allow": "allow", "block": "block", "bypass": "allow"}
 
 rule_buf = {}
+def _flush_fw(buf):
+    # Rule name key differs by collection method:
+    #   PS1 modern (Get-NetFirewallRule): "rulename" (from "RuleName:")
+    #   netsh advfirewall verbose:        "rule_name" (from "Rule Name:")
+    rule_name = buf.get("rulename") or buf.get("rule_name", "")
+    if not rule_name:
+        return
+    direction_raw = buf.get("direction", "").lower()
+    action_raw    = buf.get("action", "").lower()
+    enabled_raw   = buf.get("enabled", "yes").lower()
+    # source key also differs: "remoteaddress" (modern) vs "remoteip" (netsh)
+    source = buf.get("remoteaddress") or buf.get("remoteip", "any")
+    output["firewall_rules"].append({
+        "chain":       rule_name,
+        "direction":   direction_map.get(direction_raw, "unknown"),
+        "action":      action_map.get(action_raw, action_raw),
+        "protocol":    buf.get("protocol", "any"),
+        "source":      source,
+        "destination": buf.get("localip", "any"),
+        "port":        buf.get("localport", ""),
+        "enabled":     enabled_raw in ("yes", "true"),
+        "description": buf.get("description", ""),
+        "source_tool": "windows-firewall",
+    })
+
 for line in lines("firewall_rules"):
     line = line.strip()
     if re.match(r"^-{3,}$", line):
-        # Separator — flush current rule
-        if rule_buf.get("name"):
-            direction_raw = rule_buf.get("direction", "").lower()
-            action_raw    = rule_buf.get("action", "").lower()
-            enabled_raw   = rule_buf.get("enabled", "yes").lower()
-            output["firewall_rules"].append({
-                "chain":       rule_buf.get("name", ""),
-                "direction":   direction_map.get(direction_raw, "unknown"),
-                "action":      action_map.get(action_raw, action_raw),
-                "protocol":    rule_buf.get("protocol", "any"),
-                "source":      rule_buf.get("remoteip", "any"),
-                "destination": rule_buf.get("localip", "any"),
-                "port":        rule_buf.get("localport", ""),
-                "enabled":     enabled_raw in ("yes", "true"),
-                "description": rule_buf.get("description", ""),
-                "source_tool": "windows-firewall",
-            })
+        _flush_fw(rule_buf)
         rule_buf = {}
         continue
     if ":" in line:
         k, _, v = line.partition(":")
         rule_buf[k.strip().lower().replace(" ", "_")] = v.strip()
 
-# Flush last rule
-if rule_buf.get("name"):
-    direction_raw = rule_buf.get("direction", "").lower()
-    action_raw    = rule_buf.get("action", "").lower()
-    enabled_raw   = rule_buf.get("enabled", "yes").lower()
-    output["firewall_rules"].append({
-        "chain":       rule_buf.get("name", ""),
-        "direction":   direction_map.get(direction_raw, "unknown"),
-        "action":      action_map.get(action_raw, action_raw),
-        "protocol":    rule_buf.get("protocol", "any"),
-        "source":      rule_buf.get("remoteip", "any"),
-        "destination": rule_buf.get("localip", "any"),
-        "port":        rule_buf.get("localport", ""),
-        "enabled":     enabled_raw in ("yes", "true"),
-        "description": rule_buf.get("description", ""),
-        "source_tool": "windows-firewall",
-    })
+_flush_fw(rule_buf)
 
 
 # ── sysctl (Windows registry security settings) ──────────────────────────────

@@ -973,10 +973,61 @@ def collect_listening_services(output):
 # ---------------------------------------------------------------------------
 
 def collect_firewall_rules(output):
-    out = run('netsh advfirewall firewall show rule name=all verbose')
     direction_map = {'in': 'in', 'inbound': 'in', 'out': 'out', 'outbound': 'out'}
     action_map    = {'allow': 'allow', 'block': 'block', 'bypass': 'allow'}
 
+    # Try modern PowerShell Get-NetFirewallRule (Win 8 / Server 2012+, including Win 10/11).
+    # All string literals use single quotes to avoid cmd.exe/PowerShell quoting conflicts.
+    # Outputs one sentinel line per rule: |||Name|Direction|Action|Enabled|Protocol|LocalPort|RemoteAddress
+    ps_script = (
+        "if (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) {"
+        " Get-NetFirewallRule -ErrorAction SilentlyContinue | ForEach-Object {"
+        "  $r=$_;"
+        "  $pf=$r|Get-NetFirewallPortFilter -ErrorAction SilentlyContinue;"
+        "  $af=$r|Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue;"
+        "  $proto=if ($pf){$pf.Protocol}else{'Any'};"
+        "  $lport=if ($pf){($pf.LocalPort -join ',')}else{'Any'};"
+        "  $raddr=if ($af){($af.RemoteAddress -join ',')}else{'Any'};"
+        "  $n=($r.DisplayName -replace '[|]',' ');"
+        "  Write-Output ('|||'+($n,$r.Direction.ToString(),$r.Action.ToString(),$r.Enabled.ToString(),$proto,$lport,$raddr -join '|'))"
+        " }"
+        "}"
+    )
+    ps_out = run('powershell -NoProfile -NonInteractive -Command "{}"'.format(
+        ps_script.replace('"', '\\"')
+    ))
+
+    if ps_out and '|||' in ps_out:
+        for line in ps_out.splitlines():
+            line = line.strip()
+            if not line.startswith('|||'):
+                continue
+            parts = line[3:].split('|', 6)
+            if len(parts) < 4 or not parts[0]:
+                continue
+            direction = parts[1].lower() if len(parts) > 1 else ''
+            action    = parts[2].lower() if len(parts) > 2 else ''
+            enabled   = parts[3].lower() in ('true', 'yes') if len(parts) > 3 else True
+            protocol  = parts[4] if len(parts) > 4 else 'Any'
+            lport     = parts[5] if len(parts) > 5 else ''
+            raddr     = parts[6] if len(parts) > 6 else 'Any'
+            output['firewall_rules'].append({
+                'chain':       parts[0],
+                'direction':   direction_map.get(direction, 'unknown'),
+                'action':      action_map.get(action, action),
+                'protocol':    protocol,
+                'source':      raddr,
+                'destination': 'any',
+                'port':        lport,
+                'enabled':     enabled,
+                'description': '',
+                'source_tool': 'windows-firewall',
+            })
+        return
+
+    # Fallback: netsh advfirewall (Windows 7 / when PowerShell unavailable).
+    # netsh verbose output uses "Rule Name:" (with a space) as the rule name field.
+    out = run('netsh advfirewall firewall show rule name=all verbose')
     rule_buf = {}
     for line in out.splitlines():
         line = line.strip()
