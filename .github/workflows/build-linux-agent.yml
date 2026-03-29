@@ -31,6 +31,7 @@ jobs:
               yum install -y epel-release
               yum install -y python36
               python3.6 -m ensurepip --upgrade
+              pip3.6 install --upgrade pip wheel
               pip3.6 install 'pyinstaller<5'
               python3.6 -m PyInstaller --onefile --name linux_collector_amd64 linux_collector.py
               mv dist/linux_collector_amd64 .
