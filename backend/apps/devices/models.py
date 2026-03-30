@@ -40,6 +40,7 @@ class Device(models.Model):
         ('winrm', 'WinRM'),
         ('https', 'HTTPS/API'),
         ('push', 'Push (Device-Initiated)'),
+        ('agent', 'Agent Pull (port 9322)'),
     ]
     OS_TYPE_CHOICES = [
         ('linux', 'Linux'),
@@ -74,6 +75,18 @@ class Device(models.Model):
     password = EncryptedCharField(max_length=1024, blank=True)
     ssh_private_key = EncryptedCharField(max_length=4096, blank=True)
     push_token = EncryptedCharField(max_length=512, blank=True)
+    # Agent pull fields — used when connection_type='agent'.
+    agent_port = models.PositiveIntegerField(
+        default=9322,
+        blank=True,
+        null=True,
+        help_text='TCP port the IsotopeIQ agent is listening on (default: 9322).',
+    )
+    agent_token = EncryptedCharField(
+        max_length=512,
+        blank=True,
+        help_text='Shared secret sent as X-Agent-Token header when pulling from the agent.',
+    )
     # SSH host public key for host verification (base64 encoded).
     host_key = models.TextField(
         blank=True,

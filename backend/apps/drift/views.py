@@ -3,21 +3,11 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 
 from core.permissions import IsAdminOrDriftAction, IsAdminOrReadOnly
 from .models import DriftEvent, VolatileFieldRule
 from .serializers import DriftEventSerializer, DriftEventDetailSerializer, VolatileFieldRuleSerializer
 from .volatile_utils import get_volatile_spec, invalidate_spec_cache, build_spec_from_rules
-
-
-def _broadcast_drift(event) -> None:
-    layer = get_channel_layer()
-    if not layer:
-        return
-    data = dict(DriftEventSerializer(event).data)
-    async_to_sync(layer.group_send)('drift', {'type': 'drift.event', 'data': data})
 
 
 @api_view(['GET'])
@@ -113,7 +103,6 @@ class DriftEventViewSet(viewsets.ReadOnlyModelViewSet):
                     established_by=request.user.username,
                 )
 
-        _broadcast_drift(event)
         return Response(DriftEventSerializer(event).data)
 
     @action(detail=True, methods=['post'])
@@ -121,5 +110,4 @@ class DriftEventViewSet(viewsets.ReadOnlyModelViewSet):
         event = self.get_object()
         event.status = 'resolved'
         event.save()
-        _broadcast_drift(event)
         return Response(DriftEventSerializer(event).data)

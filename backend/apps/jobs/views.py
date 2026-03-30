@@ -8,7 +8,6 @@ from .filters import JobFilter
 from .models import Job, DeviceJobResult
 from .serializers import JobSerializer, JobListSerializer, DeviceJobResultSerializer
 
-
 class JobViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
     queryset = Job.objects.prefetch_related('device_results__device').select_related('policy', 'device').all()
@@ -65,6 +64,37 @@ class JobViewSet(viewsets.ReadOnlyModelViewSet):
             ).exclude(pk=job.pk).update(status='cancelled', finished_at=now)
 
         return Response({'detail': 'Job cancelled.'}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='trigger-agent-pull')
+    def trigger_agent_pull(self, request):
+        """
+        Enqueue an asynchronous agent-pull job for a device.
+
+        Request body: { "device_id": <int> }
+
+        The device must have connection_type='agent' and be active.
+        Returns 202 Accepted with the Celery task ID.
+        """
+        from apps.devices.models import Device
+        from .tasks import run_agent_pull
+
+        device_id = request.data.get('device_id')
+        if not device_id:
+            return Response({'detail': 'device_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            device = Device.objects.get(pk=device_id, connection_type='agent', is_active=True)
+        except Device.DoesNotExist:
+            return Response(
+                {'detail': 'No active agent device found with that id.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        task = run_agent_pull.delay(device.id, triggered_by='manual')
+        return Response(
+            {'detail': 'Agent pull triggered.', 'task_id': task.id},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class DeviceJobResultViewSet(viewsets.ReadOnlyModelViewSet):

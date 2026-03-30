@@ -73,6 +73,8 @@ urlpatterns = [
     path('api/drift/', include('apps.drift.urls')),
     path('api/push/', include('apps.jobs.push_urls')),
     path('api/retention/', include('apps.retention.urls')),
+    path('api/settings/', include('apps.notifications.urls')),
+    path('api/users/', include('apps.users.urls')),
     path('api/audit/', include('apps.audit.urls')),
     path('api/agents/', agents_list, name='agents-list'),
     path('api/agents/<str:filename>/info', agents_info, name='agents-info'),

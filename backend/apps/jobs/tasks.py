@@ -1,9 +1,10 @@
+import json
 import logging
 import time
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 from celery import shared_task
 from django.utils import timezone
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 
 from .models import Job, DeviceJobResult
 from core.collection.ssh import SSHCollector
@@ -25,24 +26,6 @@ def _get_collector(device):
     return SSHCollector(device)
 
 logger = logging.getLogger(__name__)
-
-
-def _broadcast(data: dict) -> None:
-    """Push a job status update to all connected WebSocket clients."""
-    layer = get_channel_layer()
-    if layer:
-        async_to_sync(layer.group_send)('jobs', {'type': 'job.update', 'data': data})
-
-
-def _broadcast_drift(event) -> None:
-    """Push a drift event update to all connected drift WebSocket clients."""
-    layer = get_channel_layer()
-    if not layer:
-        return
-    from apps.drift.serializers import DriftEventSerializer
-    data = DriftEventSerializer(event).data
-    # Serializer returns DRF Field objects; coerce to plain dict for JSON.
-    async_to_sync(layer.group_send)('drift', {'type': 'drift.event', 'data': dict(data)})
 
 
 def _apply_baseline_and_drift(device, result) -> None:
@@ -70,7 +53,6 @@ def _apply_baseline_and_drift(device, result) -> None:
             existing.baseline_snapshot = baseline_data
             existing.save(update_fields=['diff', 'job_result', 'baseline_snapshot'])
             logger.warning('Drift updated for device "%s" (event %s).', device, existing.pk)
-            _broadcast_drift(existing)
         else:
             event = DriftEvent.objects.create(
                 device=device,
@@ -80,7 +62,6 @@ def _apply_baseline_and_drift(device, result) -> None:
             )
             SyslogNotifier().notify_drift(device, event)
             logger.warning('Drift detected for device "%s" (event %s).', device, event.pk)
-            _broadcast_drift(event)
 
 
 @shared_task(bind=True)
@@ -97,10 +78,14 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
     if not policy.collection_script or not policy.parser_script:
         raise ValueError(f'Policy {policy_id} requires both a collection and a parser script.')
 
-    devices = list(policy.devices.filter(is_active=True, connection_type__in=_SUPPORTED_CONNECTION_TYPES))
+    script_devices = list(policy.devices.filter(is_active=True, connection_type__in=_SUPPORTED_CONNECTION_TYPES))
+    agent_devices  = list(policy.devices.filter(is_active=True, connection_type='agent'))
     if device_id is not None:
-        devices = [d for d in devices if d.id == device_id]
+        script_devices = [d for d in script_devices if d.id == device_id]
+        agent_devices  = [d for d in agent_devices  if d.id == device_id]
 
+    # ── SSH / WinRM / Telnet devices ─────────────────────────────────────────
+    devices = script_devices
     # One independent Job per device so history and status are tracked at the
     # device level rather than being aggregated under a single policy run.
     for idx, device in enumerate(devices):
@@ -112,14 +97,6 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
             started_at=timezone.now(),
             celery_task_id=self.request.id or '',
         )
-        _broadcast({
-            'job_id': job.id,
-            'status': 'running',
-            'policy_name': policy.name,
-            'device_id': device.id,
-            'device_name': device.name,
-            'device_result': None,
-        })
 
         result = DeviceJobResult.objects.create(
             job=job,
@@ -127,22 +104,6 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
             status='running',
             started_at=timezone.now(),
         )
-        _broadcast({
-            'job_id': job.id,
-            'status': 'running',
-            'policy_name': policy.name,
-            'device_id': device.id,
-            'device_name': device.name,
-            'device_result': {
-                'id': result.id,
-                'device': device.id,
-                'device_name': device.name,
-                'status': 'running',
-                'started_at': result.started_at.isoformat(),
-                'finished_at': None,
-                'error_message': '',
-            },
-        })
 
         try:
             collector = _get_collector(device)
@@ -165,23 +126,6 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
         job.finished_at = timezone.now()
         job.save()
 
-        _broadcast({
-            'job_id': job.id,
-            'status': job.status,
-            'policy_name': policy.name,
-            'device_id': device.id,
-            'device_name': device.name,
-            'device_result': {
-                'id': result.id,
-                'device': device.id,
-                'device_name': device.name,
-                'status': result.status,
-                'started_at': result.started_at.isoformat() if result.started_at else None,
-                'finished_at': result.finished_at.isoformat() if result.finished_at else None,
-                'error_message': result.error_message,
-            },
-        })
-
         if result.status == 'success':
             try:
                 _apply_baseline_and_drift(device, result)
@@ -191,3 +135,127 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
         # Respect inter-device delay (skip after the last device).
         if policy.delay_between_devices and idx < len(devices) - 1:
             time.sleep(policy.delay_between_devices)
+
+    # ── Agent Pull devices ────────────────────────────────────────────────────
+    for idx, device in enumerate(agent_devices):
+        job = Job.objects.create(
+            policy=policy,
+            device=device,
+            triggered_by=triggered_by,
+            status='running',
+            started_at=timezone.now(),
+            celery_task_id=self.request.id or '',
+        )
+        result = DeviceJobResult.objects.create(
+            job=job,
+            device=device,
+            status='running',
+            started_at=timezone.now(),
+        )
+        try:
+            port = device.agent_port or 9322
+            url = 'http://{host}:{port}/collect'.format(host=device.hostname, port=port)
+            req = Request(url)  # nosec — internal network, known agent endpoint
+            if device.agent_token:
+                req.add_header('X-Agent-Token', str(device.agent_token))
+            with urlopen(req, timeout=30) as resp:  # noqa: S310
+                raw = resp.read().decode('utf-8')
+            result.raw_output = raw
+            parsed = json.loads(raw)
+            if policy.parser_script:
+                from core.parser.runner import run_parser
+                parsed = run_parser(policy.parser_script.content, raw)
+            validate_canonical(parsed)
+            result.parsed_output = parsed
+            result.status = 'success'
+        except (URLError, OSError) as exc:
+            logger.error('Agent pull network error for device "%s": %s', device, exc)
+            result.status = 'failed'
+            result.error_message = str(exc)
+        except Exception as exc:
+            logger.exception('Agent pull failed for device "%s".', device)
+            result.status = 'failed'
+            result.error_message = str(exc)
+        finally:
+            result.finished_at = timezone.now()
+            result.save()
+
+        job.status = result.status
+        job.finished_at = timezone.now()
+        job.save()
+
+        if result.status == 'success':
+            try:
+                _apply_baseline_and_drift(device, result)
+            except Exception:
+                logger.exception('Baseline/drift error for device "%s".', device)
+
+        if policy.delay_between_devices and idx < len(agent_devices) - 1:
+            time.sleep(policy.delay_between_devices)
+
+
+@shared_task(bind=True)
+def run_agent_pull(self, device_id: int, triggered_by: str = 'manual'):
+    """
+    Pull a baseline collection from an IsotopeIQ agent running on the device.
+
+    The agent must be listening on device.agent_port (default 9322) and
+    expose GET /collect, optionally protected by X-Agent-Token.
+    """
+    from apps.devices.models import Device
+
+    device = Device.objects.get(pk=device_id)
+
+    job = Job.objects.create(
+        device=device,
+        triggered_by=triggered_by,
+        status='running',
+        started_at=timezone.now(),
+        celery_task_id=self.request.id or '',
+    )
+    result = DeviceJobResult.objects.create(
+        job=job,
+        device=device,
+        status='running',
+        started_at=timezone.now(),
+    )
+
+    try:
+        port = device.agent_port or 9322
+        url = 'http://{host}:{port}/collect'.format(host=device.hostname, port=port)
+        req = Request(url)  # nosec — internal network call to a known agent endpoint
+        if device.agent_token:
+            req.add_header('X-Agent-Token', str(device.agent_token))
+
+        with urlopen(req, timeout=30) as resp:  # noqa: S310
+            raw = resp.read().decode('utf-8')
+
+        result.raw_output = raw
+        parsed = json.loads(raw)
+        validate_canonical(parsed)
+        result.parsed_output = parsed
+        result.status = 'success'
+
+    except (URLError, OSError) as exc:
+        logger.error('Agent pull network error for device "%s": %s', device, exc)
+        result.status = 'failed'
+        result.error_message = str(exc)
+    except Exception as exc:
+        logger.exception('Agent pull failed for device "%s".', device)
+        result.status = 'failed'
+        result.error_message = str(exc)
+    finally:
+        result.finished_at = timezone.now()
+        result.save()
+
+    job.status = result.status
+    job.finished_at = timezone.now()
+    job.save()
+
+    if result.status == 'success':
+        try:
+            _apply_baseline_and_drift(device, result)
+        except Exception:
+            logger.exception('Baseline/drift error for device "%s".', device)
+
+    return {'job_id': job.id, 'result_id': result.id}

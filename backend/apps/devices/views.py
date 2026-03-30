@@ -1,6 +1,8 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from core.permissions import IsAdminOrReadOnly
 from .models import Credential, Device
@@ -23,6 +25,20 @@ class DeviceViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'hostname', 'fqdn']
     filterset_fields = ['device_type', 'os_type', 'connection_type', 'is_active']
     ordering_fields = ['name', 'created_at']
+
+    @action(detail=False, methods=['get'], url_path='enrollment-token',
+            permission_classes=[IsAdminUser])
+    def enrollment_token(self, request):
+        """Return the system-wide agent enrollment token (admin only)."""
+        from django.conf import settings
+        token = settings.AGENT_ENROLLMENT_TOKEN
+        if not token:
+            return Response(
+                {'detail': 'Agent enrollment is not configured on this satellite. '
+                           'Set AGENT_ENROLLMENT_TOKEN in your environment.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({'enrollment_token': token})
 
     @action(detail=True, methods=['post'])
     def collect(self, request, pk=None):
@@ -162,3 +178,73 @@ def _winrm_configure_envelope(collector):
         )
     except Exception:
         pass
+
+
+class EnrollView(APIView):
+    """
+    POST /api/devices/enroll/
+
+    Called by the IsotopeIQ agent on first startup (or token rotation).
+    Authenticates via a system-wide enrollment token, then creates or
+    updates the Device record and returns a device-specific agent token.
+
+    No Django authentication is required — the enrollment_token IS the
+    auth mechanism, intentionally similar to the push data endpoint.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        import hmac
+        import secrets
+        from django.conf import settings
+
+        enrollment_token = settings.AGENT_ENROLLMENT_TOKEN
+        if not enrollment_token:
+            return Response(
+                {'error': 'Agent enrollment is not configured on this satellite.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        provided = request.data.get('enrollment_token', '')
+        if not provided or not hmac.compare_digest(str(enrollment_token), str(provided)):
+            return Response({'error': 'Invalid enrollment token.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        hostname = request.data.get('hostname', '').strip()
+        if not hostname:
+            return Response({'error': 'hostname is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        os_type = request.data.get('os_type', 'linux')
+        valid_os = [c[0] for c in Device.OS_TYPE_CHOICES]
+        if os_type not in valid_os:
+            os_type = 'other'
+
+        agent_port = int(request.data.get('agent_port', 9322))
+
+        # Generate a unique per-device token each time (supports rotation)
+        agent_token = secrets.token_hex(32)
+
+        try:
+            device = Device.objects.get(hostname=hostname, connection_type='agent')
+            # Preserve the human-set name; update everything else
+            device.os_type = os_type
+            device.agent_port = agent_port
+            device.agent_token = agent_token
+            device.is_active = True
+            device.save(update_fields=['os_type', 'agent_port', 'agent_token', 'is_active', 'updated_at'])
+            created = False
+        except Device.DoesNotExist:
+            device = Device.objects.create(
+                name=hostname,
+                hostname=hostname,
+                connection_type='agent',
+                os_type=os_type,
+                agent_port=agent_port,
+                agent_token=agent_token,
+                is_active=True,
+            )
+            created = True
+
+        return Response(
+            {'agent_token': agent_token, 'device_id': device.id, 'created': created},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )

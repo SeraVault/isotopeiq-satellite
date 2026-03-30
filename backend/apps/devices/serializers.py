@@ -21,4 +21,5 @@ class DeviceSerializer(serializers.ModelSerializer):
             'password':        {'write_only': True},
             'ssh_private_key': {'write_only': True},
             'push_token':      {'write_only': True},
+            'agent_token':     {'write_only': True},
         }

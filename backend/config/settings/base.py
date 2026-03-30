@@ -7,6 +7,10 @@ SECRET_KEY = config('SECRET_KEY')
 
 SATELLITE_URL = config('SATELLITE_URL', default='http://localhost:8000')
 
+# Shared secret agents send when self-registering for the first time.
+# Set via AGENT_ENROLLMENT_TOKEN env var.  Leave blank to disable enrollment.
+AGENT_ENROLLMENT_TOKEN = config('AGENT_ENROLLMENT_TOKEN', default='')
+
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
 INSTALLED_APPS = [
@@ -22,8 +26,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_celery_beat',
     'django_celery_results',
-    'channels',
-    'django_filters',
+'django_filters',
     # Authentication (conditionally added below when configured)
 
     # Local
@@ -34,6 +37,7 @@ INSTALLED_APPS = [
     'apps.baselines',
     'apps.drift',
     'apps.notifications',
+    'apps.users',
     'apps.retention',
     'apps.audit',
 ]
@@ -68,7 +72,6 @@ TEMPLATES = [
     },
 ]
 
-ASGI_APPLICATION = 'config.asgi.application'
 WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
@@ -119,14 +122,6 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'apps.retention.tasks.prune_old_data',
         'schedule': crontab(hour=3, minute=0),
     },
-}
-
-# Django Channels
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {'hosts': [REDIS_URL]},
-    }
 }
 
 # JWT token lifetimes — long enough to survive a working session without

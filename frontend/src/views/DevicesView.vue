@@ -33,13 +33,19 @@
             That document is validated against the canonical schema and stored as the job result.
           </p>
           <p class="mb-3">
-            Two collection modes are supported:
+            Three collection modes are supported:
           </p>
           <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
             <tbody>
               <tr>
                 <td class="font-weight-medium" style="width:30%">Pull (SSH / WinRM)</td>
                 <td>Satellite initiates the connection and runs the script. Requires credentials.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">Agent Pull (port 9322)</td>
+                <td>An IsotopeIQ agent runs persistently on the device and listens on TCP port 9322.
+                  Satellite calls <code>GET /collect</code> on demand — no credentials or scripts needed.
+                  Use the installer scripts in <code>agents/installers/</code> to set up the agent as a service.</td>
               </tr>
               <tr>
                 <td class="font-weight-medium">Push</td>
@@ -72,9 +78,11 @@
               <tr><td class="font-weight-medium" style="width:30%">Name</td><td>Human-readable label used throughout the UI.</td></tr>
               <tr><td class="font-weight-medium">Hostname / FQDN</td><td>Used as the connection target. FQDN is preferred where DNS is available.</td></tr>
               <tr><td class="font-weight-medium">OS Type</td><td>Informs script selection and canonical section expectations — set this accurately so parsers can behave correctly.</td></tr>
-              <tr><td class="font-weight-medium">Connection Type</td><td>SSH, WinRM, HTTPS, or Push. Determines which transport Satellite uses.</td></tr>
-              <tr><td class="font-weight-medium">Credential</td><td>Link to a Credential record. Leave blank for push-only devices.</td></tr>
+              <tr><td class="font-weight-medium">Connection Type</td><td>SSH, WinRM, HTTPS, Push, or Agent Pull. Determines which transport Satellite uses.</td></tr>
+              <tr><td class="font-weight-medium">Credential</td><td>Link to a Credential record. Leave blank for push or agent devices.</td></tr>
               <tr><td class="font-weight-medium">Push Token</td><td>A secret token the device includes when calling the push endpoint. Generate a strong random value.</td></tr>
+              <tr><td class="font-weight-medium">Agent Port</td><td>TCP port the IsotopeIQ agent is listening on (default: 9322). Only applies to Agent Pull devices.</td></tr>
+              <tr><td class="font-weight-medium">Agent Enrollment</td><td>No manual token setup needed. Copy the install command from the device form and run it on the target host — the agent registers automatically and a unique secret is exchanged.</td></tr>
               <tr><td class="font-weight-medium">SSH Host Key</td><td>Stored on first successful connection and pinned thereafter — Satellite will refuse connections if the key changes, alerting you to a potential MITM.</td></tr>
               <tr><td class="font-weight-medium">Tags</td><td>Free-form JSON object for grouping, filtering, or passing context to scripts (e.g. <code>{"env":"prod","role":"db"}</code>).</td></tr>
             </tbody>
@@ -112,11 +120,8 @@
         <!-- Filter bar -->
         <v-card elevation="1" rounded="lg" class="mb-4 pa-4">
           <v-row dense align="center">
-            <v-col cols="12" sm="3">
+            <v-col cols="12" sm="4">
               <v-text-field v-model="deviceSearch" label="Search" placeholder="name, hostname, FQDN…" prepend-inner-icon="mdi-magnify" clearable @keyup.enter="applyDeviceFilters" @click:clear="clearDeviceFilters" />
-            </v-col>
-            <v-col cols="6" sm="2">
-              <v-select v-model="deviceOsType" label="OS" :items="osItems" @update:modelValue="applyDeviceFilters" />
             </v-col>
             <v-col cols="6" sm="2">
               <v-select v-model="deviceConnType" label="Connection" :items="connItems" @update:modelValue="applyDeviceFilters" />
@@ -124,7 +129,7 @@
             <v-col cols="6" sm="2">
               <v-select v-model="deviceActive" label="Active" :items="activeItems" @update:modelValue="applyDeviceFilters" />
             </v-col>
-            <v-col cols="6" sm="3" class="d-flex ga-2 justify-end">
+            <v-col cols="6" sm="4" class="d-flex ga-2 justify-end">
               <v-btn @click="clearDeviceFilters" variant="outlined">Clear</v-btn>
               <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewDevice">Add Device</v-btn>
             </v-col>
@@ -174,12 +179,6 @@
                 <v-col cols="12" sm="6"><v-text-field v-model="deviceForm.fqdn" label="FQDN" placeholder="optional" /></v-col>
                 <v-col cols="12" sm="6"><v-text-field v-model.number="deviceForm.port" label="Port" type="number" :placeholder="String(defaultPort(deviceForm.connection_type))" /></v-col>
                 <v-col cols="12" sm="6">
-                  <v-select v-model="deviceForm.device_type" label="Device Type" :items="deviceTypeItems" />
-                </v-col>
-                <v-col cols="12" sm="6">
-                  <v-select v-model="deviceForm.os_type" label="OS Type" :items="osTypeItems" />
-                </v-col>
-                <v-col cols="12" sm="6">
                   <v-select v-model="deviceForm.connection_type" label="Connection Type" :items="connTypeItems" @update:modelValue="onConnectionTypeChange" />
                 </v-col>
                 <v-col cols="12" sm="6">
@@ -188,6 +187,16 @@
                 <v-col v-if="deviceForm.connection_type === 'ssh'" cols="12">
                   <v-text-field v-model="deviceForm.host_key" label="SSH Host Key (optional)" placeholder="base64 public key — run: ssh-keyscan -t rsa <hostname>" style="font-family:monospace" />
                 </v-col>
+                <template v-if="deviceForm.connection_type === 'agent'">
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model.number="deviceForm.agent_port" label="Agent Port" type="number" placeholder="9322" hint="TCP port the agent is listening on" persistent-hint />
+                  </v-col>
+                  <v-col cols="12" sm="6" class="d-flex align-center">
+                    <v-alert density="compact" variant="tonal" color="success" rounded="lg" icon="mdi-lan-connect" class="text-body-2 w-100">
+                      Device record is created automatically when the agent first enrolls. Just run the installer on the target host.
+                    </v-alert>
+                  </v-col>
+                </template>
               </v-row>
 
               <v-expansion-panels class="mt-2" variant="accordion">
@@ -377,7 +386,7 @@ const deviceConnType = ref('')
 const deviceActive   = ref('')
 
 const osItems     = [{ title: 'All', value: '' }, { title: 'Linux', value: 'linux' }, { title: 'Windows', value: 'windows' }, { title: 'macOS', value: 'macos' }, { title: 'Network', value: 'network' }]
-const connItems   = [{ title: 'All', value: '' }, { title: 'SSH', value: 'ssh' }, { title: 'WinRM', value: 'winrm' }, { title: 'Telnet', value: 'telnet' }, { title: 'Push', value: 'push' }]
+const connItems   = [{ title: 'All', value: '' }, { title: 'SSH', value: 'ssh' }, { title: 'WinRM', value: 'winrm' }, { title: 'Telnet', value: 'telnet' }, { title: 'Push', value: 'push' }, { title: 'Agent', value: 'agent' }]
 const activeItems = [{ title: 'All', value: '' }, { title: 'Yes', value: 'true' }, { title: 'No', value: 'false' }]
 
 const SORT_FIELD = { name: 'name', created_at: 'created_at' }
@@ -458,6 +467,7 @@ function infoRows(d) {
     { label: 'OS Type',     value: d.os_type },
     { label: 'Connection',  value: d.connection_type },
     { label: 'Credential',  value: credName(d.credential) },
+    ...(d.connection_type === 'agent' ? [{ label: 'Agent Port', value: d.agent_port ?? 9322 }] : []),
     { label: 'Active',      value: d.is_active ? 'Yes' : 'No' },
     ...(d.tags?.length ? [{ label: 'Tags',  value: d.tags.join(', ') }] : []),
     ...(d.notes         ? [{ label: 'Notes', value: d.notes }]          : []),
@@ -551,7 +561,7 @@ async function removeCred(id) {
 const testing   = ref(null)
 const collecting = ref(null)
 
-const DEFAULT_PORTS = { ssh: 22, telnet: 23, winrm: 5985, https: 443, push: null }
+const DEFAULT_PORTS = { ssh: 22, telnet: 23, winrm: 5985, https: 443, push: null, agent: 9322 }
 const TESTABLE_TYPES = new Set(['ssh', 'telnet', 'winrm'])
 function canTestConnection(type) { return TESTABLE_TYPES.has(type) }
 function defaultPort(t) { return DEFAULT_PORTS[t] ?? '' }
@@ -572,11 +582,12 @@ const osTypeItems = [
   { title: 'Other',     value: 'other' },
 ]
 const connTypeItems = [
-  { title: 'SSH',        value: 'ssh' },
-  { title: 'Telnet',     value: 'telnet' },
-  { title: 'WinRM',      value: 'winrm' },
-  { title: 'HTTPS / API', value: 'https' },
-  { title: 'Push',       value: 'push' },
+  { title: 'SSH',                  value: 'ssh' },
+  { title: 'Telnet',               value: 'telnet' },
+  { title: 'WinRM',                value: 'winrm' },
+  { title: 'HTTPS / API',          value: 'https' },
+  { title: 'Push',                 value: 'push' },
+  { title: 'Agent Pull (port 9322)', value: 'agent' },
 ]
 
 function onConnectionTypeChange() {
@@ -586,11 +597,11 @@ function onConnectionTypeChange() {
 
 const deviceForm = ref(blankDevice())
 function blankDevice() {
-  return { show: false, id: null, name: '', hostname: '', fqdn: '', port: 22, device_type: 'linux', os_type: 'linux', connection_type: 'ssh', credential: null, username: '', password: '', host_key: '', tagsRaw: '', notes: '', is_active: true, error: '', testing: false, testResult: null }
+  return { show: false, id: null, name: '', hostname: '', fqdn: '', port: 22, device_type: 'linux', os_type: 'linux', connection_type: 'ssh', credential: null, username: '', password: '', host_key: '', agent_port: 9322, tagsRaw: '', notes: '', is_active: true, error: '', testing: false, testResult: null }
 }
 function openNewDevice()  { deviceForm.value = { ...blankDevice(), show: true } }
 function openEditDevice(d) {
-  deviceForm.value = { ...blankDevice(), show: true, id: d.id, name: d.name, hostname: d.hostname, fqdn: d.fqdn || '', port: d.port, device_type: d.device_type, os_type: d.os_type, connection_type: d.connection_type, credential: d.credential ?? null, host_key: d.host_key || '', tagsRaw: (d.tags ?? []).join(', '), notes: d.notes || '', is_active: d.is_active }
+  deviceForm.value = { ...blankDevice(), show: true, id: d.id, name: d.name, hostname: d.hostname, fqdn: d.fqdn || '', port: d.port, device_type: d.device_type, os_type: d.os_type, connection_type: d.connection_type, credential: d.credential ?? null, host_key: d.host_key || '', agent_port: d.agent_port ?? 9322, tagsRaw: (d.tags ?? []).join(', '), notes: d.notes || '', is_active: d.is_active }
 }
 
 async function saveDevice() {
@@ -598,6 +609,9 @@ async function saveDevice() {
   const payload = { name: deviceForm.value.name, hostname: deviceForm.value.hostname, fqdn: deviceForm.value.fqdn, port: deviceForm.value.port, device_type: deviceForm.value.device_type, os_type: deviceForm.value.os_type, connection_type: deviceForm.value.connection_type, credential: deviceForm.value.credential, host_key: deviceForm.value.host_key, tags: deviceForm.value.tagsRaw.split(',').map(t => t.trim()).filter(Boolean), notes: deviceForm.value.notes, is_active: deviceForm.value.is_active }
   if (deviceForm.value.username) payload.username = deviceForm.value.username
   if (deviceForm.value.password) payload.password = deviceForm.value.password
+  if (deviceForm.value.connection_type === 'agent') {
+    payload.agent_port = deviceForm.value.agent_port || 9322
+  }
   try {
     if (deviceForm.value.id) await devStore.updateDevice(deviceForm.value.id, payload)
     else await devStore.createDevice(payload)
@@ -615,6 +629,20 @@ async function removeDevice(id) {
 const collectDialog = ref({ show: false, device: null, policies: [], policyId: null, loading: false, running: false, error: '' })
 
 async function collect(device) {
+  // Agent Pull devices: no policy selection — satellite calls the agent directly.
+  if (device.connection_type === 'agent') {
+    collecting.value = device.id
+    try {
+      await api.post('/jobs/trigger-agent-pull/', { device_id: device.id })
+      showSnack(true, `✓ ${device.name}: Agent pull triggered — check Job Monitor for results.`)
+    } catch (e) {
+      showSnack(false, `✗ ${device.name}: ${e.response?.data?.detail ?? 'Failed to trigger agent pull.'}`)
+    } finally {
+      collecting.value = null
+    }
+    return
+  }
+
   collecting.value = device.id
   collectDialog.value = { show: false, device, policies: [], policyId: null, loading: true, running: false, error: '' }
   try {

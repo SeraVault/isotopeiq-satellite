@@ -35,7 +35,7 @@
               </tr>
               <tr>
                 <td class="font-weight-medium">Collection Script</td>
-                <td>Runs on the remote device (SSH/WinRM) or is expected from a push agent. Outputs raw configuration data.</td>
+                <td>Runs on the remote device (SSH/WinRM) or is expected from a push agent. Outputs raw configuration data. Not used for Agent Pull devices — those run their own embedded collector.</td>
               </tr>
               <tr>
                 <td class="font-weight-medium">Parser Script</td>
@@ -80,7 +80,7 @@
           <div class="text-subtitle-2 font-weight-bold mb-2">Execution flow</div>
           <ol class="pl-4" style="line-height:2">
             <li>At the scheduled time, CeleryBeat enqueues a job for every device in the policy.</li>
-            <li>A Celery worker picks up each job and connects to the device via its configured transport (SSH, WinRM, or waits for push).</li>
+            <li>A Celery worker picks up each job and connects to the device via its configured transport (SSH, WinRM, or waits for push). For <strong>Agent Pull</strong> devices, the satellite calls <code>GET /collect</code> on the agent directly — no script execution needed.</li>
             <li>The <strong>Collection Script</strong> is executed and its stdout captured.</li>
             <li>The <strong>Parser Script</strong> receives that output and returns canonical JSON.</li>
             <li>The JSON is validated against the canonical schema. Validation failures are recorded and surfaced as warnings — they do not suppress storage of the result.</li>
@@ -257,7 +257,7 @@
               <div class="text-body-2 font-weight-bold text-medium-emphasis text-uppercase mb-2 mt-2">Scripts</div>
             </v-col>
             <v-col cols="12" sm="4">
-              <v-select v-model="form.collection_script" label="Collection Script" :items="collectionScripts" item-title="name" item-value="id" clearable density="compact" />
+              <v-select v-model="form.collection_script" label="Collection Script" hint="SSH / WinRM / Telnet devices only" persistent-hint :items="collectionScripts" item-title="name" item-value="id" clearable density="compact" />
             </v-col>
             <v-col cols="12" sm="4">
               <v-select v-model="form.parser_script" label="Parser Script" :items="parserScripts" item-title="name" item-value="id" clearable density="compact" />
@@ -271,8 +271,34 @@
               <div class="d-flex align-center mb-2 mt-2">
                 <div class="text-body-2 font-weight-bold text-medium-emphasis text-uppercase">Devices</div>
                 <v-spacer />
+                <v-btn-toggle v-model="deviceTypeFilter" density="compact" rounded="lg" class="mr-3" @update:modelValue="onDeviceSearch">
+                  <v-btn value="" size="x-small">All</v-btn>
+                  <v-btn value="agent" size="x-small"><v-icon size="13" start>mdi-lan-connect</v-icon>Agent</v-btn>
+                  <v-btn value="ssh" size="x-small">SSH</v-btn>
+                  <v-btn value="winrm" size="x-small">WinRM</v-btn>
+                </v-btn-toggle>
                 <span class="text-caption text-medium-emphasis">{{ selectedDevices.length }} selected</span>
               </div>
+
+              <!-- Contextual banner based on selected mix -->
+              <v-alert
+                v-if="selectedAgentCount > 0 && selectedNonAgentCount > 0"
+                type="info" variant="tonal" density="compact" rounded="lg" class="mb-3 text-body-2"
+                icon="mdi-information-outline"
+              >
+                <span class="font-weight-medium">Mixed policy:</span>
+                {{ selectedNonAgentCount }} SSH/WinRM/Telnet device{{ selectedNonAgentCount !== 1 ? 's' : '' }} will use the Collection + Parser scripts;
+                {{ selectedAgentCount }} Agent Pull device{{ selectedAgentCount !== 1 ? 's' : '' }} will be polled directly and only use the Parser script.
+              </v-alert>
+              <v-alert
+                v-else-if="selectedAgentCount > 0 && selectedNonAgentCount === 0"
+                type="success" variant="tonal" density="compact" rounded="lg" class="mb-3 text-body-2"
+                icon="mdi-lan-connect"
+              >
+                All selected devices are <span class="font-weight-medium">Agent Pull</span>.
+                The satellite calls each agent’s HTTP endpoint on schedule — only a <span class="font-weight-medium">Parser Script</span> is needed.
+              </v-alert>
+
               <v-row dense>
                 <!-- Search + paginated list -->
                 <v-col cols="12" sm="7">
@@ -293,7 +319,7 @@
                         v-for="d in devicePage"
                         :key="d.id"
                         :title="d.name"
-                        :subtitle="`${d.hostname} · ${d.os_type ?? ''}`"
+                        :subtitle="`${d.hostname}${d.os_type ? ' · ' + d.os_type : ''}`"
                         :active="isSelected(d.id)"
                         active-color="primary"
                         rounded="0"
@@ -301,6 +327,12 @@
                       >
                         <template #prepend>
                           <v-checkbox-btn :model-value="isSelected(d.id)" density="compact" readonly tabindex="-1" />
+                        </template>
+                        <template #append>
+                          <v-chip
+                            :color="d.connection_type === 'agent' ? 'success' : d.connection_type === 'push' ? 'warning' : 'default'"
+                            size="x-small" label class="ml-1" style="font-size:10px"
+                          >{{ d.connection_type }}</v-chip>
                         </template>
                       </v-list-item>
                       <v-list-item v-if="deviceLoading" class="justify-center">
@@ -331,8 +363,12 @@
                       closable
                       size="small"
                       class="ma-1"
+                      :color="d.connection_type === 'agent' ? 'success' : undefined"
                       @click:close="removeSelected(d.id)"
-                    >{{ d.name }}</v-chip>
+                    >
+                      <v-icon v-if="d.connection_type === 'agent'" size="12" start>mdi-lan-connect</v-icon>
+                      {{ d.name }}
+                    </v-chip>
                     <div v-if="!selectedDevices.length" class="text-caption text-medium-emphasis pa-1">None selected.</div>
                   </v-card>
                 </v-col>
@@ -469,6 +505,7 @@ function parseCron(cron) {
 // ── Device picker state ───────────────────────────────────────────────────────
 
 const deviceSearch      = ref('')
+const deviceTypeFilter  = ref('')
 const devicePage        = ref([])
 const devicePageNum     = ref(1)
 const deviceTotal       = ref(0)
@@ -477,6 +514,9 @@ const deviceLoadingMore = ref(false)
 const selectedDevices   = ref([])
 
 const hasMore = computed(() => devicePage.value.length < deviceTotal.value)
+
+const selectedAgentCount    = computed(() => selectedDevices.value.filter(d => d.connection_type === 'agent').length)
+const selectedNonAgentCount = computed(() => selectedDevices.value.filter(d => d.connection_type !== 'agent').length)
 
 function isSelected(id) {
   return selectedDevices.value.some(d => d.id === id)
@@ -509,7 +549,11 @@ async function fetchDevices() {
   devicePageNum.value  = 1
   try {
     const { data } = await api.get('/devices/', {
-      params: { search: deviceSearch.value || undefined, page: 1 },
+      params: {
+        search:          deviceSearch.value     || undefined,
+        connection_type: deviceTypeFilter.value || undefined,
+        page: 1,
+      },
     })
     devicePage.value  = data.results ?? data
     deviceTotal.value = data.count   ?? devicePage.value.length
@@ -523,7 +567,11 @@ async function loadMoreDevices() {
   deviceLoadingMore.value = true
   try {
     const { data } = await api.get('/devices/', {
-      params: { search: deviceSearch.value || undefined, page: devicePageNum.value + 1 },
+      params: {
+        search:          deviceSearch.value     || undefined,
+        connection_type: deviceTypeFilter.value || undefined,
+        page: devicePageNum.value + 1,
+      },
     })
     devicePageNum.value++
     const incoming    = data.results ?? data
@@ -600,11 +648,12 @@ onMounted(async () => {
 })
 
 function openNew() {
-  form.value          = blank()
-  selectedDevices.value = []
-  deviceSearch.value  = ''
+  form.value             = blank()
+  selectedDevices.value  = []
+  deviceSearch.value     = ''
+  deviceTypeFilter.value = ''
   parseCron('0 2 * * *')
-  showForm.value      = true
+  showForm.value         = true
 }
 
 function openEdit(p) {
@@ -618,7 +667,8 @@ function openEdit(p) {
   selectedDevices.value = (p.devices ?? []).map(d =>
     typeof d === 'object' ? d : { id: d, name: `#${d}`, hostname: '' }
   )
-  deviceSearch.value = ''
+  deviceSearch.value     = ''
+  deviceTypeFilter.value = ''
   parseCron(p.cron_schedule)
   showForm.value = true
 }

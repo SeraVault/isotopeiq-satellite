@@ -21,6 +21,80 @@ import socket
 import subprocess
 import sys
 
+try:
+    from http.server import BaseHTTPRequestHandler, HTTPServer  # Python 3
+except ImportError:
+    from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer  # Python 2
+
+from urllib.request import Request, urlopen
+from urllib.error import URLError
+
+try:
+    import argparse
+    HAS_ARGPARSE = True
+except ImportError:
+    HAS_ARGPARSE = False
+
+# Default listener port.  9322 is unassigned in the IANA Service Name registry,
+# outside the Prometheus exporter range (9100-9299), and clear of all IANA
+# well-known / registered ports commonly deployed in enterprise environments.
+DEFAULT_AGENT_PORT = 9322
+
+
+# ---------------------------------------------------------------------------
+# Token file
+# ---------------------------------------------------------------------------
+
+def _token_file():
+    return '/etc/isotopeiq-agent.token'
+
+
+def _save_token(token):
+    import stat
+    path = _token_file()
+    try:
+        with open(path, 'w') as fh:
+            fh.write(token)
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except Exception as exc:
+        sys.stderr.write('WARNING: could not save token to {0}: {1}\n'.format(path, exc))
+
+
+def _load_token():
+    try:
+        with open(_token_file(), 'r') as fh:
+            return fh.read().strip()
+    except Exception:
+        return ''
+
+
+def _enroll(satellite_url, enrollment_token, port):
+    """Register with the satellite; save the returned agent token."""
+    import platform
+    os_map = {'Linux': 'linux', 'Darwin': 'macos', 'Windows': 'windows'}
+    os_type = os_map.get(platform.system(), 'macos')
+    hostname = socket.getfqdn() or socket.gethostname()
+
+    payload = json.dumps({
+        'enrollment_token': enrollment_token,
+        'hostname': hostname,
+        'os_type': os_type,
+        'agent_port': port,
+    }).encode('utf-8')
+
+    url = satellite_url.rstrip('/') + '/api/devices/enroll/'
+    req = Request(url, data=payload, headers={'Content-Type': 'application/json'})
+    try:
+        with urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except URLError as exc:
+        sys.stderr.write('ERROR: enrollment failed — {0}\n'.format(exc))
+        sys.exit(1)
+
+    _save_token(data['agent_token'])
+    sys.stderr.write('Enrolled as device {0} (id={1})\n'.format(hostname, data['device_id']))
+    return data['agent_token']
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1207,7 +1281,8 @@ COLLECTORS = [
 ]
 
 
-def main():
+def collect():
+    """Run all collectors and return the canonical dict."""
     output = empty_canonical()
     errors = {}
 
@@ -1220,7 +1295,79 @@ def main():
     if errors:
         output['custom']['_collection_errors'] = errors
 
-    print(json.dumps(output, default=str))
+    return output
+
+
+def _make_handler(token):
+    """Return an HTTPRequestHandler class bound to the given shared secret."""
+    class AgentHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            # Require token when one is configured
+            if token:
+                provided = self.headers.get('X-Agent-Token', '')
+                if provided != token:
+                    self.send_response(401)
+                    self.send_header('Content-Type', 'text/plain')
+                    self.end_headers()
+                    self.wfile.write(b'Unauthorized')
+                    return
+
+            if self.path != '/collect':
+                self.send_response(404)
+                self.send_header('Content-Type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'Not Found')
+                return
+
+            data = json.dumps(collect(), default=str).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, fmt, *args):
+            pass  # suppress per-request noise to stderr
+
+    return AgentHandler
+
+
+def main():
+    # ---- argument parsing (argparse on 2.7+/3.x; manual fallback for 2.6) ----
+    if HAS_ARGPARSE:
+        parser = argparse.ArgumentParser(description='IsotopeIQ macOS Agent')
+        parser.add_argument(
+            '--serve', action='store_true',
+            help='Run as a persistent HTTP server instead of printing to stdout')
+        parser.add_argument(
+            '--port', type=int, default=DEFAULT_AGENT_PORT,
+            help='TCP port to listen on in serve mode (default: %(default)s)')
+        parser.add_argument(
+            '--token', default='',
+            help='Shared secret checked via X-Agent-Token request header')
+        args = parser.parse_args()
+    else:
+        # Minimal fallback for environments without argparse
+        class args(object):
+            serve = '--serve' in sys.argv
+            port = DEFAULT_AGENT_PORT
+            token = ''
+        for i, a in enumerate(sys.argv[1:], 1):
+            if a == '--port' and i + 1 < len(sys.argv):
+                args.port = int(sys.argv[i + 1])
+            if a == '--token' and i + 1 < len(sys.argv):
+                args.token = sys.argv[i + 1]
+
+    if args.serve:
+        server = HTTPServer(('0.0.0.0', args.port), _make_handler(args.token))
+        sys.stderr.write(
+            'IsotopeIQ agent listening on 0.0.0.0:{0}\n'.format(args.port))
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+    else:
+        print(json.dumps(collect(), default=str))
 
 
 if __name__ == '__main__':
