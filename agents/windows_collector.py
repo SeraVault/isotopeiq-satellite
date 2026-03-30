@@ -8,6 +8,7 @@ Compile with PyInstaller:
 """
 from __future__ import print_function
 
+import base64
 import ctypes
 import json
 import os
@@ -112,9 +113,10 @@ def _wmic_cim(wmi_class, fields, where=''):
         fields=field_str,
         sep=sep,
     )
-    out = run('powershell -NoProfile -NonInteractive -Command "{}"'.format(
-        ps_cmd.replace('"', '\\"')
-    ))
+    # Encode as UTF-16LE Base64 so the command is passed to PowerShell via
+    # -EncodedCommand, bypassing cmd.exe pipe/metacharacter interpretation.
+    encoded = base64.b64encode(ps_cmd.encode('utf-16-le')).decode('ascii')
+    out = run('powershell -NoProfile -NonInteractive -EncodedCommand {}'.format(encoded))
     if not out or 'not recognized' in out.lower() or 'error' in out.lower()[:50]:
         return None
     rows = []

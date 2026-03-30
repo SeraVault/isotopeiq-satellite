@@ -4,6 +4,27 @@
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# ---------------------------------------------------------------------------
+# PowerShell 7+ (pwsh.exe) removes Get-WmiObject.  Provide a thin shim that
+# delegates to Get-CimInstance so the rest of the script runs unchanged on
+# both Windows PowerShell 5.1 and PowerShell 7+.
+# ---------------------------------------------------------------------------
+if (-not (Get-Command Get-WmiObject -ErrorAction SilentlyContinue)) {
+    function global:Get-WmiObject {
+        [CmdletBinding()]
+        param(
+            [Parameter(Position=0)][string]$Class,
+            [string]$Namespace,
+            [string]$Filter
+        )
+        $p = @{}
+        if ($Class)     { $p['ClassName'] = $Class }
+        if ($Namespace) { $p['Namespace'] = $Namespace }
+        if ($Filter)    { $p['Filter']    = $Filter }
+        Get-CimInstance @p -ErrorAction SilentlyContinue
+    }
+}
+
 $ELEVATE      = "{{ELEVATE}}"
 $ELEVATE_PASS = "{{ELEVATE_PASS}}"
 $USERNAME     = "{{USERNAME}}"

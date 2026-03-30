@@ -12,10 +12,12 @@
 8. [Policies](#policies)
 9. [Job Monitor](#job-monitor)
 10. [Drift](#drift)
-11. [Baselines](#baselines)
-12. [Audit Log](#audit-log)
-13. [Retention](#retention)
-14. [Concepts & Glossary](#concepts--glossary)
+11. [Volatile Rules](#volatile-rules)
+12. [Baselines](#baselines)
+13. [Audit Log](#audit-log)
+14. [Retention](#retention)
+15. [Concepts & Glossary](#concepts--glossary)
+16. [WinRM Setup for Windows Devices](#winrm-setup-for-windows-devices)
 
 ---
 
@@ -62,7 +64,7 @@ The left sidebar organises the application into sections:
 |---|---|
 | Overview | Dashboard |
 | Infrastructure | Devices, Policies, Scripts |
-| Operations | Job Monitor, Drift, Baselines |
+| Operations | Job Monitor, Drift, Volatile Rules, Baselines |
 | System | Audit Log, Retention |
 
 **Job Monitor** and **Drift** show live badge counts — the number of running jobs and unresolved drift events respectively.
@@ -318,43 +320,120 @@ Running or pending jobs show a **Cancel** button. A confirmation dialog is shown
 
 *Operations → Drift*
 
-Drift events are raised when a job's parsed output differs from the established baseline for that device.
+Drift events are raised when a job's parsed output differs from the established baseline for that device. The view polls for new events every few seconds — badge counts in the sidebar update in real time via WebSocket.
 
 ### Drift Statuses
 
 | Status | Meaning |
 |---|---|
 | new | Unreviewed drift, requires attention |
-| acknowledged | Reviewed and accepted, pending resolution |
-| resolved | Baseline has been updated or drift no longer present |
+| resolved | Acknowledged by a user, or device configuration returned to baseline |
+
+A drift event in **new** status is an open issue. Once you take action — either by acknowledging the change or by letting the device return to its previous configuration — the event moves to **resolved**.
 
 ### Filtering
 
-Filter by device or status. Click **Clear** to reset filters.
+Filter by device or status using the dropdowns at the top of the table. Click **Clear** to reset all filters.
 
 ### Reviewing Drift
 
-Click **View Diff** to open the diff viewer for a drift event.
+Click **View Diff** on any event row to open the diff viewer.
 
 #### Diff Viewer
 
-The diff viewer shows:
+The diff viewer shows a structured, section-by-section comparison of the baseline against the current collection:
 
-- **Stats bar** — counts of added, removed, and changed configuration items
-- **Summary cards** — side-by-side comparison of key fields for device info, hardware, OS, and security
-- **Section panels** — one expandable panel per canonical schema section that has changes; sections without changes are collapsed
-  - Each panel shows changed rows as a before/after table
-  - Added items are highlighted green, removed items red, changed items orange
+- **Stats bar** — counts of added, removed, and changed configuration items across all sections
+- **Summary cards** — side-by-side key fields for device metadata, hardware, OS, and security
+- **Section panels** — one expandable panel per canonical schema section that contains changes; sections with no differences are collapsed
+  - Added items highlighted green, removed items red, changed items orange
+  - A **Changed only** toggle hides unchanged rows within a section to reduce visual noise
 
 #### Hide Volatile Fields
 
-Check **Hide volatile fields** to suppress expected transient fields (timestamps, process IDs, ephemeral data) that would otherwise create noise. This is enabled by default.
+The **Hide volatile fields** toggle (enabled by default) strips fields governed by your [Volatile Rules](#volatile-rules) before rendering the diff. This suppresses expected transient changes — uptime counters, DHCP lease counts, process IDs, sysctl runtime values — so only meaningful drift is shown.
+
+Disabling this toggle shows the raw unfiltered diff, which is useful for diagnosing why a rule is or isn't matching.
+
+#### Creating a Volatile Rule from the Diff
+
+If you see a field changing that you want to permanently suppress, click the **eye icon** next to that field in the diff viewer. A prefilled rule creation dialog opens. Confirm the details and save — the rule takes effect within 60 seconds.
 
 ### Acknowledging Drift
 
-Click **Acknowledge** on a new drift event (or from within the diff viewer). Enter a reason in the text field and click **Submit**. The event moves to *acknowledged* status and your username is recorded.
+Click **Acknowledge** on a **new** drift event (or from the diff viewer). You must enter a reason before submitting.
 
-Drift is automatically resolved on the next successful collection where no differences are found.
+When you acknowledge a drift event:
+
+1. The event is marked **resolved** and your username and reason are recorded.
+2. The current collection output (the "after" state) is **promoted as the new baseline** for the device.
+3. Future collections compare against this new configuration, not the previous one.
+
+Use acknowledgement when a change was intentional (planned upgrade, authorised configuration change). The reason is stored in the audit trail.
+
+### Resolving Without Acknowledging
+
+If the device configuration corrects itself on a subsequent collection run — e.g., a misconfiguration was fixed — the drift event is automatically marked **resolved** with no user action required.
+
+---
+
+## Volatile Rules
+
+*Operations → Volatile Rules*
+
+Volatile Rules tell the drift detector which configuration fields to ignore during comparison. Without them, fast-changing values like uptime counters, DHCP lease counts, and sysctl entropy pools would generate constant false-positive drift events.
+
+Rules are evaluated server-side on every collection run. Changes take effect within 60 seconds (one cache TTL cycle) without requiring a restart.
+
+> **Who can manage rules:** Only administrators can create, edit, or delete rules. All users can view the rules table.
+
+### Rule Types
+
+| Type | What it does | Example |
+|---|---|---|
+| `section_field` | Drops a scalar field from the top-level section | Ignore `os.uptime` |
+| `item_field` | Drops a field from every item in an array section | Ignore `filesystem[*].free_gb` |
+| `nested_field` | Drops a field from items inside a nested array | Ignore `routing_protocols[*].neighbors[*].state` |
+| `exclude_key` | Removes entire array items whose key field matches a value | Remove sysctl entry `fs.dentry-state` entirely |
+| `exclude_section` | Excludes an entire canonical section from comparison | Ignore everything in `custom` |
+
+### Creating a Rule
+
+Click **Add Rule** and fill in:
+
+| Field | Notes |
+|---|---|
+| Section | The top-level canonical section (e.g., `os`, `network`, `filesystem`, `sysctl`) |
+| Rule Type | See the table above |
+| Field Name | For most types: the field to suppress. For `exclude_key`: the value to match |
+| Nested Key | (`nested_field` only) The name of the nested array (e.g., `neighbors`, `ports`) |
+| Key Field | (`exclude_key` only) The subfield to match on; defaults to `key` |
+| Description | Required. Document *why* this field is volatile |
+| Active | Uncheck to disable without deleting |
+
+**The fastest way to create a rule** is directly from the diff viewer — click the eye icon next to any changing field and the form is pre-populated for you.
+
+### Examples
+
+**Ignore uptime on all Linux servers:**
+- Section: `os`, Type: `section_field`, Field: `uptime`
+
+**Ignore free disk space fluctuations:**
+- Section: `filesystem`, Type: `item_field`, Field: `free_gb`
+
+**Suppress a specific noisy sysctl entry:**
+- Section: `sysctl`, Type: `exclude_key`, Field: `fs.dentry-state`, Key Field: `key`
+
+**Ignore BGP neighbour session state (expected flap during maintenance):**
+- Section: `routing_protocols`, Type: `nested_field`, Field: `state`, Nested Key: `neighbors`
+
+### Enabling and Disabling Rules
+
+Toggle the **Active** switch on any rule row to enable or disable it without deleting. This is useful for temporarily re-enabling a rule to investigate a suspected issue, then suppressing it again.
+
+### Deleting Rules
+
+Click the **bin** icon on a rule row. Deletion is permanent. If a rule was suppressing drift that is now present again, a new drift event will be raised on the next collection run.
 
 ---
 
@@ -449,7 +528,7 @@ Set any value to **0** to retain data indefinitely. Click **Save** to apply chan
 
 **Drift** — A detected difference between a device's current configuration and its established baseline.
 
-**Drift Event** — A record created when drift is detected. Has a lifecycle: *new → acknowledged → resolved*.
+**Drift Event** — A record created when drift is detected. Has a lifecycle: *new → resolved*. Resolution occurs when a user acknowledges the drift (promoting the current state as the new baseline) or when the device configuration returns to the previous baseline on a subsequent collection.
 
 **Baseline** — The most recent successful canonical configuration snapshot for a device. Updated on each successful job.
 
@@ -461,4 +540,191 @@ Set any value to **0** to retain data indefinitely. Click **Save** to apply chan
 
 **Push Token** — A per-device secret used by push-mode devices to authenticate when calling `POST /api/push/`.
 
-**Volatile Fields** — Configuration fields that change frequently and legitimately (e.g., process IDs, last-login timestamps). The drift viewer can suppress these to reduce noise.
+**Volatile Fields** — Configuration fields that change frequently and legitimately without indicating a real configuration problem (e.g., uptime counters, DHCP lease counts, sysctl runtime values). Volatile Rules tell the drift engine which fields to strip before comparison.
+
+**Volatile Rule** — A database-managed rule that instructs the drift detector to ignore specific fields, array items, or entire sections during comparison. Rules are cached for 60 seconds and evaluated server-side. See [Volatile Rules](#volatile-rules).
+
+---
+
+## WinRM Setup for Windows Devices
+
+Satellite uses **WinRM (Windows Remote Management)** to connect to Windows hosts. WinRM is disabled or restricted by default on most Windows versions and must be configured before Satellite can collect from the device.
+
+Run all commands below in an **elevated PowerShell prompt** (Run as Administrator) on the target Windows host.
+
+### Quick Setup (Lab / Trusted Network)
+
+For a quick start in a trusted network where HTTP transport is acceptable:
+
+```powershell
+# Enable WinRM and set default settings
+Enable-PSRemoting -Force
+
+# Allow connections from the Satellite host (replace with actual IP or subnet)
+Set-Item WSMan:\localhost\Client\TrustedHosts -Value "10.0.1.50" -Force
+
+# Confirm the service is running and the listener is active
+winrm enumerate winrm/config/listener
+```
+
+This opens WinRM on **port 5985 (HTTP)**. Credentials are still protected by NTLM/Kerberos, but traffic is not encrypted in transit — acceptable only on isolated management networks.
+
+---
+
+### Production Setup (HTTPS)
+
+For production environments, use WinRM over **HTTPS (port 5986)** so that credentials and data are encrypted in transit.
+
+#### Step 1 — Obtain or create a certificate
+
+**Option A: Use an existing certificate from your PKI**
+
+Export the certificate thumbprint:
+
+```powershell
+Get-ChildItem Cert:\LocalMachine\My | Select-Object Subject, Thumbprint
+```
+
+**Option B: Create a self-signed certificate (lab/test only)**
+
+```powershell
+$cert = New-SelfSignedCertificate `
+    -DnsName $env:COMPUTERNAME `
+    -CertStoreLocation Cert:\LocalMachine\My `
+    -KeyExportPolicy NonExportable `
+    -NotAfter (Get-Date).AddYears(3)
+$thumbprint = $cert.Thumbprint
+```
+
+#### Step 2 — Create the HTTPS listener
+
+```powershell
+New-Item -Path WSMan:\LocalHost\Listener `
+    -Transport HTTPS `
+    -Address * `
+    -CertificateThumbprint $thumbprint `
+    -Force
+```
+
+#### Step 3 — Open the firewall
+
+```powershell
+New-NetFirewallRule `
+    -DisplayName "WinRM HTTPS" `
+    -Direction Inbound `
+    -Protocol TCP `
+    -LocalPort 5986 `
+    -Action Allow
+```
+
+#### Step 4 — Verify the listener
+
+```powershell
+winrm enumerate winrm/config/listener
+```
+
+You should see a listener entry with `Transport = HTTPS` and `Port = 5986`.
+
+---
+
+### Configuring the Device in Satellite
+
+In **Infrastructure → Devices → Add Device**:
+
+| Field | Value |
+|---|---|
+| Connection Type | WinRM |
+| Port | `5986` for HTTPS, `5985` for HTTP |
+| Credential | A Windows credential (username + password) |
+
+If using a **self-signed certificate**, you also need to disable certificate verification for that device. Set the **Skip TLS Verify** option on the device form. Do not use this option for certificates issued by a trusted CA.
+
+---
+
+### Authentication Options
+
+Satellite supports two WinRM authentication methods:
+
+| Method | Notes |
+|---|---|
+| **NTLM** (default) | Works for local accounts and workgroup machines. No domain required. |
+| **Kerberos** | Required for domain accounts in a least-privilege setup. Satellite host must be able to resolve the domain and reach a KDC. |
+
+For most environments, a **local administrator account** using NTLM is the simplest and most reliable option.
+
+---
+
+### Creating a Least-Privilege WinRM Account
+
+Avoid using the built-in `Administrator` account. Create a dedicated service account:
+
+```powershell
+# Create the local user
+$pw = ConvertTo-SecureString "StrongPassword123!" -AsPlainText -Force
+New-LocalUser -Name "satellite-svc" -Password $pw -PasswordNeverExpires -Description "IsotopeIQ Satellite collection account"
+
+# Add to Remote Management Users (WinRM access)
+Add-LocalGroupMember -Group "Remote Management Users" -Member "satellite-svc"
+
+# Add to Performance Monitor Users (for hardware/process data)
+Add-LocalGroupMember -Group "Performance Monitor Users" -Member "satellite-svc"
+```
+
+Grant read access to WMI namespaces:
+
+```powershell
+# Open WMI namespace security
+$computer = "."
+$namespace = "root\cimv2"
+$account = "satellite-svc"
+
+$wmi = [wmiclass]"Win32_SecurityDescriptorHelper"
+# Use wmimgmt.msc (GUI) to grant Remote Enable + Execute Methods on root\cimv2
+# for the satellite-svc account if scripted access is insufficient
+```
+
+For most collection scripts, membership in **Remote Management Users** and **Performance Monitor Users** is sufficient. If the collection script requires registry or WMI access that fails, add the account to the local **Administrators** group as a fallback.
+
+---
+
+### Troubleshooting WinRM Connections
+
+**Test from the Satellite host** using the **Test Connection** button in the UI. If that fails, diagnose from a Linux host with:
+
+```bash
+# Test HTTP
+curl -u "Administrator:password" http://<windows-host>:5985/wsman
+
+# Test HTTPS (skip cert check for self-signed)
+curl -k -u "Administrator:password" https://<windows-host>:5986/wsman
+```
+
+Or from another Windows host:
+
+```powershell
+Test-WSMan -ComputerName <windows-host> -UseSSL
+```
+
+**Common issues:**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Connection refused` on 5985/5986 | WinRM service not running or listener not created | Run `Enable-PSRemoting -Force` |
+| `Access denied` | Credentials wrong or account not in Remote Management Users | Verify credential and group membership |
+| `The server certificate could not be validated` | Self-signed cert not trusted | Enable **Skip TLS Verify** on the device, or add the cert to Satellite's trust store |
+| `WinRM cannot process the request` with HTTP 500 | NTLM blocked by security policy | Check `winrm get winrm/config/service/auth` — ensure NTLM is `true` |
+| Timeout | Firewall blocking port | Add firewall rule and verify with `Test-NetConnection -ComputerName <host> -Port 5986` |
+
+**Enable NTLM if disabled:**
+
+```powershell
+Set-Item WSMan:\localhost\Service\Auth\NTLM -Value $true
+```
+
+**Check current WinRM configuration:**
+
+```powershell
+winrm get winrm/config
+winrm get winrm/config/service/auth
+winrm enumerate winrm/config/listener
+```

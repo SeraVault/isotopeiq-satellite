@@ -6,7 +6,7 @@
     <v-card rounded="lg" elevation="1" class="mb-5 pa-4">
       <v-row dense align="end">
         <v-col cols="12" sm="6" md="2">
-          <v-select v-model="filters.device" label="Device" :items="deviceItems" item-title="title" item-value="value" clearable @update:model-value="applyFilters" />
+          <v-select v-model="filters.device" label="Device" :items="deviceItems" item-title="title" item-value="value" :loading="deviceSearchLoading" clearable @update:model-value="onDeviceSelect" @update:search="onDeviceSearch" />
         </v-col>
         <v-col cols="12" sm="6" md="2">
           <v-select v-model="filters.policy" label="Policy" :items="policyItems" item-title="title" item-value="value" clearable @update:model-value="applyFilters" />
@@ -222,7 +222,44 @@ const devices = ref([])
 const policies = ref([])
 const statuses = ['pending', 'running', 'success', 'partial', 'failed', 'cancelled']
 
-const deviceItems = computed(() => devices.value.map(d => ({ title: d.hostname, value: d.id })))
+// Device select — pre-loads first page; searches server-side on type
+const deviceSearch = ref('')
+const deviceSearchLoading = ref(false)
+const selectedDeviceItem = ref(null)
+let deviceSearchTimer = null
+
+function onDeviceSearch(val) {
+  clearTimeout(deviceSearchTimer)
+  deviceSearchLoading.value = true
+  deviceSearchTimer = setTimeout(async () => {
+    try {
+      const { data } = await api.get('/devices/', { params: { search: val || '', page_size: 50 } })
+      const results = data.results ?? data
+      // Always keep the selected item in the list so the label doesn't disappear
+      if (selectedDeviceItem.value && !results.find(d => d.id === selectedDeviceItem.value.value)) {
+        devices.value = [{ id: selectedDeviceItem.value.value, name: selectedDeviceItem.value.title }, ...results]
+      } else {
+        devices.value = results
+      }
+    } finally {
+      deviceSearchLoading.value = false
+    }
+  }, 300)
+}
+
+function onDeviceSelect(val) {
+  selectedDeviceItem.value = val ? deviceItems.value.find(i => i.value === val) ?? null : null
+  applyFilters()
+}
+
+const deviceItems = computed(() => {
+  const list = devices.value.map(d => ({ title: d.name, value: d.id }))
+  // Always keep the selected item present so v-select displays the name after search clears
+  if (selectedDeviceItem.value && !list.find(i => i.value === selectedDeviceItem.value.value)) {
+    list.unshift(selectedDeviceItem.value)
+  }
+  return list
+})
 const policyItems = computed(() => policies.value.map(p => ({ title: p.name, value: p.id })))
 
 const filters = reactive({
@@ -243,6 +280,8 @@ function resultColor(status) {
 function applyFilters() { resetAndFetch() }
 function clearFilters() {
   Object.assign(filters, { device: null, policy: null, status: '', created_after: '', created_before: '' })
+  selectedDeviceItem.value = null
+  devices.value = []
   resetAndFetch()
 }
 
@@ -272,7 +311,7 @@ async function cancel(job) {
 
 onMounted(async () => {
   const [dRes, pRes] = await Promise.all([
-    api.get('/devices/'),
+    api.get('/devices/', { params: { page_size: 50 } }),
     api.get('/policies/'),
   ])
   devices.value  = dRes.data.results ?? dRes.data
@@ -295,4 +334,5 @@ onUnmounted(() => store.stopPolling())
   word-break: break-word;
   max-height: 300px;
 }
+
 </style>
