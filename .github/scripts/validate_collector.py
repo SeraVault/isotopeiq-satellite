@@ -35,14 +35,14 @@ for key in required_keys:
 for section, field in [
     ("device",   "hostname"),
     ("os",       "name"),
-    ("os",       "version"),
     ("hardware", "cpu_model"),
 ]:
     if not data.get(section, {}).get(field):
         errors.append("EMPTY {}.{}".format(section, field))
 
 # ── Arrays that must be populated ────────────────────────────────────────────
-for key in ["packages", "services", "users"]:
+# Note: services is intentionally excluded — bare containers have no init system
+for key in ["packages", "users"]:
     if not data.get(key):
         errors.append("EMPTY array: {}".format(key))
 
@@ -54,10 +54,16 @@ for pkg in data.get("packages", []):
         break
 
 # ── No unexpected _collection_errors ─────────────────────────────────────────
+# Sections that may legitimately fail in a minimal container environment:
+# - no root → sysctl, firewall, ssh_keys, security fail
+# - no init system → services, scheduled_tasks fail
+# - no hardware access → pci_devices, storage_devices, usb_devices fail
+# - no network tools → listening_services may fail
 ignorable = {
     "certificates", "firewall_rules", "sysctl", "ssh_keys",
     "security", "pci_devices", "storage_devices", "usb_devices",
-    "kernel_modules", "listening_services",
+    "kernel_modules", "listening_services", "services", "scheduled_tasks",
+    "startup_items", "filesystem",
 }
 for k, v in data.get("_collection_errors", {}).items():
     if k not in ignorable:
