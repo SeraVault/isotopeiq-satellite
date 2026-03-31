@@ -25,9 +25,6 @@ try:
 except ImportError:
     from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer  # Python 2
 
-from urllib.request import Request, urlopen
-from urllib.error import URLError
-
 try:
     import argparse
     HAS_ARGPARSE = True
@@ -41,58 +38,37 @@ DEFAULT_AGENT_PORT = 9322
 
 
 # ---------------------------------------------------------------------------
-# Token file
+# Config file
+# The agent reads token (and optionally port) from isotopeiq-agent.conf.
+# Checked in order: next to the binary, then %PROGRAMDATA%\IsotopeIQ\agent.conf.
+# Format (key=value, one per line, # comments ignored):
+#   token=<hex>
+#   port=9322
 # ---------------------------------------------------------------------------
 
-def _token_file():
+def _read_config():
     data_dir = os.environ.get('PROGRAMDATA', r'C:\ProgramData')
-    return os.path.join(data_dir, 'IsotopeIQ', 'agent.token')
-
-
-def _save_token(token):
-    path = _token_file()
+    paths = []
     try:
-        parent = os.path.dirname(path)
-        if not os.path.exists(parent):
-            os.makedirs(parent)
-        with open(path, 'w') as fh:
-            fh.write(token)
-    except Exception as exc:
-        sys.stderr.write('WARNING: could not save token to {0}: {1}\n'.format(path, exc))
-
-
-def _load_token():
-    try:
-        with open(_token_file(), 'r') as fh:
-            return fh.read().strip()
+        paths.append(os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), 'isotopeiq-agent.conf'))
     except Exception:
-        return ''
-
-
-def _enroll(satellite_url, enrollment_token, port):
-    """Register with the satellite; save the returned agent token."""
-    import platform
-    hostname = socket.getfqdn() or socket.gethostname()
-
-    payload = json.dumps({
-        'enrollment_token': enrollment_token,
-        'hostname': hostname,
-        'os_type': 'windows',
-        'agent_port': port,
-    }).encode('utf-8')
-
-    url = satellite_url.rstrip('/') + '/api/devices/enroll/'
-    req = Request(url, data=payload, headers={'Content-Type': 'application/json'})
-    try:
-        with urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-    except URLError as exc:
-        sys.stderr.write('ERROR: enrollment failed — {0}\n'.format(exc))
-        sys.exit(1)
-
-    _save_token(data['agent_token'])
-    sys.stderr.write('Enrolled as device {0} (id={1})\n'.format(hostname, data['device_id']))
-    return data['agent_token']
+        pass
+    paths.append(os.path.join(data_dir, 'IsotopeIQ', 'agent.conf'))
+    for path in paths:
+        try:
+            cfg = {}
+            with open(path, 'r') as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line or line.startswith('#') or '=' not in line:
+                        continue
+                    key, _, val = line.partition('=')
+                    cfg[key.strip()] = val.strip()
+            if cfg:
+                return cfg
+        except Exception:
+            pass
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -1440,37 +1416,19 @@ def main():
         parser.add_argument('--port', type=int, default=DEFAULT_AGENT_PORT,
             help='TCP port to listen on in serve mode (default: %(default)s)')
         parser.add_argument('--token', default='',
-            help='Shared secret for X-Agent-Token (overrides saved token file)')
-        parser.add_argument('--enroll', action='store_true',
-            help='Register with the satellite and save the agent token, then exit')
-        parser.add_argument('--satellite', default='',
-            help='Satellite base URL (required with --enroll)')
-        parser.add_argument('--enrollment-token', dest='enrollment_token', default='',
-            help='System-wide enrollment token (required with --enroll)')
+            help='Shared secret for X-Agent-Token')
         args = parser.parse_args()
     else:
         class args(object):
             serve = '--serve' in sys.argv
-            enroll = '--enroll' in sys.argv
             port = DEFAULT_AGENT_PORT
             token = ''
-            satellite = ''
-            enrollment_token = ''
         for i, a in enumerate(sys.argv[1:], 1):
-            if a == '--port'             and i + 1 < len(sys.argv): args.port             = int(sys.argv[i + 1])
-            if a == '--token'            and i + 1 < len(sys.argv): args.token            = sys.argv[i + 1]
-            if a == '--satellite'        and i + 1 < len(sys.argv): args.satellite        = sys.argv[i + 1]
-            if a == '--enrollment-token' and i + 1 < len(sys.argv): args.enrollment_token = sys.argv[i + 1]
-
-    if args.enroll:
-        if not args.satellite or not args.enrollment_token:
-            sys.stderr.write('ERROR: --satellite and --enrollment-token are required with --enroll\n')
-            sys.exit(1)
-        _enroll(args.satellite, args.enrollment_token, args.port)
-        return
+            if a == '--port'  and i + 1 < len(sys.argv): args.port  = int(sys.argv[i + 1])
+            if a == '--token' and i + 1 < len(sys.argv): args.token = sys.argv[i + 1]
 
     if args.serve:
-        token = args.token or _load_token()
+        token = args.token or _read_config().get('token', '')
         server = HTTPServer(('0.0.0.0', args.port), _make_handler(token))
         sys.stderr.write('IsotopeIQ agent listening on 0.0.0.0:{0}\n'.format(args.port))
         try:

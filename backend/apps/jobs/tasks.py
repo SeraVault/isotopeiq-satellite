@@ -71,15 +71,27 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
     policy = (
         Policy.objects
         .prefetch_related('devices')
-        .select_related('collection_script', 'parser_script')
+        .select_related('script_package__collection_script', 'script_package__parser_script')
         .get(pk=policy_id)
     )
 
-    if not policy.collection_script or not policy.parser_script:
-        raise ValueError(f'Policy {policy_id} requires both a collection and a parser script.')
+    if policy.collection_method == 'script':
+        if not policy.script_package:
+            raise ValueError(f'Policy {policy_id} uses Script Execution but has no Collection Profile assigned.')
+        if not policy.script_package.collection_script:
+            raise ValueError(f'Policy {policy_id}: assigned Collection Profile has no collection script.')
+        if not policy.script_package.parser_script:
+            raise ValueError(f'Policy {policy_id}: assigned Collection Profile has no parser script.')
 
-    script_devices = list(policy.devices.filter(is_active=True, connection_type__in=_SUPPORTED_CONNECTION_TYPES))
-    agent_devices  = list(policy.devices.filter(is_active=True, connection_type='agent'))
+    if policy.collection_method == 'agent':
+        candidates = list(policy.devices.filter(is_active=True, connection_type='agent'))
+        script_devices = []
+        agent_devices  = candidates
+    else:
+        candidates = list(policy.devices.filter(is_active=True, connection_type__in=_SUPPORTED_CONNECTION_TYPES))
+        script_devices = candidates
+        agent_devices  = []
+
     if device_id is not None:
         script_devices = [d for d in script_devices if d.id == device_id]
         agent_devices  = [d for d in agent_devices  if d.id == device_id]
@@ -107,10 +119,10 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
 
         try:
             collector = _get_collector(device)
-            raw_output = collector.run(render_script(policy.collection_script.content, device))
+            raw_output = collector.run(render_script(policy.script_package.collection_script.content, device))
             result.raw_output = raw_output
 
-            parsed = run_parser(policy.parser_script.content, raw_output)
+            parsed = run_parser(policy.script_package.parser_script.content, raw_output)
             validate_canonical(parsed)
             result.parsed_output = parsed
             result.status = 'success'
@@ -162,9 +174,9 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
                 raw = resp.read().decode('utf-8')
             result.raw_output = raw
             parsed = json.loads(raw)
-            if policy.parser_script:
+            if policy.script_package and policy.script_package.parser_script:
                 from core.parser.runner import run_parser
-                parsed = run_parser(policy.parser_script.content, raw)
+                parsed = run_parser(policy.script_package.parser_script.content, raw)
             validate_canonical(parsed)
             result.parsed_output = parsed
             result.status = 'success'

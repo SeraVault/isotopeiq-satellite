@@ -1,6 +1,5 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -23,22 +22,94 @@ class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.select_related('credential').all()
     serializer_class = DeviceSerializer
     search_fields = ['name', 'hostname', 'fqdn']
-    filterset_fields = ['device_type', 'os_type', 'connection_type', 'is_active']
+    filterset_fields = ['connection_type', 'is_active']
     ordering_fields = ['name', 'created_at']
 
-    @action(detail=False, methods=['get'], url_path='enrollment-token',
-            permission_classes=[IsAdminUser])
-    def enrollment_token(self, request):
-        """Return the system-wide agent enrollment token (admin only)."""
-        from django.conf import settings
-        token = settings.AGENT_ENROLLMENT_TOKEN
-        if not token:
-            return Response(
-                {'detail': 'Agent enrollment is not configured on this satellite. '
-                           'Set AGENT_ENROLLMENT_TOKEN in your environment.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        return Response({'enrollment_token': token})
+    def perform_create(self, serializer):
+        import secrets
+        data = serializer.validated_data
+        plaintext_token = None
+        if data.get('connection_type') == 'agent' and not data.get('agent_token'):
+            plaintext_token = secrets.token_hex(32)
+            instance = serializer.save(agent_token=plaintext_token)
+        else:
+            instance = serializer.save()
+        # Stash plaintext token so create() can include it in the response.
+        instance._plaintext_agent_token = plaintext_token
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        instance = serializer.instance
+        headers = self.get_success_headers(serializer.data)
+        response_data = serializer.data
+        if getattr(instance, '_plaintext_agent_token', None):
+            response_data = dict(response_data)
+            response_data['agent_token'] = instance._plaintext_agent_token
+        return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=True, methods=['post'], url_path='regenerate-token')
+    def regenerate_token(self, request, pk=None):
+        """Generate a new agent token for this device and return it in plaintext (only time it is readable)."""
+        import secrets
+        device = self.get_object()
+        plaintext_token = secrets.token_hex(32)
+        device.agent_token = plaintext_token
+        device.save(update_fields=['agent_token', 'updated_at'])
+        return Response({'agent_token': plaintext_token})
+
+    @action(detail=True, methods=['get'], url_path='agent-bundle')
+    def agent_bundle(self, request, pk=None):
+        """
+        Return a ZIP containing isotopeiq-agent.conf and the installer script
+        for the requested OS.  Query param: ?os=windows|linux|macos (default linux).
+        """
+        import io
+        import zipfile
+        from pathlib import Path
+        from django.http import HttpResponse
+
+        from django.conf import settings as django_settings
+        from apps.notifications.models import SystemSettings
+
+        device = self.get_object()
+
+        os_name = request.query_params.get('os', 'linux')
+        installer_map = {
+            'windows': 'windows_install.bat',
+            'linux':   'linux_install.sh',
+            'macos':   'macos_install.sh',
+        }
+        installer_file = installer_map.get(os_name, 'linux_install.sh')
+
+        # Use the admin-configured satellite URL; fall back to the env/settings value.
+        sys_settings = SystemSettings.objects.first()
+        server_url = (
+            sys_settings.satellite_url.rstrip('/')
+            if sys_settings and sys_settings.satellite_url
+            else getattr(django_settings, 'SATELLITE_URL', 'http://localhost:8000').rstrip('/')
+        )
+
+        token = device.agent_token or ''
+        port  = device.agent_port or 9322
+        config_content = f"server={server_url}\ntoken={token}\nport={port}\n"
+
+        installer_path = Path('/agents/installers') / installer_file
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('isotopeiq-agent.conf', config_content)
+            if installer_path.is_file():
+                zf.write(str(installer_path), installer_file)
+        buf.seek(0)
+
+        import re
+        safe_name = re.sub(r'[^\w\-.]', '_', device.name)
+        response = HttpResponse(buf.read(), content_type='application/zip')
+        zip_name  = f"isotopeiq-agent-{safe_name}-{os_name}.zip"
+        response['Content-Disposition'] = f'attachment; filename="{zip_name}"'
+        return response
 
     @action(detail=True, methods=['post'])
     def collect(self, request, pk=None):
@@ -180,71 +251,4 @@ def _winrm_configure_envelope(collector):
         pass
 
 
-class EnrollView(APIView):
-    """
-    POST /api/devices/enroll/
 
-    Called by the IsotopeIQ agent on first startup (or token rotation).
-    Authenticates via a system-wide enrollment token, then creates or
-    updates the Device record and returns a device-specific agent token.
-
-    No Django authentication is required — the enrollment_token IS the
-    auth mechanism, intentionally similar to the push data endpoint.
-    """
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        import hmac
-        import secrets
-        from django.conf import settings
-
-        enrollment_token = settings.AGENT_ENROLLMENT_TOKEN
-        if not enrollment_token:
-            return Response(
-                {'error': 'Agent enrollment is not configured on this satellite.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        provided = request.data.get('enrollment_token', '')
-        if not provided or not hmac.compare_digest(str(enrollment_token), str(provided)):
-            return Response({'error': 'Invalid enrollment token.'}, status=status.HTTP_401_UNAUTHORIZED)
-
-        hostname = request.data.get('hostname', '').strip()
-        if not hostname:
-            return Response({'error': 'hostname is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        os_type = request.data.get('os_type', 'linux')
-        valid_os = [c[0] for c in Device.OS_TYPE_CHOICES]
-        if os_type not in valid_os:
-            os_type = 'other'
-
-        agent_port = int(request.data.get('agent_port', 9322))
-
-        # Generate a unique per-device token each time (supports rotation)
-        agent_token = secrets.token_hex(32)
-
-        try:
-            device = Device.objects.get(hostname=hostname, connection_type='agent')
-            # Preserve the human-set name; update everything else
-            device.os_type = os_type
-            device.agent_port = agent_port
-            device.agent_token = agent_token
-            device.is_active = True
-            device.save(update_fields=['os_type', 'agent_port', 'agent_token', 'is_active', 'updated_at'])
-            created = False
-        except Device.DoesNotExist:
-            device = Device.objects.create(
-                name=hostname,
-                hostname=hostname,
-                connection_type='agent',
-                os_type=os_type,
-                agent_port=agent_port,
-                agent_token=agent_token,
-                is_active=True,
-            )
-            created = True
-
-        return Response(
-            {'agent_token': agent_token, 'device_id': device.id, 'created': created},
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
-        )

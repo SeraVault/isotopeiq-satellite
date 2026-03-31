@@ -19,6 +19,15 @@
 12. [Troubleshooting](#12-troubleshooting)
 13. [Security Hardening](#13-security-hardening)
 14. [Architecture Reference](#14-architecture-reference)
+15. [Agent Installation (Offline)](#15-agent-installation-offline)
+    - [Files to Transfer](#151-files-to-transfer-to-the-managed-device)
+    - [Generating the Config File](#152-generating-the-config-file)
+    - [Linux](#153-installing-on-linux-offline)
+    - [macOS](#154-installing-on-macos-offline)
+    - [Windows](#155-installing-on-windows-offline)
+    - [Default Agent Port](#156-default-agent-port)
+    - [Uninstalling](#157-uninstalling)
+    - [Using the Python Source](#158-using-the-python-source-instead-of-a-binary)
 
 ---
 
@@ -629,10 +638,192 @@ Pre-compiled agents are available for push-mode or deployment scenarios:
 | `agents/macos_collector` | macOS (recent versions) |
 | `agents/windows_collector.exe` | Windows 10+ |
 
-Agents can be downloaded by managed devices directly from the Satellite at:
+When the managed device has network access to the Satellite, agents can be downloaded directly:
 
 ```
 GET /api/v1/agents/download/<filename>
 ```
 
 Python source equivalents are available in `agents/*.py` for environments where running a compiled binary is not permitted.
+
+See [Section 15](#15-agent-installation-offline) for installing agents on air-gapped or internet-restricted devices.
+
+---
+
+## 15. Agent Installation (Offline)
+
+Use this section when managed devices **cannot reach the Satellite or the internet** to download the agent binary automatically. All required files ship with the Satellite and are pre-placed under `agents/` and `agents/installers/`.
+
+### 15.1 Files to Transfer to the Managed Device
+
+Copy the following files from the Satellite host to the target device using whatever out-of-band mechanism is available (USB, SCP from a jump host, shared network drive, etc.).
+
+**Linux:**
+
+| File | Source path on Satellite |
+|---|---|
+| Agent binary (x86-64) | `agents/linux_collector_amd64` |
+| Agent binary (32-bit) | `agents/linux_collector_i686` |
+| Installer script | `agents/installers/linux_install.sh` |
+| Config file | Download from the device record in the UI (see 15.2) |
+
+**macOS:**
+
+| File | Source path on Satellite |
+|---|---|
+| Agent binary | `agents/macos_collector` |
+| Installer script | `agents/installers/macos_install.sh` |
+| Config file | Download from the device record in the UI (see 15.2) |
+
+**Windows:**
+
+| File | Source path on Satellite |
+|---|---|
+| Agent binary | `agents/windows_collector.exe` |
+| Installer script | `agents/installers/windows_install.bat` |
+| Config file | Download from the device record in the UI (see 15.2) |
+
+### 15.2 Generating the Config File
+
+The config file (`isotopeiq-agent.conf`) ties the agent to a specific device record and contains the device token and Satellite address. Generate it from the UI before transferring files:
+
+1. Go to **Infrastructure → Devices** and open the device record.
+2. Set **Connection Type** to **Push**.
+3. Save the device — a **Push Token** is generated and displayed.
+4. Click **Download Agent Config** to download `isotopeiq-agent.conf`.
+
+The file looks like this:
+
+```ini
+token=<push-token>
+server=http://<satellite-ip>:8000
+port=9322
+```
+
+> **Note:** The `server` value must be reachable from the managed device. On an isolated network, use the Satellite's LAN IP rather than `localhost`.
+
+### 15.3 Installing on Linux (Offline)
+
+Place all three files in the same directory on the target device, then run:
+
+```bash
+sudo bash linux_install.sh isotopeiq-agent.conf linux_collector_amd64
+```
+
+For 32-bit systems:
+
+```bash
+sudo bash linux_install.sh isotopeiq-agent.conf linux_collector_i686
+```
+
+The installer:
+- Copies the binary to `/usr/local/bin/isotopeiq-agent`
+- Writes the config to `/etc/isotopeiq-agent.conf` (root-read-only)
+- Creates and enables a systemd unit `isotopeiq-agent.service` that starts at boot
+
+Verify the agent is running:
+
+```bash
+systemctl status isotopeiq-agent
+journalctl -u isotopeiq-agent -f
+```
+
+### 15.4 Installing on macOS (Offline)
+
+Place all three files in the same directory, then run:
+
+```bash
+sudo bash macos_install.sh isotopeiq-agent.conf macos_collector
+```
+
+The installer:
+- Copies the binary to `/usr/local/bin/isotopeiq-agent`
+- Writes the config to `/etc/isotopeiq-agent.conf` (root-read-only)
+- Installs and loads a launchd daemon `com.isotopeiq.agent` that persists across reboots
+
+Verify the agent is running:
+
+```bash
+sudo launchctl list com.isotopeiq.agent
+tail -f /var/log/isotopeiq-agent.log
+```
+
+### 15.5 Installing on Windows (Offline)
+
+Place all three files in the same directory, then run from an **elevated (Administrator) command prompt**:
+
+```cmd
+windows_install.bat isotopeiq-agent.conf windows_collector.exe
+```
+
+The installer:
+- Copies the binary to `C:\Program Files\IsotopeIQ\isotopeiq-agent.exe`
+- Writes the config to `C:\ProgramData\IsotopeIQ\agent.conf` (SYSTEM/Administrators read-only)
+- Registers a scheduled task `IsotopeIQAgent` that runs as SYSTEM at every system startup
+- Opens an inbound Windows Firewall rule for the agent port (default 9322) on domain and private profiles
+- Starts the agent immediately without requiring a reboot
+
+Verify the agent is running:
+
+```cmd
+schtasks /query /tn IsotopeIQAgent /fo LIST /v
+type C:\ProgramData\IsotopeIQ\logs\isotopeiq-agent.log
+```
+
+### 15.6 Default Agent Port
+
+All agents listen on TCP port **9322** by default. To use a different port, edit `isotopeiq-agent.conf` before running the installer:
+
+```ini
+port=9500
+```
+
+Ensure the chosen port is open inbound on the managed device's firewall and that the Satellite can reach the device on that port.
+
+### 15.7 Uninstalling
+
+**Linux:**
+
+```bash
+sudo systemctl disable --now isotopeiq-agent
+sudo rm /usr/local/bin/isotopeiq-agent /etc/isotopeiq-agent.conf /etc/systemd/system/isotopeiq-agent.service
+sudo systemctl daemon-reload
+```
+
+**macOS:**
+
+```bash
+sudo launchctl unload /Library/LaunchDaemons/com.isotopeiq.agent.plist
+sudo rm /Library/LaunchDaemons/com.isotopeiq.agent.plist
+sudo rm /usr/local/bin/isotopeiq-agent /etc/isotopeiq-agent.conf
+```
+
+**Windows** (elevated command prompt):
+
+```cmd
+schtasks /end /tn IsotopeIQAgent
+schtasks /delete /tn IsotopeIQAgent /f
+netsh advfirewall firewall delete rule name="IsotopeIQ Agent"
+rmdir /s /q "C:\Program Files\IsotopeIQ"
+rmdir /s /q "C:\ProgramData\IsotopeIQ"
+```
+
+### 15.8 Using the Python Source Instead of a Binary
+
+If policy prevents running compiled binaries, the Python source agents in `agents/*.py` can be used directly. The source agents have the same CLI interface as the compiled binaries:
+
+```bash
+# Linux / macOS
+python3 agents/linux_collector.py --serve --port 9322
+
+# Windows (PowerShell)
+python agents\windows_collector.py --serve --port 9322
+```
+
+Python 3.8 or later is required. Install dependencies first:
+
+```bash
+pip3 install requests cryptography
+```
+
+The installer scripts do not support the Python source directly — run the agent manually or wrap it in your own service definition.

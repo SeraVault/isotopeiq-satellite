@@ -2,33 +2,27 @@ from django.db import models
 
 
 class Policy(models.Model):
+    COLLECTION_METHOD_CHOICES = [
+        ('agent',  'Agent Pull'),
+        ('script', 'Script Execution'),
+    ]
+
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
+    collection_method = models.CharField(
+        max_length=10,
+        choices=COLLECTION_METHOD_CHOICES,
+        default='script',
+        help_text='How collection is performed: poll agent HTTP endpoint or run a script via SSH/WinRM/Telnet.',
+    )
     devices = models.ManyToManyField('devices.Device', related_name='policies', blank=True)
-    collection_script = models.ForeignKey(
-        'scripts.Script',
+    script_package = models.ForeignKey(
+        'scripts.ScriptPackage',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='policies_as_collector',
-        limit_choices_to={'script_type': 'collection'},
-    )
-    parser_script = models.ForeignKey(
-        'scripts.Script',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='policies_as_parser',
-        limit_choices_to={'script_type': 'parser'},
-    )
-    deployment_script = models.ForeignKey(
-        'scripts.Script',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='policies_as_deployment',
-        limit_choices_to={'script_type': 'deployment'},
-        help_text='Optional deployment script run via the Deploy action.',
+        related_name='policies',
+        help_text='Collection Profile containing the collection + parser scripts. Required for Script Execution policies.',
     )
     cron_schedule = models.CharField(
         max_length=100,

@@ -7,10 +7,6 @@ SECRET_KEY = config('SECRET_KEY')
 
 SATELLITE_URL = config('SATELLITE_URL', default='http://localhost:8000')
 
-# Shared secret agents send when self-registering for the first time.
-# Set via AGENT_ENROLLMENT_TOKEN env var.  Leave blank to disable enrollment.
-AGENT_ENROLLMENT_TOKEN = config('AGENT_ENROLLMENT_TOKEN', default='')
-
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
 INSTALLED_APPS = [

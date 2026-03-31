@@ -15,7 +15,9 @@
       "Bash(python3 -c \":*)",
       "Bash(grep -r \"collect.*parse\\\\|test.*action\" /home/dguedry/WIP/isotopeiq-satellite-2 --include=*.md)",
       "Bash(docker-compose ps:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(sort -k2)",
+      "Bash(chmod +x /home/dguedry/WIP/isotopeiq-satellite-2/build-vm.sh)"
     ],
     "additionalDirectories": [
       "/home/dguedry/WIP/isotopeiq-satellite-2"

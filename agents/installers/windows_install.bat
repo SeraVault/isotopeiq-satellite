@@ -1,108 +1,127 @@
 @echo off
 REM ============================================================
 REM IsotopeIQ Windows Agent Installer
-REM Installs the agent as a Windows Service using NSSM.
-REM The agent self-enrolls with the satellite on first install;
-REM the device-specific token is saved to
-REM C:\ProgramData\IsotopeIQ\agent.token and never appears in
-REM service parameters.
+REM Registers the agent as a scheduled task that runs at system
+REM startup under SYSTEM — no third-party dependencies required.
 REM
-REM Requirements:
-REM   - Run from an elevated (Administrator) command prompt
-REM   - NSSM must be on PATH or in the same directory as this script
-REM     Download: https://nssm.cc/download
+REM Workflow:
+REM   1. Add the device in IsotopeIQ and download isotopeiq-agent.conf.
+REM   2. Place isotopeiq-agent.conf in the same folder as this script.
+REM   3. Run from an elevated (Administrator) command prompt:
+REM        windows_install.bat [config-file] [path-to-binary]
 REM
-REM Usage:
-REM   install-service.bat <enrollment-token> <satellite-url> [port] [path-to-binary]
-REM
-REM   enrollment-token : system-wide enrollment secret from the satellite admin panel
-REM   satellite-url    : base URL of the satellite, e.g. https://satellite.example.com
-REM   port             : TCP listen port (default: 9322)
-REM   path-to-binary   : path to windows_collector.exe
-REM                      (default: windows_collector.exe in the current directory)
+REM Arguments:
+REM   config-file    : path to isotopeiq-agent.conf
+REM                    (default: isotopeiq-agent.conf in the script directory)
+REM   path-to-binary : path to windows_collector.exe
+REM                    (default: windows_collector.exe in the script directory)
 REM ============================================================
 
 setlocal EnableDelayedExpansion
 
-REM ---- Argument validation ----
-if "%~1"=="" (
-    echo ERROR: enrollment-token is required.
-    echo Usage: install-service.bat ^<enrollment-token^> ^<satellite-url^> [port] [binary]
-    exit /b 1
-)
-if "%~2"=="" (
-    echo ERROR: satellite-url is required.
-    echo Usage: install-service.bat ^<enrollment-token^> ^<satellite-url^> [port] [binary]
+REM ---- Locate config file ----
+set CONFIG_FILE=%~1
+if "!CONFIG_FILE!"=="" set CONFIG_FILE=%~dp0isotopeiq-agent.conf
+
+if not exist "!CONFIG_FILE!" (
+    echo ERROR: Config file not found: !CONFIG_FILE!
+    echo Download isotopeiq-agent.conf from IsotopeIQ and place it alongside this script.
     exit /b 1
 )
 
-set ENROLLMENT_TOKEN=%~1
-set SATELLITE=%~2
-set PORT=%~3
+REM ---- Parse config file ----
+set AGENT_TOKEN=
+set PORT=
+set SERVER=
+for /f "usebackq tokens=1,* delims==" %%a in ("!CONFIG_FILE!") do (
+    if "%%a"=="token"  set AGENT_TOKEN=%%b
+    if "%%a"=="port"   set PORT=%%b
+    if "%%a"=="server" set SERVER=%%b
+)
 if "!PORT!"=="" set PORT=9322
 
-set BINARY=%~4
-if "!BINARY!"=="" set BINARY=%~dp0windows_collector.exe
-
-if not exist "!BINARY!" (
-    echo ERROR: Binary not found: !BINARY!
+if "!AGENT_TOKEN!"=="" (
+    echo ERROR: 'token' not found in !CONFIG_FILE!
     exit /b 1
 )
 
-REM ---- Locate NSSM ----
-set NSSM=nssm.exe
-where nssm.exe >nul 2>&1
-if errorlevel 1 (
-    if exist "%~dp0nssm.exe" (
-        set NSSM=%~dp0nssm.exe
+REM ---- Locate or download binary ----
+set BINARY=%~2
+set CLEANUP_BIN=0
+if "!BINARY!"=="" (
+    if exist "%~dp0windows_collector.exe" (
+        set BINARY=%~dp0windows_collector.exe
+    ) else if not "!SERVER!"=="" (
+        echo Downloading windows_collector.exe from !SERVER!...
+        set DOWNLOAD_TMP=%TEMP%\isotopeiq_agent_dl.exe
+        powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+            "$url = '!SERVER!/api/agents/windows_collector.exe';" ^
+            "$out = '!DOWNLOAD_TMP!';" ^
+            "(New-Object System.Net.WebClient).DownloadFile($url, $out);" ^
+            "$infoJson = (New-Object System.Net.WebClient).DownloadString('!SERVER!/api/agents/windows_collector.exe/info');" ^
+            "$info = ConvertFrom-Json $infoJson;" ^
+            "$actual = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower();" ^
+            "if ($actual -ne $info.sha256) { Remove-Item $out -Force; throw ('SHA-256 mismatch: expected ' + $info.sha256 + ', got ' + $actual) }"
+        if errorlevel 1 (
+            echo ERROR: Binary download or SHA-256 verification failed.
+            exit /b 1
+        )
+        echo SHA-256 verified.
+        set BINARY=!DOWNLOAD_TMP!
+        set CLEANUP_BIN=1
     ) else (
-        echo ERROR: nssm.exe not found on PATH or in the installer directory.
-        echo Download from https://nssm.cc/download and place it alongside this script.
+        echo ERROR: Binary not found locally and no 'server' in !CONFIG_FILE! to download from.
         exit /b 1
     )
 )
 
-set SERVICE_NAME=IsotopeIQAgent
-set INSTALL_PATH=C:\Program Files\IsotopeIQ\isotopeiq-agent.exe
+set TASK_NAME=IsotopeIQAgent
+set INSTALL_DIR=C:\Program Files\IsotopeIQ
+set INSTALL_PATH=%INSTALL_DIR%\isotopeiq-agent.exe
+set CONFIG_DEST=C:\ProgramData\IsotopeIQ\agent.conf
 set LOG_DIR=C:\ProgramData\IsotopeIQ\logs
 
 REM ---- Copy binary ----
-if not exist "C:\Program Files\IsotopeIQ\" mkdir "C:\Program Files\IsotopeIQ\"
+if not exist "%INSTALL_DIR%\" mkdir "%INSTALL_DIR%"
 echo Copying binary to %INSTALL_PATH%
 copy /Y "!BINARY!" "%INSTALL_PATH%" >nul
+
+REM ---- Install config file ----
+if not exist "C:\ProgramData\IsotopeIQ\" mkdir "C:\ProgramData\IsotopeIQ"
+echo Installing config to %CONFIG_DEST%
+copy /Y "!CONFIG_FILE!" "%CONFIG_DEST%" >nul
+REM Restrict read access to SYSTEM and Administrators only
+icacls "%CONFIG_DEST%" /inheritance:r /grant:r "SYSTEM:(R)" "Administrators:(R)" >nul
 
 REM ---- Create log directory ----
 if not exist "%LOG_DIR%\" mkdir "%LOG_DIR%"
 
-REM ---- Enroll with satellite ----
-echo Enrolling with satellite at !SATELLITE! ...
-"%INSTALL_PATH%" --enroll --satellite "!SATELLITE!" --enrollment-token "!ENROLLMENT_TOKEN!" --port !PORT!
+REM ---- Remove existing scheduled task if present ----
+schtasks /query /tn "%TASK_NAME%" >nul 2>&1
+if not errorlevel 1 (
+    echo Removing existing scheduled task %TASK_NAME%...
+    schtasks /end /tn "%TASK_NAME%" >nul 2>&1
+    schtasks /delete /tn "%TASK_NAME%" /f >nul
+)
+
+REM ---- Register the scheduled task ----
+REM   /sc ONSTART  : trigger at every system boot (before any user logs in)
+REM   /ru SYSTEM   : run as LocalSystem — no password needed, survives user logoff
+REM   /rl HIGHEST  : highest privilege level
+REM   /f           : overwrite if task already exists (belt-and-suspenders)
+echo Registering scheduled task: %TASK_NAME%
+schtasks /create ^
+    /tn "%TASK_NAME%" ^
+    /tr "\"%INSTALL_PATH%\" --serve --port !PORT!" ^
+    /sc ONSTART ^
+    /ru SYSTEM ^
+    /rl HIGHEST ^
+    /f
 if errorlevel 1 (
-    echo ERROR: Enrollment failed. Verify the satellite URL and enrollment token.
+    echo ERROR: Failed to register scheduled task.
     exit /b 1
 )
 
-REM ---- Remove existing service if present ----
-%NSSM% status %SERVICE_NAME% >nul 2>&1
-if not errorlevel 1 (
-    echo Removing existing %SERVICE_NAME% service...
-    %NSSM% stop %SERVICE_NAME% confirm >nul 2>&1
-    %NSSM% remove %SERVICE_NAME% confirm
-)
-
-REM ---- Install the service ----
-echo Installing service: %SERVICE_NAME%
-%NSSM% install %SERVICE_NAME% "%INSTALL_PATH%"
-%NSSM% set %SERVICE_NAME% AppParameters "--serve --port !PORT!"
-%NSSM% set %SERVICE_NAME% DisplayName "IsotopeIQ Baseline Collection Agent"
-%NSSM% set %SERVICE_NAME% Description "Listens on port !PORT! for baseline collection requests from an IsotopeIQ satellite."
-%NSSM% set %SERVICE_NAME% Start SERVICE_AUTO_START
-%NSSM% set %SERVICE_NAME% ObjectName LocalSystem
-%NSSM% set %SERVICE_NAME% AppStdout "%LOG_DIR%\isotopeiq-agent.log"
-%NSSM% set %SERVICE_NAME% AppStderr "%LOG_DIR%\isotopeiq-agent.log"
-%NSSM% set %SERVICE_NAME% AppRotateFiles 1
-%NSSM% set %SERVICE_NAME% AppRotateBytes 10485760
-
 REM ---- Open firewall port ----
 echo Adding inbound firewall rule for port !PORT!/TCP
 netsh advfirewall firewall delete rule name="IsotopeIQ Agent" >nul 2>&1
@@ -115,37 +134,16 @@ netsh advfirewall firewall add rule ^
     profile=domain,private ^
     description="IsotopeIQ baseline collection agent"
 
-REM ---- Start the service ----
-echo Starting %SERVICE_NAME%...
-%NSSM% start %SERVICE_NAME%
+REM ---- Start immediately without requiring a reboot ----
+echo Starting %TASK_NAME%...
+schtasks /run /tn "%TASK_NAME%"
 
 echo.
-echo Done.  Agent enrolled and listening on 0.0.0.0:!PORT!
-echo Check status:  sc query %SERVICE_NAME%
+echo Done.  Agent listening on 0.0.0.0:!PORT!
+echo Check status:  schtasks /query /tn "%TASK_NAME%" /fo LIST /v
 echo View logs:     type "%LOG_DIR%\isotopeiq-agent.log"
+if "!CLEANUP_BIN!"=="1" del /f /q "!DOWNLOAD_TMP!" >nul 2>&1
 endlocal
-
-%NSSM% set %SERVICE_NAME% ObjectName LocalSystem
-%NSSM% set %SERVICE_NAME% AppStdout "%LOG_DIR%\isotopeiq-agent.log"
-%NSSM% set %SERVICE_NAME% AppStderr "%LOG_DIR%\isotopeiq-agent.log"
-%NSSM% set %SERVICE_NAME% AppRotateFiles 1
-%NSSM% set %SERVICE_NAME% AppRotateBytes 10485760
-
-REM ---- Open firewall port ----
-echo Adding inbound firewall rule for port !PORT!/TCP
-netsh advfirewall firewall delete rule name="IsotopeIQ Agent" >nul 2>&1
-netsh advfirewall firewall add rule ^
-    name="IsotopeIQ Agent" ^
-    dir=in ^
-    action=allow ^
-    protocol=TCP ^
-    localport=!PORT! ^
-    profile=domain,private ^
-    description="IsotopeIQ baseline collection agent"
-
-REM ---- Start the service ----
-echo Starting %SERVICE_NAME%...
-%NSSM% start %SERVICE_NAME%
 
 echo.
 echo Done.  Agent is listening on 0.0.0.0:!PORT!

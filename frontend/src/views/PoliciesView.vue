@@ -42,10 +42,6 @@
                 <td>Runs on the Satellite server. Receives the raw output and produces a normalised canonical JSON document.</td>
               </tr>
               <tr>
-                <td class="font-weight-medium">Deployment Script</td>
-                <td>Optional. Used to push a remediation or hardening script to the device after collection, for example to apply a golden baseline.</td>
-              </tr>
-              <tr>
                 <td class="font-weight-medium">Devices</td>
                 <td>The set of devices this policy targets. Collection runs independently against each device in the list.</td>
               </tr>
@@ -133,7 +129,6 @@
       <template #item.actions="{ item }">
         <div class="d-flex ga-1">
           <v-btn size="x-small" variant="tonal" :loading="running === item.id" @click="runNow(item.id)">Run Now</v-btn>
-          <v-btn size="x-small" variant="tonal" :disabled="!item.deployment_script" :loading="deploying === item.id" @click="deployNow(item)">Deploy</v-btn>
           <v-btn size="x-small" variant="tonal" @click="openEdit(item)">Edit</v-btn>
           <v-btn size="x-small" color="error" variant="tonal" @click="remove(item.id)">Delete</v-btn>
         </div>
@@ -252,43 +247,50 @@
               </v-alert>
             </v-col>
 
-            <!-- ── Scripts ───────────────────────────────────────────────── -->
+            <!-- ── Collection Method ─────────────────────────────────────── -->
             <v-col cols="12">
-              <div class="text-body-2 font-weight-bold text-medium-emphasis text-uppercase mb-2 mt-2">Scripts</div>
+              <div class="text-body-2 font-weight-bold text-medium-emphasis text-uppercase mb-2 mt-2">Collection Method</div>
+              <v-btn-toggle v-model="form.collection_method" mandatory density="compact" rounded="lg" color="primary">
+                <v-btn value="agent" prepend-icon="mdi-lan-connect">Query Agent Endpoint</v-btn>
+                <v-btn value="script" prepend-icon="mdi-console">Run Collection Script</v-btn>
+              </v-btn-toggle>
+              <div v-if="form.collection_method === 'agent'" class="text-caption text-medium-emphasis mt-2">
+                The satellite calls <code>GET /collect</code> on each agent's HTTP port on schedule. No collection script needed.
+              </div>
+              <div v-else class="text-caption text-medium-emphasis mt-2">
+                The satellite connects to each device via SSH, WinRM, or Telnet and executes the selected script.
+              </div>
             </v-col>
-            <v-col cols="12" sm="4">
-              <v-select v-model="form.collection_script" label="Collection Script" hint="SSH / WinRM / Telnet devices only" persistent-hint :items="collectionScripts" item-title="name" item-value="id" clearable density="compact" />
+
+            <!-- Collection Script (script mode only) -->
+            <v-col v-if="form.collection_method === 'script'" cols="12" sm="6">
+              <v-select v-model="form.script_package" label="Collection Profile *" hint="Bundles the collection and parser scripts together." persistent-hint :items="scriptPackages" item-title="name" item-value="id" clearable density="compact" />
             </v-col>
-            <v-col cols="12" sm="4">
-              <v-select v-model="form.parser_script" label="Parser Script" :items="parserScripts" item-title="name" item-value="id" clearable density="compact" />
-            </v-col>
-            <v-col cols="12" sm="4">
-              <v-select v-model="form.deployment_script" label="Deployment Script" :items="deploymentScripts" item-title="name" item-value="id" clearable density="compact" />
-            </v-col>
+
+
 
             <!-- ── Device picker ─────────────────────────────────────────── -->
             <v-col cols="12">
               <div class="d-flex align-center mb-2 mt-2">
                 <div class="text-body-2 font-weight-bold text-medium-emphasis text-uppercase">Devices</div>
                 <v-spacer />
-                <v-btn-toggle v-model="deviceTypeFilter" density="compact" rounded="lg" class="mr-3" @update:modelValue="onDeviceSearch">
-                  <v-btn value="" size="x-small">All</v-btn>
-                  <v-btn value="agent" size="x-small"><v-icon size="13" start>mdi-lan-connect</v-icon>Agent</v-btn>
-                  <v-btn value="ssh" size="x-small">SSH</v-btn>
-                  <v-btn value="winrm" size="x-small">WinRM</v-btn>
-                </v-btn-toggle>
                 <span class="text-caption text-medium-emphasis">{{ selectedDevices.length }} selected</span>
               </div>
 
-              <!-- Contextual banner based on selected mix -->
+              <!-- Contextual banner: warn when device type mismatches collection method -->
               <v-alert
-                v-if="selectedAgentCount > 0 && selectedNonAgentCount > 0"
-                type="info" variant="tonal" density="compact" rounded="lg" class="mb-3 text-body-2"
-                icon="mdi-information-outline"
+                v-if="form.collection_method === 'agent' && selectedNonAgentCount > 0"
+                type="warning" variant="tonal" density="compact" rounded="lg" class="mb-3 text-body-2"
+                icon="mdi-alert-outline"
               >
-                <span class="font-weight-medium">Mixed policy:</span>
-                {{ selectedNonAgentCount }} SSH/WinRM/Telnet device{{ selectedNonAgentCount !== 1 ? 's' : '' }} will use the Collection + Parser scripts;
-                {{ selectedAgentCount }} Agent Pull device{{ selectedAgentCount !== 1 ? 's' : '' }} will be polled directly and only use the Parser script.
+                {{ selectedNonAgentCount }} selected device{{ selectedNonAgentCount !== 1 ? 's are' : ' is' }} not agent-type and will be skipped during execution.
+              </v-alert>
+              <v-alert
+                v-else-if="form.collection_method === 'script' && selectedAgentCount > 0"
+                type="warning" variant="tonal" density="compact" rounded="lg" class="mb-3 text-body-2"
+                icon="mdi-alert-outline"
+              >
+                {{ selectedAgentCount }} selected device{{ selectedAgentCount !== 1 ? 's are' : ' is' }} agent-type and will be skipped — switch to <strong>Query Agent Endpoint</strong> to include them.
               </v-alert>
               <v-alert
                 v-else-if="selectedAgentCount > 0 && selectedNonAgentCount === 0"
@@ -319,9 +321,9 @@
                         v-for="d in devicePage"
                         :key="d.id"
                         :title="d.name"
-                        :subtitle="`${d.hostname}${d.os_type ? ' · ' + d.os_type : ''}`"
+                        :subtitle="d.hostname"
                         :active="isSelected(d.id)"
-                        active-color="primary"
+                        color="primary"
                         rounded="0"
                         @click="toggleDevice(d)"
                       >
@@ -505,7 +507,6 @@ function parseCron(cron) {
 // ── Device picker state ───────────────────────────────────────────────────────
 
 const deviceSearch      = ref('')
-const deviceTypeFilter  = ref('')
 const devicePage        = ref([])
 const devicePageNum     = ref(1)
 const deviceTotal       = ref(0)
@@ -550,8 +551,7 @@ async function fetchDevices() {
   try {
     const { data } = await api.get('/devices/', {
       params: {
-        search:          deviceSearch.value     || undefined,
-        connection_type: deviceTypeFilter.value || undefined,
+        search: deviceSearch.value || undefined,
         page: 1,
       },
     })
@@ -568,8 +568,7 @@ async function loadMoreDevices() {
   try {
     const { data } = await api.get('/devices/', {
       params: {
-        search:          deviceSearch.value     || undefined,
-        connection_type: deviceTypeFilter.value || undefined,
+        search: deviceSearch.value || undefined,
         page: devicePageNum.value + 1,
       },
     })
@@ -586,14 +585,11 @@ async function loadMoreDevices() {
 
 const policies          = ref([])
 const totalPolicies     = ref(0)
-const collectionScripts = ref([])
-const parserScripts     = ref([])
-const deploymentScripts = ref([])
+const scriptPackages    = ref([])
 const loading   = ref(false)
 const showHelp  = ref(false)
 const showForm  = ref(false)
 const running   = ref(null)
-const deploying = ref(null)
 const form      = ref(blank())
 
 const tableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
@@ -627,20 +623,18 @@ async function fetchPolicies(options = tableOptions.value) {
 function blank() {
   return {
     name: '', description: '', cron_schedule: '0 2 * * *',
+    collection_method: 'script',
     delay_between_devices: 0,
-    devices: [], collection_script: null, parser_script: null,
-    deployment_script: null, is_active: true,
+    devices: [], script_package: null, is_active: true,
   }
 }
 
 onMounted(async () => {
   try {
     await Promise.all([
-      api.get('/scripts/').then(r => {
-        const scripts = r.data.results ?? r.data
-        collectionScripts.value  = scripts.filter(s => s.script_type === 'collection'  && s.is_active)
-        parserScripts.value      = scripts.filter(s => s.script_type === 'parser'      && s.is_active)
-        deploymentScripts.value  = scripts.filter(s => s.script_type === 'deployment'  && s.is_active)
+      api.get('/scripts/packages/').then(r => {
+        const pkgs = r.data.results ?? r.data
+        scriptPackages.value = pkgs.filter(p => p.is_active)
       }),
       fetchDevices(),
     ])
@@ -651,7 +645,6 @@ function openNew() {
   form.value             = blank()
   selectedDevices.value  = []
   deviceSearch.value     = ''
-  deviceTypeFilter.value = ''
   parseCron('0 2 * * *')
   showForm.value         = true
 }
@@ -659,16 +652,13 @@ function openNew() {
 function openEdit(p) {
   form.value = {
     ...p,
-    collection_script:  p.collection_script?.id  ?? p.collection_script  ?? null,
-    parser_script:      p.parser_script?.id      ?? p.parser_script      ?? null,
-    deployment_script:  p.deployment_script?.id  ?? p.deployment_script  ?? null,
+    script_package: p.script_package?.id ?? p.script_package ?? null,
   }
   // Preserve full device objects so chips show names (policy API returns nested objects)
   selectedDevices.value = (p.devices ?? []).map(d =>
     typeof d === 'object' ? d : { id: d, name: `#${d}`, hostname: '' }
   )
   deviceSearch.value     = ''
-  deviceTypeFilter.value = ''
   parseCron(p.cron_schedule)
   showForm.value = true
 }
@@ -698,10 +688,5 @@ async function runNow(id) {
   finally { setTimeout(() => { running.value = null }, 2000) }
 }
 
-async function deployNow(p) {
-  if (!await askConfirm(`Run deployment script on all devices in "${p.name}"?`)) return
-  deploying.value = p.id
-  try { await api.post(`/policies/${p.id}/deploy/`) }
-  finally { setTimeout(() => { deploying.value = null }, 2000) }
-}
+
 </script>

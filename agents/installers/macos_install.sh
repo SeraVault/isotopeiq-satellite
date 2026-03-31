@@ -1,27 +1,78 @@
 #!/bin/bash
 # IsotopeIQ macOS Agent Installer
-# Installs the agent binary as a root-owned launchd daemon on port 9322.
-# The agent self-enrolls with the satellite on first install; the device-specific
-# token is saved to /etc/isotopeiq-agent.token and never appears in service args.
+# Installs the agent binary as a root-owned launchd daemon.
 #
-# Usage:
-#   sudo bash macos_install.sh <enrollment-token> <satellite-url> [port] [path-to-binary]
+# Workflow:
+#   1. Add the device in IsotopeIQ and download isotopeiq-agent.conf.
+#   2. Place isotopeiq-agent.conf in the same directory as this script.
+#   3. Run:  sudo bash macos_install.sh [config-file] [path-to-binary]
+#
+# The binary is downloaded automatically from the IsotopeIQ server unless
+# you pass an explicit [path-to-binary] or place one alongside this script.
 #
 # Arguments:
-#   enrollment-token — system-wide enrollment secret from the satellite admin panel
-#   satellite-url    — base URL of the satellite, e.g. https://satellite.example.com
-#   port             — TCP listen port (default: 9322)
-#   path-to-binary   — path to the compiled macos_collector binary
-#                       (default: ./macos_collector)
+#   config-file    — path to isotopeiq-agent.conf (default: ./isotopeiq-agent.conf)
+#   path-to-binary — path to the macos_collector binary (optional; auto-downloaded if omitted)
 
 set -euo pipefail
 
-ENROLLMENT_TOKEN="${1:?ERROR: enrollment-token is required.  Usage: sudo bash macos_install.sh <enrollment-token> <satellite-url> [port] [binary]}"
-SATELLITE="${2:?ERROR: satellite-url is required.  Usage: sudo bash macos_install.sh <enrollment-token> <satellite-url> [port] [binary]}"
-PORT="${3:-9322}"
-BINARY="${4:-./macos_collector}"
+CONFIG_FILE="${1:-./isotopeiq-agent.conf}"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "ERROR: Config file not found: ${CONFIG_FILE}" >&2
+    echo "Download isotopeiq-agent.conf from IsotopeIQ and place it alongside this script." >&2
+    exit 1
+fi
+
+# Parse config file
+AGENT_TOKEN=$(grep -E '^token='  "$CONFIG_FILE" | head -1 | cut -d= -f2-)
+PORT=$(       grep -E '^port='   "$CONFIG_FILE" | head -1 | cut -d= -f2-)
+SERVER=$(     grep -E '^server=' "$CONFIG_FILE" | head -1 | cut -d= -f2-)
+PORT="${PORT:-9322}"
+
+if [ -z "$AGENT_TOKEN" ]; then
+    echo "ERROR: 'token' not found in ${CONFIG_FILE}" >&2
+    exit 1
+fi
+
+REMOTE_BINARY="macos_collector"
+
+# Locate or download the binary
+CLEANUP_BINARY=0
+if [ -n "${2:-}" ]; then
+    BINARY="$2"
+elif [ -f "./macos_collector" ]; then
+    BINARY="./macos_collector"
+elif [ -n "$SERVER" ]; then
+    echo "Downloading macos_collector from ${SERVER}..."
+    TMP_BINARY=$(mktemp)
+    if ! curl -fsSL "${SERVER}/api/agents/${REMOTE_BINARY}" -o "$TMP_BINARY"; then
+        rm -f "$TMP_BINARY"
+        echo "ERROR: Download failed from ${SERVER}/api/agents/${REMOTE_BINARY}" >&2
+        exit 1
+    fi
+    # Verify SHA-256 against the server's info endpoint
+    INFO=$(curl -fsSL "${SERVER}/api/agents/${REMOTE_BINARY}/info" 2>/dev/null || true)
+    if [ -n "$INFO" ]; then
+        EXPECTED=$(echo "$INFO" | grep -o '"sha256":"[^"]*"' | cut -d'"' -f4)
+        ACTUAL=$(shasum -a 256 "$TMP_BINARY" | cut -d' ' -f1)
+        if [ "$EXPECTED" != "$ACTUAL" ]; then
+            rm -f "$TMP_BINARY"
+            echo "ERROR: SHA-256 mismatch (expected ${EXPECTED}, got ${ACTUAL})." >&2
+            exit 1
+        fi
+        echo "SHA-256 verified: ${ACTUAL}"
+    fi
+    chmod +x "$TMP_BINARY"
+    BINARY="$TMP_BINARY"
+    CLEANUP_BINARY=1
+else
+    echo "ERROR: Binary not found locally and no 'server' in ${CONFIG_FILE} to download from." >&2
+    exit 1
+fi
 
 INSTALL_PATH="/usr/local/bin/isotopeiq-agent"
+CONFIG_DEST="/etc/isotopeiq-agent.conf"
 PLIST_PATH="/Library/LaunchDaemons/com.isotopeiq.agent.plist"
 LOG_PATH="/var/log/isotopeiq-agent.log"
 
@@ -30,21 +81,15 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-if [ ! -f "$BINARY" ]; then
-    echo "ERROR: Binary not found: ${BINARY}" >&2
-    exit 1
-fi
-
 echo "Installing binary → ${INSTALL_PATH}"
 cp -f "$BINARY" "$INSTALL_PATH"
 chmod 700 "$INSTALL_PATH"
 chown root:wheel "$INSTALL_PATH"
 
-echo "Enrolling with satellite at ${SATELLITE} ..."
-"$INSTALL_PATH" --enroll --satellite "$SATELLITE" --enrollment-token "$ENROLLMENT_TOKEN" --port "$PORT" || {
-    echo "ERROR: Enrollment failed. Verify the satellite URL and enrollment token." >&2
-    exit 1
-}
+echo "Installing config → ${CONFIG_DEST}"
+cp -f "$CONFIG_FILE" "$CONFIG_DEST"
+chmod 600 "$CONFIG_DEST"
+chown root:wheel "$CONFIG_DEST"
 
 echo "Writing launchd plist → ${PLIST_PATH}"
 cat > "$PLIST_PATH" <<PLIST
@@ -91,7 +136,10 @@ launchctl unload "$PLIST_PATH" 2>/dev/null || true
 echo "Loading com.isotopeiq.agent"
 launchctl load -w "$PLIST_PATH"
 
+# Clean up temp download if we created one
+if [ "$CLEANUP_BINARY" = "1" ]; then rm -f "$TMP_BINARY"; fi
+
 echo ""
-echo "Done.  Agent enrolled and listening on 0.0.0.0:${PORT}"
+echo "Done.  Agent listening on 0.0.0.0:${PORT}"
 echo "Check status:  sudo launchctl list com.isotopeiq.agent"
 echo "View logs:     tail -f ${LOG_PATH}"

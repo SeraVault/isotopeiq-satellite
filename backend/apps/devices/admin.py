@@ -13,8 +13,8 @@ class CredentialAdmin(admin.ModelAdmin):
 
 @admin.register(Device)
 class DeviceAdmin(admin.ModelAdmin):
-    list_display = ['name', 'hostname', 'port', 'device_type', 'os_type', 'connection_type', 'is_active']
-    list_filter = ['device_type', 'os_type', 'connection_type', 'is_active']
+    list_display = ['name', 'hostname', 'port', 'connection_type', 'is_active']
+    list_filter = ['connection_type', 'is_active']
     search_fields = ['name', 'hostname', 'fqdn']
     readonly_fields = ['created_at', 'updated_at']
     autocomplete_fields = ['credential']
