@@ -7,6 +7,9 @@ on:
       - '.github/workflows/build-macos-agent.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build (universal2)
@@ -27,10 +30,36 @@ jobs:
         run: |
           cd agents
           pyinstaller --onefile --name macos_collector macos_collector.py
+          mv dist/macos_collector .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-collector
-          path: agents/dist/macos_collector
+          path: agents/macos_collector
           retention-days: 30
+
+  commit-binary:
+    name: Commit binary
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-collector
+          path: agents/
+
+      - name: Make binary executable
+        run: chmod +x agents/macos_collector
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add agents/macos_collector
+          git diff --cached --quiet && echo "No binary changes." || \
+            git commit -m "chore: rebuild macos agent binary [skip ci]" && git push

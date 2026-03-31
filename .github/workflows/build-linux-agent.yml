@@ -7,6 +7,9 @@ on:
       - '.github/workflows/build-linux-agent.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   # ── 64-bit ─────────────────────────────────────────────────────────────────
   # centos:7 has glibc 2.17 natively — the binary runs on RHEL/CentOS 7+,
@@ -84,3 +87,35 @@ jobs:
           name: linux-collector-i686
           path: agents/linux_collector_i686
           retention-days: 30
+
+  # ── Commit binaries back to repo ───────────────────────────────────────────
+  commit-binaries:
+    name: Commit binaries
+    needs: [build-amd64, build-i686]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download amd64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-collector-amd64
+          path: agents/
+
+      - name: Download i686 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-collector-i686
+          path: agents/
+
+      - name: Make binaries executable
+        run: chmod +x agents/linux_collector_amd64 agents/linux_collector_i686
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add agents/linux_collector_amd64 agents/linux_collector_i686
+          git diff --cached --quiet && echo "No binary changes." || \
+            git commit -m "chore: rebuild linux agent binaries [skip ci]" && git push

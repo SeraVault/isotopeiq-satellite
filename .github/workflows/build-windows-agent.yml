@@ -7,6 +7,9 @@ on:
       - '.github/workflows/build-windows-agent.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -27,10 +30,33 @@ jobs:
         run: |
           cd agents
           pyinstaller --onefile --name windows_collector windows_collector.py
+          move dist\windows_collector.exe .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-collector
-          path: agents/dist/windows_collector.exe
+          path: agents/windows_collector.exe
           retention-days: 30
+
+  commit-binary:
+    name: Commit binary
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-collector
+          path: agents/
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add agents/windows_collector.exe
+          git diff --cached --quiet && echo "No binary changes." || \
+            git commit -m "chore: rebuild windows agent binary [skip ci]" && git push
