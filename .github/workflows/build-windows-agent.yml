@@ -64,6 +64,7 @@ jobs:
         run: |
           cd agents
           pyinstaller --onefile --name windows_collector windows_collector.py
+          if (Test-Path windows_collector.exe) { Remove-Item windows_collector.exe }
           move dist\windows_collector.exe .
 
       - name: Upload artifact

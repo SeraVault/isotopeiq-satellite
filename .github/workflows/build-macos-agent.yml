@@ -63,6 +63,7 @@ jobs:
         run: |
           cd agents
           pyinstaller --onefile --name macos_collector macos_collector.py
+          rm -f macos_collector
           mv dist/macos_collector .
 
       - name: Upload artifact
