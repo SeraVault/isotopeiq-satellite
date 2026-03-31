@@ -36,6 +36,7 @@ jobs:
         run: |
           docker run --rm \
             -v "${{ github.workspace }}/agents:/work" \
+            -v "${{ github.workspace }}/.github/scripts:/scripts" \
             -w /work \
             "${{ matrix.image }}" \
             sh -exc '
@@ -46,30 +47,7 @@ jobs:
                 cat /tmp/errors.txt
                 exit 1
               fi
-              python3 - <<PYEOF
-import json, sys
-with open("/tmp/output.json") as f:
-    data = json.load(f)
-errors = []
-for key in ["device","hardware","os","network","users","groups","packages","services"]:
-    if key not in data:
-        errors.append("MISSING key: " + key)
-for key in ["packages","services","users"]:
-    if not data.get(key):
-        errors.append("EMPTY array: " + key)
-for k, v in {k: v for k, v in data.get("_collection_errors", {}).items()
-             if k not in {"certificates","firewall_rules","sysctl","ssh_keys",
-                          "security","pci_devices","storage_devices","usb_devices"}}.items():
-    errors.append("COLLECTION ERROR in {}: {}".format(k, v))
-print("packages={} services={} users={} os={} {}".format(
-    len(data.get("packages",[])), len(data.get("services",[])),
-    len(data.get("users",[])),
-    data.get("os",{}).get("name",""), data.get("os",{}).get("version","")))
-if errors:
-    print("FAILURES: " + "; ".join(errors))
-    sys.exit(1)
-print("OK")
-PYEOF
+              python3 /scripts/validate_collector.py /tmp/output.json
             '
 
       - name: Upload output on failure
