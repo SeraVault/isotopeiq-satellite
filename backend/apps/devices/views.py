@@ -97,11 +97,23 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         installer_path = Path('/agents/installers') / installer_file
 
+        # Binaries to include per OS (all must live in /agents/)
+        binary_map = {
+            'windows': ['windows_collector.exe'],
+            'linux':   ['linux_collector_amd64', 'linux_collector_i686'],
+            'macos':   ['macos_collector'],
+        }
+        binaries = binary_map.get(os_name, [])
+
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.writestr('isotopeiq-agent.conf', config_content)
             if installer_path.is_file():
                 zf.write(str(installer_path), installer_file)
+            for binary in binaries:
+                binary_path = Path('/agents') / binary
+                if binary_path.is_file():
+                    zf.write(str(binary_path), binary)
         buf.seek(0)
 
         import re
@@ -119,7 +131,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
         device = self.get_object()
         policy_id = request.data.get('policy_id')
 
-        policies = device.policies.filter(is_active=True).select_related('collection_script', 'parser_script')
+        policies = device.policies.filter(is_active=True).select_related(
+            'script_package__collection_script', 'script_package__parser_script'
+        )
         if policy_id:
             policy = policies.filter(pk=policy_id).first()
             if not policy:
@@ -129,8 +143,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
             if not policy:
                 return Response({'detail': 'No active policy assigned to this device.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not policy.collection_script or not policy.parser_script:
-            return Response({'detail': f'Policy "{policy.name}" requires both a collection and a parser script.'}, status=status.HTTP_400_BAD_REQUEST)
+        if policy.collection_method == 'script':
+            pkg = policy.script_package
+            if not pkg or not pkg.collection_script or not pkg.parser_script:
+                return Response(
+                    {'detail': f'Policy "{policy.name}" requires a Collection Profile with both a collection and a parser script.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         task = run_policy.delay(policy.id, triggered_by='manual', device_id=device.id)
         return Response({'detail': f'Collection started using policy "{policy.name}".', 'task_id': task.id}, status=status.HTTP_202_ACCEPTED)

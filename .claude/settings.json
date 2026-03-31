@@ -17,10 +17,21 @@
       "Bash(docker-compose ps:*)",
       "WebSearch",
       "Bash(sort -k2)",
-      "Bash(chmod +x /home/dguedry/WIP/isotopeiq-satellite-2/build-vm.sh)"
+      "Bash(chmod +x /home/dguedry/WIP/isotopeiq-satellite-2/build-vm.sh)",
+      "Bash(python3 -c \"from cryptography.fernet import Fernet; print\\(''''cryptography ok''''\\)\")",
+      "Bash(bash -n /home/dguedry/WIP/isotopeiq-satellite-2/build-vm.sh)",
+      "Read(//home/dguedry/kvm-images/**)",
+      "Bash(curl -s \"https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/\")",
+      "Bash(curl -sI \"https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/\")",
+      "Bash(curl -s \"https://dl.fedoraproject.org/pub/archive/fedora/linux/releases/41/Cloud/x86_64/images/\")",
+      "Bash(libguestfs-test-tool)",
+      "Read(//boot/**)",
+      "Bash(sudo chmod:*)",
+      "Bash(dpkg -l cloud-image-utils)"
     ],
     "additionalDirectories": [
-      "/home/dguedry/WIP/isotopeiq-satellite-2"
+      "/home/dguedry/WIP/isotopeiq-satellite-2",
+      "/home/dguedry/kvm-images"
     ]
   }
 }

@@ -6,7 +6,6 @@ from django.utils import timezone
 
 from apps.jobs.models import Job, DeviceJobResult
 from apps.jobs.tasks import (
-    _broadcast,
     _get_collector,
     _SUPPORTED_CONNECTION_TYPES,
 )
@@ -23,7 +22,6 @@ def _finish_job(job, overall_ok):
     )
     job.finished_at = timezone.now()
     job.save()
-    _broadcast({'job_id': job.id, 'status': job.status})
 
 
 @shared_task(bind=True)
@@ -53,8 +51,6 @@ def run_deployment(self, policy_id: int, triggered_by: str = 'manual'):
         started_at=timezone.now(),
         celery_task_id=self.request.id or '',
     )
-    _broadcast({'job_id': job.id, 'status': 'running'})
-
     overall_ok = True
     devices = list(
         policy.devices.filter(

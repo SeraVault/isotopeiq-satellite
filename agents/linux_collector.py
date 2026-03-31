@@ -749,7 +749,8 @@ def collect_packages(output):
                 'install_date': '',
                 'source':       'deb',
             })
-        collected = True
+        if output['packages']:
+            collected = True
 
     # rpm (RHEL / CentOS / Fedora / SUSE / Amazon Linux)
     if which('rpm') and not collected:
@@ -770,6 +771,7 @@ def collect_packages(output):
     # apk (Alpine Linux)
     if which('apk') and not collected:
         out = run('apk info -v 2>/dev/null')
+        _before = len(output['packages'])
         for line in out.splitlines():
             # e.g. "busybox-1.36.1-r0"
             m = re.match(r'^(.+)-(\d[^-]*-r\d+)$', line.strip())
@@ -781,10 +783,12 @@ def collect_packages(output):
                     'install_date': '',
                     'source':       'apk',
                 })
-        collected = True
+        if len(output['packages']) > _before:
+            collected = True
 
     # pacman (Arch / Manjaro)
     if which('pacman') and not collected:
+        _before = len(output['packages'])
         for line in run_lines('pacman -Q 2>/dev/null'):
             parts = line.split(None, 1)
             output['packages'].append({
@@ -794,11 +798,13 @@ def collect_packages(output):
                 'install_date': '',
                 'source':       'pacman',
             })
-        collected = True
+        if len(output['packages']) > _before:
+            collected = True
 
     # zypper (SUSE / openSUSE)
     if which('zypper') and not collected:
         out = run('zypper --no-color packages --installed-only 2>/dev/null')
+        _before = len(output['packages'])
         for line in out.splitlines():
             parts = [p.strip() for p in line.split('|')]
             # Format: S | Repository | Name | Version | Arch
@@ -810,7 +816,8 @@ def collect_packages(output):
                     'install_date': '',
                     'source':       'rpm',
                 })
-        collected = True
+        if len(output['packages']) > _before:
+            collected = True
 
     # snap (any distro)
     if which('snap'):

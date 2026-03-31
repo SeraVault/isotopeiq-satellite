@@ -141,8 +141,9 @@ _SOFTWARE_SCHEMA = {
         'install_date': {'type': 'string'},
         'source':       {
             'type': 'string',
-            'enum': ['apt', 'yum', 'rpm', 'msi', 'brew', 'manual',
-                     'pip', 'gem', 'npm', 'winget', 'chocolatey', 'other'],
+            'enum': ['apt', 'deb', 'yum', 'rpm', 'msi', 'brew', 'manual',
+                     'pip', 'gem', 'npm', 'winget', 'chocolatey',
+                     'apk', 'pacman', 'snap', 'flatpak', 'other'],
         },
     },
     'required': ['name'],
@@ -154,7 +155,10 @@ _SERVICE_SCHEMA = {
     'properties': {
         'name':    {'type': 'string'},
         'status':  {'type': 'string', 'enum': ['running', 'stopped', 'unknown']},
-        'startup': {'type': 'string', 'enum': ['enabled', 'disabled', 'manual', 'unknown']},
+        'startup': {'type': 'string', 'enum': [
+            'enabled', 'disabled', 'manual', 'unknown',
+            'enabled-runtime', 'static', 'indirect', 'transient', 'generated', 'masked',
+        ]},
     },
     'required': ['name'],
     'additionalProperties': False,
@@ -184,6 +188,7 @@ _PASSWORD_POLICY_SCHEMA = {
     'properties': {
         'min_length':          {'type': ['integer', 'null']},
         'max_age_days':        {'type': ['integer', 'null']},
+        'warn_age_days':       {'type': ['integer', 'null']},
         'complexity_required': {'type': ['boolean', 'null']},
         'lockout_threshold':   {'type': ['integer', 'null']},
     },
