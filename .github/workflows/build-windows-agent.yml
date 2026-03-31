@@ -11,7 +11,71 @@ permissions:
   contents: write
 
 jobs:
+  # ── Test collector output on the actual Windows runner ────────────────────
+  test:
+    name: Test collector
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+
+      - name: Run collector + validate
+        shell: pwsh
+        run: |
+          python agents\windows_collector.py > $env:TEMP\output.json 2> $env:TEMP\errors.txt
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $env:TEMP\errors.txt
+            exit 1
+          }
+          @'
+          import json, sys, os
+          path = os.path.join(os.environ["TEMP"], "output.json")
+          with open(path) as f:
+              data = json.load(f)
+          errors = []
+          for key in ["device","hardware","os","network","users","groups","packages","services"]:
+              if key not in data:
+                  errors.append("MISSING key: " + key)
+          for section, field in [("device","hostname"),("os","name"),("os","version"),("hardware","cpu_model")]:
+              if not data.get(section, {}).get(field):
+                  errors.append("EMPTY {}.{}".format(section, field))
+          for key in ["packages", "services", "users"]:
+              if not data.get(key):
+                  errors.append("EMPTY array: " + key)
+          ignorable = {"certificates","firewall_rules","sysctl","ssh_keys",
+                       "security","pci_devices","storage_devices","usb_devices",
+                       "kernel_modules","listening_services"}
+          for k, v in {k: v for k, v in data.get("_collection_errors", {}).items()
+                       if k not in ignorable}.items():
+              errors.append("COLLECTION ERROR in {}: {}".format(k, v))
+          print("packages={}  services={}  users={}  os={} {}".format(
+              len(data.get("packages",[])), len(data.get("services",[])),
+              len(data.get("users",[])),
+              data.get("os",{}).get("name",""), data.get("os",{}).get("version","")))
+          if errors:
+              print("FAILURES: " + "; ".join(errors))
+              sys.exit(1)
+          print("OK")
+'@ | Set-Content $env:TEMP\validate.py
+          python $env:TEMP\validate.py
+
+      - name: Upload output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-collector-output
+          path: ${{ env.TEMP }}\output.json
+          retention-days: 7
+
+  # ── Build executable ───────────────────────────────────────────────────────
   build:
+    needs: test
     runs-on: windows-latest
 
     steps:

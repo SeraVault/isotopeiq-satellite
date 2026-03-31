@@ -11,8 +11,70 @@ permissions:
   contents: write
 
 jobs:
+  # ── Test collector output on the actual macOS runner ──────────────────────
+  test:
+    name: Test collector
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run collector + validate
+        run: |
+          python3 agents/macos_collector.py > /tmp/output.json 2>/tmp/errors.txt
+          EXIT=$?
+          if [ $EXIT -ne 0 ]; then
+            echo "--- collector stderr ---"
+            cat /tmp/errors.txt
+            exit 1
+          fi
+          python3 - <<'PYEOF'
+          import json, sys
+          with open("/tmp/output.json") as f:
+              data = json.load(f)
+          errors = []
+          for key in ["device","hardware","os","network","users","groups","packages","services"]:
+              if key not in data:
+                  errors.append("MISSING key: " + key)
+          for section, field in [("device","hostname"),("os","name"),("os","version"),("hardware","cpu_model")]:
+              if not data.get(section, {}).get(field):
+                  errors.append("EMPTY {}.{}".format(section, field))
+          for key in ["packages", "services", "users"]:
+              if not data.get(key):
+                  errors.append("EMPTY array: " + key)
+          ignorable = {"certificates","firewall_rules","sysctl","ssh_keys",
+                       "security","pci_devices","storage_devices","usb_devices",
+                       "kernel_modules","listening_services"}
+          for k, v in {k: v for k, v in data.get("_collection_errors", {}).items()
+                       if k not in ignorable}.items():
+              errors.append("COLLECTION ERROR in {}: {}".format(k, v))
+          print("packages={}  services={}  users={}  os={} {}".format(
+              len(data.get("packages",[])), len(data.get("services",[])),
+              len(data.get("users",[])),
+              data.get("os",{}).get("name",""), data.get("os",{}).get("version","")))
+          if errors:
+              print("FAILURES: " + "; ".join(errors))
+              sys.exit(1)
+          print("OK")
+          PYEOF
+
+      - name: Upload output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-collector-output
+          path: /tmp/output.json
+          retention-days: 7
+
+  # ── Build binary ───────────────────────────────────────────────────────────
   build:
     name: Build (universal2)
+    needs: test
     runs-on: macos-latest
 
     steps:

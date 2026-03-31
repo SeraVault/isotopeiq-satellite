@@ -1,0 +1,152 @@
+name: Test Linux Agent
+
+on:
+  push:
+    paths:
+      - 'agents/linux_collector.py'
+      - '.github/workflows/test-linux-agent.yml'
+  pull_request:
+    paths:
+      - 'agents/linux_collector.py'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test on ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # dpkg path
+          - distro: Ubuntu 24.04
+            image: ubuntu:24.04
+            pkg_mgr: dpkg
+            setup: apt-get update -qq && apt-get install -y -qq python3
+          - distro: Debian Bookworm
+            image: debian:bookworm
+            pkg_mgr: dpkg
+            setup: apt-get update -qq && apt-get install -y -qq python3
+          # rpm path
+          - distro: Rocky Linux 9
+            image: rockylinux:9
+            pkg_mgr: rpm
+            setup: "true"   # python3 and rpm already present
+          - distro: Fedora 42
+            image: fedora:42
+            pkg_mgr: rpm
+            setup: "true"
+          # apk path
+          - distro: Alpine 3.20
+            image: alpine:3.20
+            pkg_mgr: apk
+            setup: apk add --no-cache python3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run collector + validate (${{ matrix.distro }})
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/agents:/work" \
+            -w /work \
+            "${{ matrix.image }}" \
+            sh -exc '
+              ${{ matrix.setup }}
+
+              # Run the collector and capture output + exit code
+              python3 linux_collector.py > /tmp/output.json 2>/tmp/errors.txt
+              EXIT=$?
+
+              if [ $EXIT -ne 0 ]; then
+                echo "--- collector stderr ---"
+                cat /tmp/errors.txt
+                echo "Collector exited with code $EXIT"
+                exit 1
+              fi
+
+              # Validate JSON and check required keys / non-empty arrays
+              python3 - <<PYEOF
+import json, sys
+
+with open("/tmp/output.json") as f:
+    data = json.load(f)
+
+errors = []
+
+# ── Required top-level keys ──────────────────────────────────────────────
+required_keys = [
+    "device", "hardware", "os", "network", "users", "groups",
+    "packages", "services", "filesystem", "security",
+    "scheduled_tasks", "startup_items", "ssh_keys", "kernel_modules",
+    "pci_devices", "storage_devices", "usb_devices",
+    "listening_services", "firewall_rules", "sysctl",
+    "certificates", "logging_targets",
+]
+for key in required_keys:
+    if key not in data:
+        errors.append("MISSING top-level key: {}".format(key))
+
+# ── Fields that must have a non-empty value ──────────────────────────────
+non_empty = [
+    ("device",   "hostname"),
+    ("os",       "name"),
+    ("os",       "kernel"),
+    ("hardware", "cpu_model"),
+    ("hardware", "cpu_cores"),
+]
+for section, field in non_empty:
+    val = data.get(section, {}).get(field)
+    if not val:
+        errors.append("EMPTY {}.{}".format(section, field))
+
+# ── Arrays that must be populated ────────────────────────────────────────
+non_empty_arrays = ["packages", "services", "users", "groups"]
+for key in non_empty_arrays:
+    if not data.get(key):
+        errors.append("EMPTY array: {}".format(key))
+
+# ── Package source must be a known value ─────────────────────────────────
+known_sources = {"deb", "rpm", "apk", "pacman", "snap", "flatpak"}
+for pkg in data.get("packages", []):
+    if pkg.get("source") not in known_sources:
+        errors.append("Unknown package source: {}".format(pkg.get("source")))
+        break  # report once
+
+# ── No unexpected _collection_errors ─────────────────────────────────────
+errs = data.get("_collection_errors", {})
+# Ignore errors for sections that legitimately require root or optional tools
+ignorable = {"certificates", "firewall_rules", "sysctl", "ssh_keys",
+             "security", "pci_devices", "storage_devices", "usb_devices"}
+critical_errs = {k: v for k, v in errs.items() if k not in ignorable}
+for k, v in critical_errs.items():
+    errors.append("COLLECTION ERROR in {}: {}".format(k, v))
+
+# ── Summary ───────────────────────────────────────────────────────────────
+pkg_count = len(data.get("packages", []))
+svc_count = len(data.get("services", []))
+usr_count = len(data.get("users", []))
+print("packages: {}  services: {}  users: {}".format(pkg_count, svc_count, usr_count))
+print("os: {} {}  kernel: {}".format(
+    data.get("os", {}).get("name", ""),
+    data.get("os", {}).get("version", ""),
+    data.get("os", {}).get("kernel", ""),
+))
+
+if errors:
+    print("\nFAILURES:")
+    for e in errors:
+        print("  ✗ " + e)
+    sys.exit(1)
+
+print("All checks passed.")
+PYEOF
+            '
+
+      - name: Upload JSON output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-output-${{ matrix.pkg_mgr }}
+          path: /tmp/output.json
+          retention-days: 7

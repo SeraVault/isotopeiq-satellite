@@ -11,11 +11,81 @@ permissions:
   contents: write
 
 jobs:
+  # ── Test collector output on representative distros ────────────────────────
+  test:
+    name: Test (${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: ubuntu
+            image: ubuntu:24.04
+            setup: apt-get update -qq && apt-get install -y -qq python3
+          - distro: rocky
+            image: rockylinux:9
+            setup: "true"
+          - distro: alpine
+            image: alpine:3.20
+            setup: apk add --no-cache python3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run collector + validate (${{ matrix.distro }})
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/agents:/work" \
+            -w /work \
+            "${{ matrix.image }}" \
+            sh -exc '
+              ${{ matrix.setup }}
+              python3 linux_collector.py > /tmp/output.json 2>/tmp/errors.txt
+              EXIT=$?
+              if [ $EXIT -ne 0 ]; then
+                cat /tmp/errors.txt
+                exit 1
+              fi
+              python3 - <<PYEOF
+import json, sys
+with open("/tmp/output.json") as f:
+    data = json.load(f)
+errors = []
+for key in ["device","hardware","os","network","users","groups","packages","services"]:
+    if key not in data:
+        errors.append("MISSING key: " + key)
+for key in ["packages","services","users"]:
+    if not data.get(key):
+        errors.append("EMPTY array: " + key)
+for k, v in {k: v for k, v in data.get("_collection_errors", {}).items()
+             if k not in {"certificates","firewall_rules","sysctl","ssh_keys",
+                          "security","pci_devices","storage_devices","usb_devices"}}.items():
+    errors.append("COLLECTION ERROR in {}: {}".format(k, v))
+print("packages={} services={} users={} os={} {}".format(
+    len(data.get("packages",[])), len(data.get("services",[])),
+    len(data.get("users",[])),
+    data.get("os",{}).get("name",""), data.get("os",{}).get("version","")))
+if errors:
+    print("FAILURES: " + "; ".join(errors))
+    sys.exit(1)
+print("OK")
+PYEOF
+            '
+
+      - name: Upload output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-output-${{ matrix.distro }}
+          path: /tmp/output.json
+          retention-days: 7
+
   # ── 64-bit ─────────────────────────────────────────────────────────────────
   # centos:7 has glibc 2.17 natively — the binary runs on RHEL/CentOS 7+,
   # Ubuntu 14.04+, Debian 8+, and any other distro with glibc ≥ 2.17.
   build-amd64:
     name: Build (amd64)
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
@@ -52,6 +122,7 @@ jobs:
   # glibc 2.28, Python 3.7). Emulated via QEMU on the 64-bit runner.
   build-i686:
     name: Build (i686)
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
