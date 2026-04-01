@@ -112,7 +112,7 @@ REM   /f           : overwrite if task already exists (belt-and-suspenders)
 echo Registering scheduled task: %TASK_NAME%
 schtasks /create ^
     /tn "%TASK_NAME%" ^
-    /tr "\"%INSTALL_PATH%\" --serve --port !PORT!" ^
+    /tr "\"!INSTALL_PATH!\" --serve --port !PORT!" ^
     /sc ONSTART ^
     /ru SYSTEM ^
     /rl HIGHEST ^

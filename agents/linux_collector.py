@@ -755,6 +755,7 @@ def collect_packages(output):
     # rpm (RHEL / CentOS / Fedora / SUSE / Amazon Linux)
     if which('rpm') and not collected:
         out = run("rpm -qa --queryformat '%{NAME}|%{VERSION}-%{RELEASE}|%{VENDOR}|%{INSTALLTIME:date}\\n' 2>/dev/null")
+        _before = len(output['packages'])
         for line in out.splitlines():
             parts = line.split('|')
             if not parts[0].strip():
@@ -766,7 +767,8 @@ def collect_packages(output):
                 'install_date': parts[3].strip() if len(parts) > 3 else '',
                 'source':       'rpm',
             })
-        collected = True
+        if len(output['packages']) > _before:
+            collected = True
 
     # apk (Alpine Linux)
     if which('apk') and not collected:
