@@ -391,6 +391,90 @@
               <v-checkbox v-model="form.is_active" label="Active" density="compact" hide-details />
             </v-col>
 
+            <!-- ── Post-Collection Actions ───────────────────────────────── -->
+            <v-col cols="12">
+              <div class="d-flex align-center mb-2 mt-2">
+                <div class="text-body-2 font-weight-bold text-medium-emphasis text-uppercase">Post-Collection Actions</div>
+                <v-tooltip location="end" max-width="340">
+                  <template #activator="{ props }">
+                    <v-icon v-bind="props" size="16" class="ml-1 text-medium-emphasis">mdi-help-circle-outline</v-icon>
+                  </template>
+                  Automatically send a notification or export the baseline when a specific event occurs for this policy. Destinations are configured in System Settings.
+                </v-tooltip>
+              </div>
+
+              <!-- Existing actions list -->
+              <div v-if="policyActions.length" class="mb-2">
+                <v-chip
+                  v-for="act in policyActions"
+                  :key="act.id"
+                  closable
+                  size="small"
+                  :color="actionDestColor(act.destination)"
+                  class="ma-1"
+                  :prepend-icon="actionDestIcon(act.destination)"
+                  @click:close="removeAction(act)"
+                >
+                  {{ act.trigger_label }} → {{ act.destination_label }}
+                </v-chip>
+              </div>
+              <div v-else class="text-caption text-medium-emphasis mb-2">No actions configured.</div>
+
+              <!-- New policy: save first before adding actions -->
+              <v-alert
+                v-if="!form.id"
+                type="info"
+                variant="tonal"
+                density="compact"
+                class="mb-2 text-body-2"
+                icon="mdi-information-outline"
+              >Save the policy first, then re-open it to configure post-collection actions.</v-alert>
+
+              <!-- Add action row (edit mode only) -->
+              <template v-else>
+              <v-row dense align="center">
+                <v-col cols="12" sm="4">
+                  <v-select
+                    v-model="newAction.trigger"
+                    :items="triggerOptions"
+                    item-title="label"
+                    item-value="value"
+                    label="When…"
+                    density="compact"
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" sm="4">
+                  <v-select
+                    v-model="newAction.destination"
+                    :items="destinationOptions"
+                    item-title="label"
+                    item-value="value"
+                    label="Send to…"
+                    density="compact"
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" sm="auto">
+                  <v-btn
+                    variant="tonal"
+                    prepend-icon="mdi-plus"
+                    size="small"
+                    :disabled="!newAction.trigger || !newAction.destination"
+                    @click="addAction"
+                  >Add</v-btn>
+                </v-col>
+              </v-row>
+              <v-alert
+                v-if="actionError"
+                type="error"
+                variant="tonal"
+                density="compact"
+                class="mt-2 text-body-2"
+              >{{ actionError }}</v-alert>
+              </template>
+            </v-col>
+
           </v-row>
         </v-card-text>
         <v-divider />
@@ -645,6 +729,9 @@ function openNew() {
   form.value             = blank()
   selectedDevices.value  = []
   deviceSearch.value     = ''
+  policyActions.value    = []
+  newAction.value        = { trigger: null, destination: null }
+  actionError.value      = ''
   parseCron('0 2 * * *')
   showForm.value         = true
 }
@@ -659,13 +746,22 @@ function openEdit(p) {
     typeof d === 'object' ? d : { id: d, name: `#${d}`, hostname: '' }
   )
   deviceSearch.value     = ''
+  newAction.value        = { trigger: null, destination: null }
+  actionError.value      = ''
+  policyActions.value    = []
   parseCron(p.cron_schedule)
+  loadActions(p.id)
   showForm.value = true
 }
 
 function cancel() { showForm.value = false }
 
 async function save() {
+  // Auto-commit any pending action selection before closing the form
+  if (form.value.id && newAction.value.trigger && newAction.value.destination) {
+    await addAction()
+    if (actionError.value) return  // Don't close if the auto-add failed
+  }
   const payload = { ...form.value, devices: selectedDevices.value.map(d => d.id) }
   if (form.value.id) {
     await api.patch(`/policies/${form.value.id}/`, payload)
@@ -688,5 +784,65 @@ async function runNow(id) {
   finally { setTimeout(() => { running.value = null }, 2000) }
 }
 
+// ── Post-collection actions ───────────────────────────────────────────────────
+
+const triggerOptions = [
+  { value: 'new_baseline',   label: 'New Baseline Established' },
+  { value: 'drift_detected', label: 'Drift Detected'           },
+  { value: 'always',         label: 'Always (every success)'   },
+]
+const destinationOptions = [
+  { value: 'syslog', label: 'Syslog'    },
+  { value: 'email',  label: 'Email'     },
+  { value: 'ftp',    label: 'FTP/SFTP'  },
+]
+
+const policyActions = ref([])
+const newAction     = ref({ trigger: null, destination: null })
+const actionError   = ref('')
+
+function actionDestColor(dest) {
+  return { syslog: 'default', email: 'blue', ftp: 'teal' }[dest] ?? 'default'
+}
+function actionDestIcon(dest) {
+  return { syslog: 'mdi-server', email: 'mdi-email-outline', ftp: 'mdi-server-network' }[dest] ?? 'mdi-bell-outline'
+}
+
+async function loadActions(policyId) {
+  if (!policyId) { policyActions.value = []; return }
+  try {
+    const { data } = await api.get('/settings/actions/', { params: { policy: policyId } })
+    policyActions.value = data.results ?? data
+  } catch (e) {
+    console.error('[loadActions] failed:', e)
+    policyActions.value = []
+  }
+}
+
+async function addAction() {
+  actionError.value = ''
+  const dup = policyActions.value.find(
+    a => a.trigger === newAction.value.trigger && a.destination === newAction.value.destination
+  )
+  if (dup) { actionError.value = 'That trigger/destination combination already exists.'; return }
+  try {
+    const { data } = await api.post('/settings/actions/', {
+      policy:      form.value.id,
+      trigger:     newAction.value.trigger,
+      destination: newAction.value.destination,
+    })
+    policyActions.value = [...policyActions.value, data]
+    newAction.value = { trigger: null, destination: null }
+  } catch (e) {
+    actionError.value = e.response?.data?.non_field_errors?.[0]
+      ?? e.response?.data?.detail
+      ?? 'Could not add action.'
+  }
+}
+
+async function removeAction(act) {
+  await api.delete(`/settings/actions/${act.id}/`)
+  policyActions.value = policyActions.value.filter(a => a.id !== act.id)
+}
 
 </script>

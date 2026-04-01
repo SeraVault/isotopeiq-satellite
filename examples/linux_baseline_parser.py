@@ -381,7 +381,20 @@ for line in lines("scheduled_tasks"):
     if len(parts) < 4:
         continue
     task_type, user, src, schedule_cmd = parts
-    # Split schedule (5 cron fields) from command
+
+    if task_type == "systemd-timer":
+        # 4th field is the raw OnCalendar/OnBootSec expression — entirely static.
+        output["scheduled_tasks"].append({
+            "name":     src,
+            "type":     "systemd-timer",
+            "command":  "",
+            "schedule": schedule_cmd.strip(),
+            "user":     user,
+            "enabled":  True,
+        })
+        continue
+
+    # cron — leading 5 whitespace-separated tokens are the schedule
     fields = schedule_cmd.split(None, 5)
     if len(fields) >= 6:
         schedule = " ".join(fields[:5])

@@ -307,9 +307,26 @@ for user in $(cut -d: -f1 /etc/passwd); do
         echo "cron|${user}|crontab|${line}"
     done
 done
-# Systemd timers (systemd only)
-if [ "$INIT_SYSTEM" = "systemd" ]; then
-    systemctl list-timers --all --no-pager --no-legend 2>/dev/null || true
+# NOTE: do NOT use 'systemctl list-timers' — its NEXT/LAST timestamps are
+# volatile and change on every timer activation.  Read OnCalendar= directly
+# from the unit file on disk instead.  Skip /run/systemd/transient/ so only
+# permanently-installed timers are captured.
+if [ "$INIT_SYSTEM" = "systemd" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl list-unit-files --type=timer --no-pager --no-legend 2>/dev/null \
+    | while read -r unit state _rest; do
+        [ -z "$unit" ] && continue
+        [ "$state" = "masked" ] && continue
+        unit_file=""
+        for dir in /etc/systemd/system /usr/lib/systemd/system /lib/systemd/system; do
+            [ -f "${dir}/${unit}" ] && unit_file="${dir}/${unit}" && break
+        done
+        [ -z "$unit_file" ] && continue
+        cal=$(grep  -m1 '^OnCalendar='        "$unit_file" 2>/dev/null | cut -d= -f2-)
+        boot=$(grep -m1 '^OnBootSec='         "$unit_file" 2>/dev/null | cut -d= -f2-)
+        usec=$(grep -m1 '^OnUnitActiveSec='   "$unit_file" 2>/dev/null | cut -d= -f2-)
+        schedule="${cal:-${boot:-${usec:-unknown}}}"
+        echo "systemd-timer|root|${unit}|${schedule}"
+    done
 fi
 
 # ── SSH Keys ──────────────────────────────────────────────────────────────────

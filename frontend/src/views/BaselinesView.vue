@@ -105,7 +105,10 @@
         <span class="text-medium-emphasis text-caption">{{ fmt(item.established_at) }}</span>
       </template>
       <template #item.actions="{ item }">
-        <v-btn size="x-small" variant="tonal" @click="viewBaseline(item)">View Data</v-btn>
+        <div class="d-flex ga-1">
+          <v-btn size="x-small" variant="tonal" @click="viewBaseline(item)">View Data</v-btn>
+          <v-btn size="x-small" variant="tonal" prepend-icon="mdi-export-variant" @click="openSend(item)">Send</v-btn>
+        </div>
       </template>
     </v-data-table-server>
 
@@ -122,6 +125,38 @@
         </v-card-text>
       </v-card>
     </v-dialog>
+
+    <!-- Send / Export dialog -->
+    <v-dialog v-model="sendOpen" max-width="400" persistent>
+      <v-card rounded="lg">
+        <v-card-title class="pt-4 d-flex align-center">
+          <v-icon icon="mdi-export-variant" class="mr-2" color="primary" />
+          Send / Export Baseline
+        </v-card-title>
+        <v-card-text>
+          <div class="text-body-2 mb-4 text-medium-emphasis">
+            Send the baseline for <strong>{{ sending?.device_name ?? sending?.device }}</strong> to a configured destination.
+            Destinations are configured in <strong>System Settings</strong>.
+          </div>
+          <v-select
+            v-model="sendDest"
+            :items="sendDestOptions"
+            item-title="label"
+            item-value="value"
+            label="Destination"
+            density="compact"
+          />
+          <v-alert v-if="sendError" type="error" variant="tonal" density="compact" class="mt-3 text-body-2">{{ sendError }}</v-alert>
+          <v-alert v-if="sendSuccess" type="success" variant="tonal" density="compact" class="mt-3 text-body-2">Dispatched successfully.</v-alert>
+        </v-card-text>
+        <v-card-actions class="pa-3">
+          <v-spacer />
+          <v-btn @click="sendOpen = false">Close</v-btn>
+          <v-btn color="primary" variant="tonal" :loading="sendLoading" :disabled="!sendDest || sendSuccess" @click="doSend">Send</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
   </div>
 </template>
 
@@ -200,6 +235,42 @@ async function viewBaseline(b) {
   if (!b.parsed_data) {
     const { data } = await api.get(`/baselines/${b.id}/`)
     viewing.value = data
+  }
+}
+
+// ── Send / Export ─────────────────────────────────────────────────────────────
+
+const sendDestOptions = [
+  { value: 'syslog', label: 'Syslog'   },
+  { value: 'email',  label: 'Email'    },
+  { value: 'ftp',    label: 'FTP/SFTP' },
+]
+
+const sendOpen    = ref(false)
+const sending     = ref(null)
+const sendDest    = ref(null)
+const sendLoading = ref(false)
+const sendError   = ref('')
+const sendSuccess = ref(false)
+
+function openSend(b) {
+  sending.value     = b
+  sendDest.value    = null
+  sendError.value   = ''
+  sendSuccess.value = false
+  sendOpen.value    = true
+}
+
+async function doSend() {
+  sendLoading.value = true
+  sendError.value   = ''
+  try {
+    await api.post(`/baselines/${sending.value.id}/send/`, { destination: sendDest.value })
+    sendSuccess.value = true
+  } catch (e) {
+    sendError.value = e.response?.data?.error ?? e.response?.data?.detail ?? 'Send failed.'
+  } finally {
+    sendLoading.value = false
   }
 }
 

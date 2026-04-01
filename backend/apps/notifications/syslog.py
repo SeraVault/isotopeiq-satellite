@@ -104,3 +104,13 @@ class SyslogNotifier:
             f' event_id={drift_event.pk}'
             f' changes={changes}'
         )
+
+    def notify_baseline_established(self, device, baseline) -> None:
+        """Emit a BASELINE_ESTABLISHED syslog message."""
+        self._emit(
+            f'IsotopeIQ BASELINE_ESTABLISHED'
+            f' device="{device.name}"'
+            f' hostname="{device.hostname}"'
+            f' baseline_id={baseline.pk}'
+            f' established_by="{baseline.established_by}"'
+        )

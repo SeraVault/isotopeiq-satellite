@@ -1136,19 +1136,44 @@ def collect_scheduled_tasks(output):
             })
 
     # Systemd timers
-    if _detect_init() == 'systemd':
-        timer_out = run('systemctl list-timers --all --no-pager --no-legend 2>/dev/null')
-        for line in timer_out.splitlines():
-            parts = line.split(None, 5)
-            if len(parts) >= 5:
-                output['scheduled_tasks'].append({
-                    'name':     parts[4] if len(parts) > 4 else '',
-                    'type':     'systemd-timer',
-                    'command':  '',
-                    'schedule': parts[3] if len(parts) > 3 else '',
-                    'user':     'system',
-                    'enabled':  True,
-                })
+    # NOTE: do NOT use 'systemctl list-timers' - its NEXT/LAST columns are
+    # volatile timestamps that change on every timer activation.  Instead,
+    # read OnCalendar= (or OnBootSec= / OnUnitActiveSec=) directly from the
+    # unit file on disk.  Only /etc/systemd/system and /usr/lib/systemd/system
+    # are searched, so transient /run/systemd/transient/ timers are excluded.
+    if _detect_init() == 'systemd' and which('systemctl'):
+        timer_files_out = run('systemctl list-unit-files --type=timer --no-pager --no-legend 2>/dev/null')
+        for tline in timer_files_out.splitlines():
+            tparts = tline.split(None, 2)
+            if len(tparts) < 2:
+                continue
+            unit_name, state = tparts[0], tparts[1]
+            if state == 'masked':
+                continue
+            unit_file = None
+            for d in ('/etc/systemd/system', '/usr/lib/systemd/system', '/lib/systemd/system'):
+                candidate = os.path.join(d, unit_name)
+                if os.path.isfile(candidate):
+                    unit_file = candidate
+                    break
+            if not unit_file:
+                continue
+            schedule = ''
+            for kw in ('OnCalendar=', 'OnBootSec=', 'OnUnitActiveSec='):
+                for fline in read_lines(unit_file):
+                    if fline.startswith(kw):
+                        schedule = fline[len(kw):].strip()
+                        break
+                if schedule:
+                    break
+            output['scheduled_tasks'].append({
+                'name':     unit_name,
+                'type':     'systemd-timer',
+                'command':  '',
+                'schedule': schedule or 'unknown',
+                'user':     'system',
+                'enabled':  True,
+            })
 
 
 # ---------------------------------------------------------------------------

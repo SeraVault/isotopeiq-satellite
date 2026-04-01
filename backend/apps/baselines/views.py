@@ -38,3 +38,21 @@ class BaselineViewSet(viewsets.ReadOnlyModelViewSet):
         baseline.established_by = request.user.username
         baseline.save()
         return Response(BaselineSerializer(baseline).data)
+
+    @action(detail=True, methods=['post'])
+    def send(self, request, pk=None):
+        """Ad-hoc export/notification for a single baseline.
+
+        Body: { "destination": "syslog" | "email" | "ftp" }
+        """
+        baseline = self.get_object()
+        destination = request.data.get('destination', '')
+        valid = {'syslog', 'email', 'ftp'}
+        if destination not in valid:
+            return Response(
+                {'error': f'destination must be one of: {", ".join(sorted(valid))}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from apps.notifications.dispatcher import dispatch_adhoc
+        dispatch_adhoc(destination, baseline.device, baseline)
+        return Response({'status': 'dispatched', 'destination': destination})

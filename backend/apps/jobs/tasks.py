@@ -33,6 +33,9 @@ def _apply_baseline_and_drift(device, result) -> None:
     from apps.drift.detector import detect_drift
     from apps.drift.models import DriftEvent
     from apps.notifications.syslog import SyslogNotifier
+    from apps.notifications.dispatcher import dispatch_actions
+
+    policy = getattr(getattr(result, 'job', None), 'policy', None)
 
     baseline, created = Baseline.objects.get_or_create(
         device=device,
@@ -40,6 +43,7 @@ def _apply_baseline_and_drift(device, result) -> None:
     )
     if created:
         logger.info('Baseline established for device "%s".', device)
+        dispatch_actions('new_baseline', policy, device, baseline=baseline)
         return
 
     baseline_data = baseline.parsed_data
@@ -53,15 +57,19 @@ def _apply_baseline_and_drift(device, result) -> None:
             existing.baseline_snapshot = baseline_data
             existing.save(update_fields=['diff', 'job_result', 'baseline_snapshot'])
             logger.warning('Drift updated for device "%s" (event %s).', device, existing.pk)
+            drift_event = existing
         else:
-            event = DriftEvent.objects.create(
+            drift_event = DriftEvent.objects.create(
                 device=device,
                 job_result=result,
                 diff=diffs,
                 baseline_snapshot=baseline_data,
             )
-            SyslogNotifier().notify_drift(device, event)
-            logger.warning('Drift detected for device "%s" (event %s).', device, event.pk)
+            # Global syslog notification (always fires when syslog is enabled in settings)
+            SyslogNotifier().notify_drift(device, drift_event)
+            logger.warning('Drift detected for device "%s" (event %s).', device, drift_event.pk)
+        # Per-policy post-collection actions (email, FTP, additional syslog rules, etc.)
+        dispatch_actions('drift_detected', policy, device, baseline=baseline, drift_event=drift_event)
 
 
 @shared_task(bind=True)
