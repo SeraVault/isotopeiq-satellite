@@ -176,8 +176,14 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
             port = device.agent_port or 9322
             url = 'http://{host}:{port}/collect'.format(host=device.hostname, port=port)
             req = Request(url)  # nosec — internal network, known agent endpoint
-            if device.agent_token:
-                req.add_header('X-Agent-Token', str(device.agent_token))
+            token_val = str(device.agent_token) if device.agent_token else ''
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                'run_policy agent: device=%s token_len=%d token_prefix=%s url=%s',
+                device.id, len(token_val), token_val[:8] if token_val else '(empty)', url
+            )
+            if token_val:
+                req.add_header('X-Agent-Token', token_val)
             with urlopen(req, timeout=30) as resp:  # noqa: S310
                 raw = resp.read().decode('utf-8')
             result.raw_output = raw
@@ -244,8 +250,14 @@ def run_agent_pull(self, device_id: int, triggered_by: str = 'manual'):
         port = device.agent_port or 9322
         url = 'http://{host}:{port}/collect'.format(host=device.hostname, port=port)
         req = Request(url)  # nosec — internal network call to a known agent endpoint
-        if device.agent_token:
-            req.add_header('X-Agent-Token', str(device.agent_token))
+        token_val = str(device.agent_token) if device.agent_token else ''
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            'run_agent_pull: device=%s token_len=%d token_prefix=%s url=%s',
+            device.id, len(token_val), token_val[:8] if token_val else '(empty)', url
+        )
+        if token_val:
+            req.add_header('X-Agent-Token', token_val)
 
         with urlopen(req, timeout=30) as resp:  # noqa: S310
             raw = resp.read().decode('utf-8')

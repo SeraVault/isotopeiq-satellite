@@ -162,6 +162,7 @@
             <template #item.actions="{ item }">
               <div class="d-flex ga-1" @click.stop>
                 <v-btn size="x-small" variant="tonal" color="primary" :loading="collecting === item.id" @click="collect(item)">Collect</v-btn>
+                <v-btn size="x-small" variant="tonal" color="secondary" @click="triggerImport(item)">Import</v-btn>
                 <v-btn size="x-small" variant="tonal" @click="openEditDevice(item)">Edit</v-btn>
                 <v-btn size="x-small" variant="tonal" color="error" @click="removeDevice(item.id)">Delete</v-btn>
               </div>
@@ -195,9 +196,21 @@
                     <v-alert v-if="!deviceForm.id" density="compact" variant="tonal" color="info" rounded="lg" icon="mdi-download" class="text-body-2 w-100">
                       Save the device to generate a token and download the installer bundle.
                     </v-alert>
-                    <v-btn v-else variant="tonal" color="warning" prepend-icon="mdi-download" @click="regenerateToken({ id: deviceForm.id, name: deviceForm.name, agent_port: deviceForm.agent_port })">
-                      Download Installer Bundle
-                    </v-btn>
+                    <div v-else class="d-flex flex-column gap-2 w-100">
+                      <v-select
+                        v-model="deviceForm.bundleOs"
+                        :items="[{ title: 'Linux', value: 'linux' }, { title: 'Windows', value: 'windows' }, { title: 'macOS', value: 'macos' }]"
+                        label="OS"
+                        density="compact"
+                        hide-details
+                      />
+                      <v-btn variant="tonal" color="primary" prepend-icon="mdi-download" @click="downloadBundle(deviceForm.id, deviceForm.bundleOs || 'linux', deviceForm.name)">
+                        Download Installer Bundle
+                      </v-btn>
+                      <v-btn variant="tonal" color="warning" prepend-icon="mdi-refresh" @click="regenerateToken({ id: deviceForm.id, name: deviceForm.name, agent_port: deviceForm.agent_port })">
+                        Regenerate Token &amp; Download
+                      </v-btn>
+                    </div>
                   </v-col>
                 </template>
               </v-row>
@@ -341,6 +354,37 @@
               <v-spacer />
               <v-btn @click="collectDialog.show = false">Cancel</v-btn>
               <v-btn color="primary" :disabled="!collectDialog.policyId" :loading="collectDialog.running" @click="submitCollect">Run</v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-dialog>
+
+        <!-- Hidden file input for baseline import -->
+        <input ref="importFileInput" type="file" accept=".json,application/json" style="display:none" @change="onImportFileSelected" />
+
+        <!-- Import baseline confirm dialog -->
+        <v-dialog v-model="importDialog.show" max-width="480">
+          <v-card rounded="lg">
+            <v-card-title class="d-flex align-center pt-4">
+              <v-icon icon="mdi-file-import-outline" class="mr-2" color="secondary" />
+              Import Baseline — {{ importDialog.device?.name }}
+            </v-card-title>
+            <v-card-text>
+              <div v-if="importDialog.parsed" class="mb-3">
+                <v-alert type="info" variant="tonal" density="compact">
+                  <strong>{{ importDialog.filename }}</strong> loaded successfully.
+                  <span v-if="importDialog.parsed.device?.hostname"> Device: <strong>{{ importDialog.parsed.device.hostname }}</strong>.</span>
+                </v-alert>
+              </div>
+              <p class="text-body-2 text-medium-emphasis">
+                This will update the baseline for <strong>{{ importDialog.device?.name }}</strong> and run
+                drift detection against the previous baseline. This action is logged.
+              </p>
+              <v-alert v-if="importDialog.error" type="error" variant="tonal" density="compact" class="mt-3">{{ importDialog.error }}</v-alert>
+            </v-card-text>
+            <v-card-actions>
+              <v-spacer />
+              <v-btn @click="importDialog.show = false">Cancel</v-btn>
+              <v-btn color="secondary" :loading="importDialog.running" @click="submitImport">Import</v-btn>
             </v-card-actions>
           </v-card>
         </v-dialog>
@@ -710,17 +754,17 @@ function copyToClipboard(text) {
   }
 }
 
-async function downloadBundle(deviceId, os) {
+async function downloadBundle(deviceId, os, deviceName) {
   try {
     const { data } = await api.get(`/devices/${deviceId}/agent-bundle/`, {
       params: { os },
       responseType: 'blob',
     })
-    const device = tokenDialog.value.deviceName.replace(/[^\w\-.]/g, '_')
+    const name = (deviceName || tokenDialog.value.deviceName || deviceId).replace(/[^\w\-.]/g, '_')
     const url = URL.createObjectURL(data)
     const a = document.createElement('a')
     a.href = url
-    a.download = `isotopeiq-agent-${device}-${os}.zip`
+    a.download = `isotopeiq-agent-${name}-${os}.zip`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -835,6 +879,54 @@ async function testConnInModal() {
     deviceForm.value.testResult = { ok: false, detail: resp?.detail ?? resp?.error ?? JSON.stringify(resp) ?? 'Connection failed.' }
   } finally {
     deviceForm.value.testing = false
+  }
+}
+
+// ── import baseline ────────────────────────────────────────────────────────
+const importFileInput = ref(null)
+const importDialog = ref({ show: false, device: null, filename: '', parsed: null, running: false, error: '' })
+
+function triggerImport(device) {
+  importDialog.value = { show: false, device, filename: '', parsed: null, running: false, error: '' }
+  importFileInput.value.value = ''
+  importFileInput.value.click()
+}
+
+function onImportFileSelected(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const parsed = JSON.parse(e.target.result)
+      importDialog.value.filename = file.name
+      importDialog.value.parsed = parsed
+      importDialog.value.error = ''
+      importDialog.value.show = true
+    } catch {
+      showSnack(false, 'Could not parse file — make sure it is a valid JSON baseline.')
+    }
+  }
+  reader.readAsText(file)
+}
+
+async function submitImport() {
+  importDialog.value.running = true
+  importDialog.value.error = ''
+  try {
+    const { data } = await api.post('/baselines/import/', {
+      device_id: importDialog.value.device.id,
+      canonical_data: importDialog.value.parsed,
+    })
+    importDialog.value.show = false
+    const msg = data.created
+      ? `✓ Baseline imported for ${importDialog.value.device.name}.`
+      : `✓ Baseline updated for ${importDialog.value.device.name}. ${data.drift_changes} change(s) detected.`
+    showSnack(true, msg)
+  } catch (e) {
+    importDialog.value.error = e.response?.data?.error ?? 'Import failed.'
+  } finally {
+    importDialog.value.running = false
   }
 }
 

@@ -93,6 +93,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         token = device.agent_token or ''
         port  = device.agent_port or 9322
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            'agent_bundle: device=%s token_len=%d token_prefix=%s',
+            device.id, len(token), token[:8] if token else '(empty)'
+        )
         config_content = f"server={server_url}\ntoken={token}\nport={port}\n"
 
         installer_path = Path('/agents/installers') / installer_file
@@ -109,11 +114,17 @@ class DeviceViewSet(viewsets.ModelViewSet):
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.writestr('isotopeiq-agent.conf', config_content)
             if installer_path.is_file():
-                zf.write(str(installer_path), installer_file)
+                info = zipfile.ZipInfo(installer_file)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o755 << 16  # chmod +x
+                zf.writestr(info, installer_path.read_bytes())
             for binary in binaries:
                 binary_path = Path('/agents') / binary
                 if binary_path.is_file():
-                    zf.write(str(binary_path), binary)
+                    info = zipfile.ZipInfo(binary)
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    info.external_attr = 0o755 << 16  # chmod +x
+                    zf.writestr(info, binary_path.read_bytes())
         buf.seek(0)
 
         import re

@@ -1,3 +1,5 @@
+import json
+
 from deepdiff import DeepDiff
 from core.canonical import strip_volatile
 from .volatile_utils import get_volatile_spec
@@ -17,4 +19,4 @@ def detect_drift(baseline: dict, current: dict) -> dict:
         ignore_order=True,
         verbose_level=2,
     )
-    return diff.to_dict() if diff else {}
+    return json.loads(diff.to_json()) if diff else {}

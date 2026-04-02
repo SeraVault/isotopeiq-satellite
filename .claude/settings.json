@@ -27,7 +27,12 @@
       "Bash(libguestfs-test-tool)",
       "Read(//boot/**)",
       "Bash(sudo chmod:*)",
-      "Bash(dpkg -l cloud-image-utils)"
+      "Bash(dpkg -l cloud-image-utils)",
+      "Bash(grep -E \"\\\\.\\(vue|ts|js\\)$\")",
+      "Bash(python manage.py shell -c \"from django.urls import reverse; from apps.baselines.urls import urlpatterns; [print\\(p.pattern\\) for p in urlpatterns]\")",
+      "Bash(pip3 show:*)",
+      "Bash(pip show:*)",
+      "Bash(python3 -c \"import encrypted_model_fields; print\\(encrypted_model_fields.__version__\\)\")"
     ],
     "additionalDirectories": [
       "/home/dguedry/WIP/isotopeiq-satellite-2",

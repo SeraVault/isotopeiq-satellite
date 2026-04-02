@@ -138,15 +138,10 @@ REM ---- Start immediately without requiring a reboot ----
 echo Starting %TASK_NAME%...
 schtasks /run /tn "%TASK_NAME%"
 
+if "!CLEANUP_BIN!"=="1" del /f /q "!DOWNLOAD_TMP!" >nul 2>&1
+
 echo.
 echo Done.  Agent listening on 0.0.0.0:!PORT!
 echo Check status:  schtasks /query /tn "%TASK_NAME%" /fo LIST /v
-echo View logs:     type "%LOG_DIR%\isotopeiq-agent.log"
-if "!CLEANUP_BIN!"=="1" del /f /q "!DOWNLOAD_TMP!" >nul 2>&1
-endlocal
-
-echo.
-echo Done.  Agent is listening on 0.0.0.0:!PORT!
-echo Check status:  sc query %SERVICE_NAME%
 echo View logs:     type "%LOG_DIR%\isotopeiq-agent.log"
 endlocal
