@@ -65,7 +65,7 @@ ignorable = {
     "kernel_modules", "listening_services", "services", "scheduled_tasks",
     "startup_items", "filesystem",
 }
-for k, v in data.get("_collection_errors", {}).items():
+for k, v in data.get("custom", {}).get("_collection_errors", {}).items():
     if k not in ignorable:
         errors.append("COLLECTION ERROR in {}: {}".format(k, v))
 

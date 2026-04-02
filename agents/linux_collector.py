@@ -1900,7 +1900,7 @@ def collect():
             errors[name] = str(e)
 
     if errors:
-        output['_collection_errors'] = errors
+        output.setdefault('custom', {})['_collection_errors'] = errors
 
     return output
 
