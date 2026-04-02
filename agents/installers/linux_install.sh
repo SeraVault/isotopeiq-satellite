@@ -111,11 +111,12 @@ ExecStart=${INSTALL_PATH} --serve --port ${PORT}
 Restart=on-failure
 RestartSec=30
 User=root
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/etc /tmp
+ReadWritePaths=/etc /tmp /var/lib/rpm /var/lib/dpkg /var/cache/apt
 
 [Install]
 WantedBy=multi-user.target

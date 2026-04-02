@@ -872,9 +872,9 @@ def collect_services(output):
                    'static': 'manual', 'manual': 'manual', 'masked': 'disabled'}
 
     if init == 'systemd':
-        # --output=json might not exist on older systemd; try plain text first
-        out = run('systemctl list-units --type=service --all --no-pager --no-legend 2>/dev/null')
-        # Also get enabled/disabled state
+        # list-unit-files gives only units with a persistent file on disk —
+        # this excludes transient, runtime-generated, and session units that
+        # would otherwise change every boot/login.
         enabled_out = run('systemctl list-unit-files --type=service --no-pager --no-legend 2>/dev/null')
         enabled_map = {}
         for line in enabled_out.splitlines():
@@ -883,16 +883,22 @@ def collect_services(output):
                 sname = parts[0].replace('.service', '')
                 enabled_map[sname] = parts[1].lower()
 
-        for line in out.splitlines():
-            # UNIT            LOAD   ACTIVE SUB     DESCRIPTION
+        # Get current running state only for units that have a unit file.
+        active_map = {}
+        units_out = run('systemctl list-units --type=service --all --no-pager --no-legend 2>/dev/null')
+        for line in units_out.splitlines():
             parts = line.split(None, 4)
             if len(parts) < 3:
                 continue
             unit = parts[0].replace('.service', '')
             if unit.startswith('●'):
                 unit = unit[1:]
-            active = parts[2].lower()
-            startup_raw = enabled_map.get(unit, 'unknown')
+            active_map[unit] = parts[2].lower()
+
+        for unit, startup_raw in sorted(enabled_map.items()):
+            if startup_raw == 'masked':
+                continue
+            active = active_map.get(unit, 'inactive')
             output['services'].append({
                 'name':    unit,
                 'status':  status_map.get(active, 'unknown'),
