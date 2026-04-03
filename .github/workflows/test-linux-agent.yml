@@ -35,7 +35,7 @@ jobs:
           - distro: Fedora 42
             image: fedora:42
             pkg_mgr: rpm
-            setup: "true"
+            setup: dnf install -y python3 --quiet
           # apk path
           - distro: Alpine 3.20
             image: alpine:3.20
