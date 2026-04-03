@@ -2,22 +2,21 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Django (Docker)",
+      "name": "Attach to Django (VM)",
       "type": "debugpy",
       "request": "attach",
-      "preLaunchTask": "Docker: Compose Up",
-      "postDebugTask": "Docker: Compose Down",
       "connect": {
-        "host": "localhost",
+        "host": "192.168.122.42",
         "port": 5678
       },
       "pathMappings": [
         {
           "localRoot": "${workspaceFolder}/backend",
-          "remoteRoot": "/app"
+          "remoteRoot": "/srv/isotopeiq-satellite/backend"
         }
       ],
-      "django": true
+      "django": true,
+      "justMyCode": true
     }
   ]
 }

@@ -4,8 +4,11 @@
     <v-navigation-drawer v-if="isLoggedIn" v-model="drawer" :rail="rail" permanent width="220" color="secondary">
       <!-- Brand -->
       <div class="px-3 py-4 d-flex align-center ga-2 border-b border-white-darken-4">
-        <v-icon color="primary" size="24">mdi-hexagon-outline</v-icon>
-        <span v-if="!rail" class="text-white font-weight-bold text-body-1">IsotopeIQ</span>
+        <v-icon color="primary" size="26">mdi-hexagon-outline</v-icon>
+        <div v-if="!rail" class="d-flex flex-column ml-1" style="line-height:1.15">
+          <span class="text-white font-weight-bold" style="font-size:0.95rem;letter-spacing:0.02em">IsotopeIQ</span>
+          <span style="font-size:0.7rem;color:#7a9cc4;letter-spacing:0.08em;text-transform:uppercase">Satellite</span>
+        </div>
         <v-btn
           v-if="!rail"
           icon="mdi-chevron-left"
@@ -31,14 +34,16 @@
         <v-list-item to="/policies" prepend-icon="mdi-shield-check-outline" title="Policies" color="primary" />
 
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Operations</v-list-subheader>
-        <v-list-item to="/jobs" prepend-icon="mdi-play-circle-outline" title="Job Monitor" color="primary">
-          <template #append>
-            <v-badge v-if="runningJobs > 0" :content="runningJobs" color="primary" inline />
+        <v-list-item to="/jobs" prepend-icon="mdi-play-circle-outline" color="primary">
+          <template #title>
+            <span>Job Monitor</span>
+            <v-chip v-if="runningJobs > 0" size="x-small" color="primary" class="ml-2">{{ runningJobs }}</v-chip>
           </template>
         </v-list-item>
-        <v-list-item to="/drift" prepend-icon="mdi-lightning-bolt" title="Drift" color="primary">
-          <template #append>
-            <v-badge v-if="newDrift > 0" :content="newDrift" color="error" inline />
+        <v-list-item to="/drift" prepend-icon="mdi-lightning-bolt" color="primary">
+          <template #title>
+            <span>Drift</span>
+            <v-chip v-if="newDrift > 0" size="x-small" color="error" class="ml-2">{{ newDrift }}</v-chip>
           </template>
         </v-list-item>
         <v-list-item to="/baselines" prepend-icon="mdi-database-check-outline" title="Baselines" color="primary" />

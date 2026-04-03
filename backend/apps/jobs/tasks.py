@@ -189,7 +189,6 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
             result.raw_output = raw
             parsed = json.loads(raw)
             if policy.script_package and policy.script_package.parser_script:
-                from core.parser.runner import run_parser
                 parsed = run_parser(policy.script_package.parser_script.content, raw)
             validate_canonical(parsed)
             result.parsed_output = parsed

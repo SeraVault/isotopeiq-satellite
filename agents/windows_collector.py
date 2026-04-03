@@ -1377,16 +1377,6 @@ def _make_handler(token):
     """Return an HTTPRequestHandler class bound to the given shared secret."""
     class AgentHandler(BaseHTTPRequestHandler):
         def do_GET(self):
-            # Require token when one is configured
-            if token:
-                provided = self.headers.get('X-Agent-Token', '')
-                if provided != token:
-                    self.send_response(401)
-                    self.send_header('Content-Type', 'text/plain')
-                    self.end_headers()
-                    self.wfile.write(b'Unauthorized')
-                    return
-
             if self.path != '/collect':
                 self.send_response(404)
                 self.send_header('Content-Type', 'text/plain')

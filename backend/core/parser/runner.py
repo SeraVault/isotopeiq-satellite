@@ -27,7 +27,7 @@ def run_parser(parser_script: str, raw_input: str) -> dict:
     }
 
     try:
-        exec(parser_script, namespace)  # noqa: S102
+        exec(parser_script, namespace, namespace)  # noqa: S102
     except Exception as exc:
         raise RuntimeError(f'Parser error: {exc}') from exc
 

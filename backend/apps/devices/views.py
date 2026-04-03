@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -110,18 +112,19 @@ class DeviceViewSet(viewsets.ModelViewSet):
         }
         binaries = binary_map.get(os_name, [])
 
+        now = datetime.now().timetuple()[:6]
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr('isotopeiq-agent.conf', config_content)
+            zf.writestr(zipfile.ZipInfo('isotopeiq-agent.conf', now), config_content)
             if installer_path.is_file():
-                info = zipfile.ZipInfo(installer_file)
+                info = zipfile.ZipInfo(installer_file, now)
                 info.compress_type = zipfile.ZIP_DEFLATED
                 info.external_attr = 0o755 << 16  # chmod +x
                 zf.writestr(info, installer_path.read_bytes())
             for binary in binaries:
                 binary_path = Path('/agents') / binary
                 if binary_path.is_file():
-                    info = zipfile.ZipInfo(binary)
+                    info = zipfile.ZipInfo(binary, now)
                     info.compress_type = zipfile.ZIP_DEFLATED
                     info.external_attr = 0o755 << 16  # chmod +x
                     zf.writestr(info, binary_path.read_bytes())
