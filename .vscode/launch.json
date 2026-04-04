@@ -2,21 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Attach to Django (VM)",
+      "name": "Django: Local",
       "type": "debugpy",
-      "request": "attach",
-      "connect": {
-        "host": "192.168.122.42",
-        "port": 5678
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/manage.py",
+      "args": ["runserver", "0.0.0.0:8000", "--noreload"],
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
       },
-      "pathMappings": [
-        {
-          "localRoot": "${workspaceFolder}/backend",
-          "remoteRoot": "/srv/isotopeiq-satellite/backend"
-        }
-      ],
       "django": true,
-      "justMyCode": true
+      "justMyCode": true,
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "preLaunchTask": "Start All"
     }
   ]
 }

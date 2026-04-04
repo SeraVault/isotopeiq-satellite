@@ -32,7 +32,13 @@
       "Bash(python manage.py shell -c \"from django.urls import reverse; from apps.baselines.urls import urlpatterns; [print\\(p.pattern\\) for p in urlpatterns]\")",
       "Bash(pip3 show:*)",
       "Bash(pip show:*)",
-      "Bash(python3 -c \"import encrypted_model_fields; print\\(encrypted_model_fields.__version__\\)\")"
+      "Bash(python3 -c \"import encrypted_model_fields; print\\(encrypted_model_fields.__version__\\)\")",
+      "Bash(python3 -m venv /home/dguedry/WIP/isotopeiq-satellite-2/.venv)",
+      "Bash(/home/dguedry/WIP/isotopeiq-satellite-2/.venv/bin/pip install:*)",
+      "Bash(/home/dguedry/WIP/isotopeiq-satellite-2/.venv/bin/python manage.py check --database default)",
+      "Bash(ln -s /home/dguedry/WIP/isotopeiq-satellite-2/.env /home/dguedry/WIP/isotopeiq-satellite-2/backend/.env)",
+      "Bash(/home/dguedry/WIP/isotopeiq-satellite-2/.venv/bin/python -c \"from decouple import config; print\\('SECRET_KEY:', config\\('SECRET_KEY'\\)[:10], '...'\\)\")",
+      "Bash(redis-cli ping:*)"
     ],
     "additionalDirectories": [
       "/home/dguedry/WIP/isotopeiq-satellite-2",

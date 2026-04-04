@@ -2,36 +2,78 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Docker: Compose Up",
+      "label": "Celery: Worker",
       "type": "shell",
-      "command": "docker compose up --build 2>&1 | while IFS= read -r line; do echo \"$line\"; if [[ \"$line\" == *'Starting development server at'* ]]; then echo ''; echo '  Frontend : http://localhost:5173'; echo '  Backend  : http://localhost:8000'; echo '  Debugpy  : localhost:5678'; echo ''; fi; done",
+      "command": "${workspaceFolder}/.venv/bin/celery -A config worker -l info",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
       "isBackground": true,
       "problemMatcher": {
-        "owner": "docker-compose",
-        "pattern": {
-          "regexp": "^$"
-        },
+        "owner": "celery-worker",
+        "pattern": { "regexp": "^$" },
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "^(\\[\\+\\]|Building|Pulling|Creating|Starting|✔)",
-          "endsPattern": "Starting development server at"
+          "beginsPattern": "celery",
+          "endsPattern": "ready"
         }
       },
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",
-        "group": "docker"
+        "group": "celery"
       }
     },
     {
-      "label": "Docker: Compose Down",
+      "label": "Celery: Beat",
       "type": "shell",
-      "command": "docker compose down",
+      "command": "${workspaceFolder}/.venv/bin/celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "celery-beat",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "celery",
+          "endsPattern": "beat: Starting"
+        }
+      },
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",
-        "group": "docker"
+        "group": "celery"
       }
+    },
+    {
+      "label": "Vite: Frontend",
+      "type": "shell",
+      "command": "${workspaceFolder}/frontend/node_modules/.bin/vite --host",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "vite",
+          "endsPattern": "ready in"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "frontend"
+      }
+    },
+    {
+      "label": "Start All",
+      "dependsOn": ["Celery: Worker", "Celery: Beat", "Vite: Frontend"],
+      "dependsOrder": "parallel"
     }
   ]
 }
