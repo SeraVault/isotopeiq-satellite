@@ -91,7 +91,7 @@
           <v-btn icon="mdi-close" variant="text" size="small" @click="detailOpen = false" />
         </v-card-title>
         <v-card-subtitle>
-          {{ selected.policy_name ? `Policy: ${selected.policy_name}` : 'Ad-hoc / push' }}
+          {{ selected.policy_name ? `Policy: ${selected.policy_name}` : 'Ad-hoc' }}
           · triggered by {{ selected.triggered_by }}
           · {{ selected.started_at ? fmt(selected.started_at) : '—' }}
         </v-card-subtitle>

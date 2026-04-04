@@ -71,7 +71,6 @@ urlpatterns = [
     path('api/jobs/', include('apps.jobs.urls')),
     path('api/baselines/', include('apps.baselines.urls')),
     path('api/drift/', include('apps.drift.urls')),
-    path('api/push/', include('apps.jobs.push_urls')),
     path('api/retention/', include('apps.retention.urls')),
     path('api/settings/', include('apps.notifications.urls')),
     path('api/users/', include('apps.users.urls')),

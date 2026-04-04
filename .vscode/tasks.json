@@ -74,6 +74,28 @@
       "label": "Start All",
       "dependsOn": ["Celery: Worker", "Celery: Beat", "Vite: Frontend"],
       "dependsOrder": "parallel"
+    },
+    {
+      "label": "Stop All",
+      "type": "shell",
+      "command": "echo 'Stopping all services'",
+      "dependsOn": ["Stop: Celery Worker", "Stop: Celery Beat", "Stop: Vite"],
+      "dependsOrder": "parallel"
+    },
+    {
+      "label": "Stop: Celery Worker",
+      "type": "shell",
+      "command": "pkill -f 'celery -A config worker' || true"
+    },
+    {
+      "label": "Stop: Celery Beat",
+      "type": "shell",
+      "command": "pkill -f 'celery -A config beat' || true"
+    },
+    {
+      "label": "Stop: Vite",
+      "type": "shell",
+      "command": "pkill -f 'vite --host' || true"
     }
   ]
 }

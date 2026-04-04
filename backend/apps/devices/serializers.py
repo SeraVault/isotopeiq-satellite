@@ -20,5 +20,4 @@ class DeviceSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'password':        {'write_only': True},
             'ssh_private_key': {'write_only': True},
-            'push_token':      {'write_only': True},
         }

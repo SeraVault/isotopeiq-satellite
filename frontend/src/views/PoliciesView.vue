@@ -35,7 +35,7 @@
               </tr>
               <tr>
                 <td class="font-weight-medium">Collection Script</td>
-                <td>Runs on the remote device (SSH/WinRM) or is expected from a push agent. Outputs raw configuration data. Not used for Agent Pull devices — those run their own embedded collector.</td>
+                <td>Runs on the remote device (SSH/WinRM). Outputs raw configuration data. Not used for Agent Pull devices — those run their own embedded collector.</td>
               </tr>
               <tr>
                 <td class="font-weight-medium">Parser Script</td>
@@ -76,7 +76,7 @@
           <div class="text-subtitle-2 font-weight-bold mb-2">Execution flow</div>
           <ol class="pl-4" style="line-height:2">
             <li>At the scheduled time, CeleryBeat enqueues a job for every device in the policy.</li>
-            <li>A Celery worker picks up each job and connects to the device via its configured transport (SSH, WinRM, or waits for push). For <strong>Agent Pull</strong> devices, the satellite calls <code>GET /collect</code> on the agent directly — no script execution needed.</li>
+            <li>A Celery worker picks up each job and connects to the device via its configured transport (SSH, WinRM). For <strong>Agent Pull</strong> devices, the satellite calls <code>GET /collect</code> on the agent directly — no script execution needed.</li>
             <li>The <strong>Collection Script</strong> is executed and its stdout captured.</li>
             <li>The <strong>Parser Script</strong> receives that output and returns canonical JSON.</li>
             <li>The JSON is validated against the canonical schema. Validation failures are recorded and surfaced as warnings — they do not suppress storage of the result.</li>
@@ -332,7 +332,7 @@
                         </template>
                         <template #append>
                           <v-chip
-                            :color="d.connection_type === 'agent' ? 'success' : d.connection_type === 'push' ? 'warning' : 'default'"
+                            :color="d.connection_type === 'agent' ? 'success' : 'default'"
                             size="x-small" label class="ml-1" style="font-size:10px"
                           >{{ d.connection_type }}</v-chip>
                         </template>

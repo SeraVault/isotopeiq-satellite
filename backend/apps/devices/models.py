@@ -39,7 +39,6 @@ class Device(models.Model):
         ('telnet', 'Telnet'),
         ('winrm', 'WinRM'),
         ('https', 'HTTPS/API'),
-        ('push', 'Push (Device-Initiated)'),
         ('agent', 'Agent Pull (port 9322)'),
     ]
     OS_TYPE_CHOICES = [
@@ -69,12 +68,10 @@ class Device(models.Model):
         related_name='devices',
     )
 
-    # Legacy inline fields kept for push-token and backwards compatibility.
-    # For SSH/WinRM devices, prefer using the credential FK above.
+    # Inline credential fields — prefer the credential FK above for SSH/WinRM devices.
     username = models.CharField(max_length=255, blank=True)
     password = EncryptedCharField(max_length=1024, blank=True)
     ssh_private_key = EncryptedCharField(max_length=4096, blank=True)
-    push_token = EncryptedCharField(max_length=512, blank=True)
     # Agent pull fields — used when connection_type='agent'.
     agent_port = models.PositiveIntegerField(
         default=9322,

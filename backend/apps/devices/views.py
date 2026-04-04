@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 
 from rest_framework import viewsets, status
@@ -253,8 +254,9 @@ def _build_agent_bundle(os_name, port):
         'macos':   ['macos_collector'],
     }
 
+    agents_dir = Path(os.environ.get('AGENTS_DIR', str(django_settings.BASE_DIR.parent / 'agents')))
     installer_file = installer_map.get(os_name, 'linux_install.sh')
-    installer_path = Path('/agents/installers') / installer_file
+    installer_path = agents_dir / 'installers' / installer_file
     config_content = f"server={server_url}\nport={port}\n"
 
     now = datetime.now().timetuple()[:6]
@@ -267,7 +269,7 @@ def _build_agent_bundle(os_name, port):
             info.external_attr = 0o755 << 16
             zf.writestr(info, installer_path.read_bytes())
         for binary in binary_map.get(os_name, []):
-            binary_path = Path('/agents') / binary
+            binary_path = agents_dir / binary
             if binary_path.is_file():
                 info = zipfile.ZipInfo(binary, now)
                 info.compress_type = zipfile.ZIP_DEFLATED
