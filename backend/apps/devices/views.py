@@ -132,10 +132,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
     def test_connection(self, request, pk=None):
         """Test connection to a saved device using its stored credentials."""
         device = self.get_object()
+        port = device.agent_port if device.connection_type == 'agent' else device.port
         return _run_connection_test(
             connection_type=device.connection_type,
             hostname=device.hostname,
-            port=device.port,
+            port=port,
             credential=device.credential,
             username=getattr(device, 'username', None),
             password=getattr(device, 'password', None),
@@ -177,7 +178,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
 def _run_connection_test(connection_type, hostname, port, credential,
                          username, password, host_key):
     """Shared logic for both saved-device and inline connection tests."""
-    if connection_type not in ('ssh', 'telnet', 'winrm'):
+    if connection_type not in ('ssh', 'telnet', 'winrm', 'agent'):
         return Response(
             {'detail': f'Test connection is not supported for connection type "{connection_type}".'},
             status=status.HTTP_400_BAD_REQUEST,
@@ -185,6 +186,26 @@ def _run_connection_test(connection_type, hostname, port, credential,
 
     if not hostname:
         return Response({'detail': 'hostname is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if connection_type == 'agent':
+        from urllib.request import urlopen, Request
+        from urllib.error import URLError
+        agent_port = port or 9322
+        url = f'http://{hostname}:{agent_port}/collect'
+        try:
+            req = Request(url)
+            with urlopen(req, timeout=10) as resp:
+                if resp.status == 200:
+                    return Response(
+                        {'success': True, 'detail': f'Agent reachable at {hostname}:{agent_port} — responded HTTP 200.'},
+                        status=status.HTTP_200_OK,
+                    )
+                return Response(
+                    {'success': False, 'detail': f'Agent returned HTTP {resp.status}.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except Exception as exc:
+            return Response({'success': False, 'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     # Build a lightweight proxy object the collectors accept
     class _DeviceProxy:

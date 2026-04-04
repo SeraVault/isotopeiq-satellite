@@ -667,7 +667,7 @@ const testing   = ref(null)
 const collecting = ref(null)
 
 const DEFAULT_PORTS = { ssh: 22, telnet: 23, winrm: 5985, https: 443, push: null, agent: 9322 }
-const TESTABLE_TYPES = new Set(['ssh', 'telnet', 'winrm'])
+const TESTABLE_TYPES = new Set(['ssh', 'telnet', 'winrm', 'agent'])
 function canTestConnection(type) { return TESTABLE_TYPES.has(type) }
 function defaultPort(t) { return DEFAULT_PORTS[t] ?? '' }
 
@@ -849,7 +849,7 @@ async function testConnInModal() {
     if (deviceForm.value.id) {
       ;({ data } = await api.post(`/devices/${deviceForm.value.id}/test-connection/`))
     } else {
-      ;({ data } = await api.post('/devices/test-connection/', { connection_type: deviceForm.value.connection_type, hostname: deviceForm.value.hostname, port: deviceForm.value.port, host_key: deviceForm.value.host_key, credential: deviceForm.value.credential, username: deviceForm.value.username, password: deviceForm.value.password }))
+      ;({ data } = await api.post('/devices/test-connection/', { connection_type: deviceForm.value.connection_type, hostname: deviceForm.value.hostname, port: deviceForm.value.connection_type === 'agent' ? (deviceForm.value.agent_port || 9322) : deviceForm.value.port, host_key: deviceForm.value.host_key, credential: deviceForm.value.credential, username: deviceForm.value.username, password: deviceForm.value.password }))
     }
     deviceForm.value.testResult = { ok: true, detail: data.detail }
   } catch (e) {

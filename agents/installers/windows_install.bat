@@ -91,6 +91,8 @@ copy /Y "!BINARY!" "%INSTALL_PATH%" >nul
 
 REM ---- Install config file ----
 if not exist "C:\ProgramData\IsotopeIQ\" mkdir "C:\ProgramData\IsotopeIQ"
+REM Reset ACL before copying so reinstalls can overwrite a previously locked config
+if exist "%CONFIG_DEST%" icacls "%CONFIG_DEST%" /reset >nul 2>&1
 echo Installing config to %CONFIG_DEST%
 copy /Y "!CONFIG_FILE!" "%CONFIG_DEST%" >nul
 REM Restrict read access to SYSTEM and Administrators only
