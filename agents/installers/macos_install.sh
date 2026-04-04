@@ -124,8 +124,13 @@ PLIST
 chmod 644 "$PLIST_PATH"
 chown root:wheel "$PLIST_PATH"
 
-# Unload if already loaded (ignore errors on first install)
-launchctl unload "$PLIST_PATH" 2>/dev/null || true
+# Stop and remove any existing installation
+if launchctl list com.isotopeiq.agent &>/dev/null; then
+    echo "Stopping existing com.isotopeiq.agent daemon..."
+    launchctl unload "$PLIST_PATH" 2>/dev/null || true
+    # Kill any lingering process
+    pkill -f isotopeiq-agent 2>/dev/null || true
+fi
 
 echo "Loading com.isotopeiq.agent"
 launchctl load -w "$PLIST_PATH"

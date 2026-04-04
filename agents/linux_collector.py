@@ -36,10 +36,10 @@ except ImportError:
 
 # ---------------------------------------------------------------------------
 # Config file
-# The agent reads token (and optionally port) from isotopeiq-agent.conf.
+# The agent reads server and port from isotopeiq-agent.conf.
 # Checked in order: next to the binary, then /etc/isotopeiq-agent.conf.
 # Format (key=value, one per line, # comments ignored):
-#   token=<hex>
+#   server=http://192.168.1.10:8000
 #   port=9322
 # ---------------------------------------------------------------------------
 

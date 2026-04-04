@@ -82,6 +82,19 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Stop and remove any existing installation
+if systemctl is-active --quiet isotopeiq-agent 2>/dev/null; then
+    echo "Stopping existing isotopeiq-agent service..."
+    systemctl stop isotopeiq-agent
+fi
+if systemctl is-enabled --quiet isotopeiq-agent 2>/dev/null; then
+    systemctl disable isotopeiq-agent
+fi
+if [ -f "$UNIT_PATH" ]; then
+    rm -f "$UNIT_PATH"
+    systemctl daemon-reload
+fi
+
 echo "Installing binary → ${INSTALL_PATH}"
 cp -f "$BINARY" "$INSTALL_PATH"
 chmod 700 "$INSTALL_PATH"

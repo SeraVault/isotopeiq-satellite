@@ -74,6 +74,16 @@ set INSTALL_PATH=%INSTALL_DIR%\isotopeiq-agent.exe
 set CONFIG_DEST=C:\ProgramData\IsotopeIQ\agent.conf
 set LOG_DIR=C:\ProgramData\IsotopeIQ\logs
 
+REM ---- Stop and remove any existing installation ----
+schtasks /query /tn "%TASK_NAME%" >nul 2>&1
+if not errorlevel 1 (
+    echo Stopping existing scheduled task %TASK_NAME%...
+    schtasks /end /tn "%TASK_NAME%" >nul 2>&1
+    schtasks /delete /tn "%TASK_NAME%" /f >nul
+)
+taskkill /f /im isotopeiq-agent.exe >nul 2>&1
+timeout /t 2 /nobreak >nul
+
 REM ---- Copy binary ----
 if not exist "%INSTALL_DIR%\" mkdir "%INSTALL_DIR%"
 echo Copying binary to %INSTALL_PATH%
@@ -88,14 +98,6 @@ icacls "%CONFIG_DEST%" /inheritance:r /grant:r "SYSTEM:(R)" "Administrators:(R)"
 
 REM ---- Create log directory ----
 if not exist "%LOG_DIR%\" mkdir "%LOG_DIR%"
-
-REM ---- Remove existing scheduled task if present ----
-schtasks /query /tn "%TASK_NAME%" >nul 2>&1
-if not errorlevel 1 (
-    echo Removing existing scheduled task %TASK_NAME%...
-    schtasks /end /tn "%TASK_NAME%" >nul 2>&1
-    schtasks /delete /tn "%TASK_NAME%" /f >nul
-)
 
 REM ---- Register the scheduled task ----
 REM   /sc ONSTART  : trigger at every system boot (before any user logs in)
