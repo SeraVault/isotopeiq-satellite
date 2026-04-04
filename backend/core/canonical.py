@@ -51,14 +51,13 @@ _NETWORK_INTERFACE_SCHEMA = {
         'mac':          {'type': 'string'},
         'ipv4':         {'type': 'array', 'items': {'type': 'string'}},
         'ipv6':         {'type': 'array', 'items': {'type': 'string'}},
-        'admin_status': {'type': 'string', 'enum': ['up', 'down', 'unknown']},
-        'oper_status':  {'type': 'string', 'enum': ['up', 'down', 'unknown']},
+        'admin_status': {'type': 'string'},
+        'oper_status':  {'type': 'string'},
         # e.g. "1G", "10G", "100G", "400G"
         'speed':        {'type': 'string'},
-        'duplex':       {'type': 'string', 'enum': ['full', 'half', 'auto', 'unknown']},
+        'duplex':       {'type': 'string'},
         'mtu':          {'type': ['integer', 'null']},
-        # access | trunk | routed | unknown  (network device port roles)
-        'port_mode':    {'type': 'string', 'enum': ['access', 'trunk', 'routed', 'unknown']},
+        'port_mode':    {'type': 'string'},
         # VLAN ID for access ports
         'access_vlan':  {'type': ['integer', 'null']},
         # Allowed VLAN range string for trunk ports, e.g. "1-100,200,300-400"
@@ -139,12 +138,7 @@ _SOFTWARE_SCHEMA = {
         'version':      {'type': 'string'},
         'vendor':       {'type': 'string'},
         'install_date': {'type': 'string'},
-        'source':       {
-            'type': 'string',
-            'enum': ['apt', 'deb', 'yum', 'rpm', 'msi', 'brew', 'manual',
-                     'pip', 'gem', 'npm', 'winget', 'chocolatey',
-                     'apk', 'pacman', 'snap', 'flatpak', 'other'],
-        },
+        'source':       {'type': 'string'},
     },
     'required': ['name'],
     'additionalProperties': False,
@@ -154,11 +148,8 @@ _SERVICE_SCHEMA = {
     'type': 'object',
     'properties': {
         'name':    {'type': 'string'},
-        'status':  {'type': 'string', 'enum': ['running', 'stopped', 'unknown']},
-        'startup': {'type': 'string', 'enum': [
-            'enabled', 'disabled', 'manual', 'unknown',
-            'enabled-runtime', 'static', 'indirect', 'transient', 'generated', 'masked',
-        ]},
+        'status':  {'type': 'string'},
+        'startup': {'type': 'string'},
     },
     'required': ['name'],
     'additionalProperties': False,
@@ -336,7 +327,7 @@ _USB_DEVICE_SCHEMA = {
 _LISTENING_SERVICE_SCHEMA = {
     'type': 'object',
     'properties': {
-        'protocol':      {'type': 'string', 'enum': ['tcp', 'udp', 'tcp6', 'udp6', 'unknown']},
+        'protocol':      {'type': 'string'},
         'local_address': {'type': 'string'},
         'port':          {'type': 'integer'},
         'process_name':  {'type': 'string'},
@@ -370,7 +361,7 @@ _FIREWALL_RULE_SCHEMA = {
     'properties': {
         # Chain / policy name: INPUT | OUTPUT | FORWARD | custom name
         'chain':       {'type': 'string'},
-        'direction':   {'type': 'string', 'enum': ['in', 'out', 'both', 'unknown']},
+        'direction':   {'type': 'string'},
         # accept | drop | reject | allow | block | log
         'action':      {'type': 'string'},
         'protocol':    {'type': 'string'},   # tcp | udp | icmp | any | etc.

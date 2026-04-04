@@ -173,7 +173,8 @@ const openSections = []
 function fmtVal(v) {
   if (v === null || v === undefined) return ''
   if (typeof v === 'boolean') return v ? 'Yes' : 'No'
-  if (Array.isArray(v)) return v.join(', ')
+  if (Array.isArray(v)) return v.map(fmtVal).join(', ')
+  if (typeof v === 'object') return JSON.stringify(v, null, 2)
   return String(v)
 }
 

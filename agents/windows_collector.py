@@ -39,10 +39,10 @@ DEFAULT_AGENT_PORT = 9322
 
 # ---------------------------------------------------------------------------
 # Config file
-# The agent reads token (and optionally port) from isotopeiq-agent.conf.
+# The agent reads server and port from isotopeiq-agent.conf.
 # Checked in order: next to the binary, then %PROGRAMDATA%\IsotopeIQ\agent.conf.
 # Format (key=value, one per line, # comments ignored):
-#   token=<hex>
+#   server=http://192.168.1.10:8000
 #   port=9322
 # ---------------------------------------------------------------------------
 
@@ -1373,10 +1373,33 @@ def collect():
     return output
 
 
-def _make_handler(token):
-    """Return an HTTPRequestHandler class bound to the given shared secret."""
+def _resolve_server_ips(server_url):
+    """Return the set of IPs the satellite hostname resolves to, or empty set if unset."""
+    if not server_url:
+        return set()
+    try:
+        try:
+            from urllib.parse import urlparse
+        except ImportError:
+            from urlparse import urlparse
+        import socket
+        host = urlparse(server_url).hostname or server_url
+        return set(r[4][0] for r in socket.getaddrinfo(host, None))
+    except Exception:
+        return set()
+
+
+def _make_handler(allowed_ips):
+    """Return an HTTPRequestHandler class that only serves requests from allowed_ips."""
     class AgentHandler(BaseHTTPRequestHandler):
         def do_GET(self):
+            if allowed_ips and self.client_address[0] not in allowed_ips:
+                self.send_response(403)
+                self.send_header('Content-Type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'Forbidden')
+                return
+
             if self.path != '/collect':
                 self.send_response(404)
                 self.send_header('Content-Type', 'text/plain')
@@ -1405,21 +1428,22 @@ def main():
             help='Run as a persistent HTTP server instead of printing to stdout')
         parser.add_argument('--port', type=int, default=DEFAULT_AGENT_PORT,
             help='TCP port to listen on in serve mode (default: %(default)s)')
-        parser.add_argument('--token', default='',
-            help='Shared secret for X-Agent-Token')
         args = parser.parse_args()
     else:
         class args(object):
             serve = '--serve' in sys.argv
             port = DEFAULT_AGENT_PORT
-            token = ''
         for i, a in enumerate(sys.argv[1:], 1):
-            if a == '--port'  and i + 1 < len(sys.argv): args.port  = int(sys.argv[i + 1])
-            if a == '--token' and i + 1 < len(sys.argv): args.token = sys.argv[i + 1]
+            if a == '--port' and i + 1 < len(sys.argv): args.port = int(sys.argv[i + 1])
 
     if args.serve:
-        token = args.token or _read_config().get('token', '')
-        server = HTTPServer(('0.0.0.0', args.port), _make_handler(token))
+        cfg = _read_config()
+        allowed_ips = _resolve_server_ips(cfg.get('server', ''))
+        if allowed_ips:
+            sys.stderr.write('IsotopeIQ agent: only accepting connections from {0}\n'.format(', '.join(sorted(allowed_ips))))
+        else:
+            sys.stderr.write('IsotopeIQ agent: WARNING — no server= in config, accepting connections from any host\n')
+        server = HTTPServer(('0.0.0.0', args.port), _make_handler(allowed_ips))
         sys.stderr.write('IsotopeIQ agent listening on 0.0.0.0:{0}\n'.format(args.port))
         try:
             server.serve_forever()

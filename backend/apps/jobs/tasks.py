@@ -84,12 +84,24 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
     )
 
     if policy.collection_method == 'script':
+        config_error = None
         if not policy.script_package:
-            raise ValueError(f'Policy {policy_id} uses Script Execution but has no Collection Profile assigned.')
-        if not policy.script_package.collection_script:
-            raise ValueError(f'Policy {policy_id}: assigned Collection Profile has no collection script.')
-        if not policy.script_package.parser_script:
-            raise ValueError(f'Policy {policy_id}: assigned Collection Profile has no parser script.')
+            config_error = 'Policy misconfigured: no Collection Profile assigned.'
+        elif not policy.script_package.collection_script:
+            config_error = 'Policy misconfigured: Collection Profile has no collection script.'
+        elif not policy.script_package.parser_script:
+            config_error = 'Policy misconfigured: Collection Profile has no parser script.'
+        if config_error:
+            job = Job.objects.create(
+                policy=policy,
+                triggered_by=triggered_by,
+                status='failed',
+                started_at=timezone.now(),
+                finished_at=timezone.now(),
+                celery_task_id=self.request.id or '',
+            )
+            logger.error('run_policy: %s (policy_id=%s, job_id=%s)', config_error, policy_id, job.id)
+            return
 
     if policy.collection_method == 'agent':
         candidates = list(policy.devices.filter(is_active=True, connection_type='agent'))
@@ -176,14 +188,6 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
             port = device.agent_port or 9322
             url = 'http://{host}:{port}/collect'.format(host=device.hostname, port=port)
             req = Request(url)  # nosec — internal network, known agent endpoint
-            token_val = str(device.agent_token) if device.agent_token else ''
-            import logging as _logging
-            _logging.getLogger(__name__).warning(
-                'run_policy agent: device=%s token_len=%d token_prefix=%s url=%s',
-                device.id, len(token_val), token_val[:8] if token_val else '(empty)', url
-            )
-            if token_val:
-                req.add_header('X-Agent-Token', token_val)
             with urlopen(req, timeout=30) as resp:  # noqa: S310
                 raw = resp.read().decode('utf-8')
             result.raw_output = raw
@@ -249,15 +253,6 @@ def run_agent_pull(self, device_id: int, triggered_by: str = 'manual'):
         port = device.agent_port or 9322
         url = 'http://{host}:{port}/collect'.format(host=device.hostname, port=port)
         req = Request(url)  # nosec — internal network call to a known agent endpoint
-        token_val = str(device.agent_token) if device.agent_token else ''
-        import logging as _logging
-        _logging.getLogger(__name__).warning(
-            'run_agent_pull: device=%s token_len=%d token_prefix=%s url=%s',
-            device.id, len(token_val), token_val[:8] if token_val else '(empty)', url
-        )
-        if token_val:
-            req.add_header('X-Agent-Token', token_val)
-
         with urlopen(req, timeout=30) as resp:  # noqa: S310
             raw = resp.read().decode('utf-8')
 

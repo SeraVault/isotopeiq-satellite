@@ -25,15 +25,9 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 # Parse config file
-AGENT_TOKEN=$(grep -E '^token='  "$CONFIG_FILE" | head -1 | cut -d= -f2-)
-PORT=$(       grep -E '^port='   "$CONFIG_FILE" | head -1 | cut -d= -f2-)
-SERVER=$(     grep -E '^server=' "$CONFIG_FILE" | head -1 | cut -d= -f2-)
+PORT=$(  grep -E '^port='   "$CONFIG_FILE" | head -1 | cut -d= -f2-)
+SERVER=$(grep -E '^server=' "$CONFIG_FILE" | head -1 | cut -d= -f2-)
 PORT="${PORT:-9322}"
-
-if [ -z "$AGENT_TOKEN" ]; then
-    echo "ERROR: 'token' not found in ${CONFIG_FILE}" >&2
-    exit 1
-fi
 
 # Pick the right binary name for this architecture
 ARCH=$(uname -m)
@@ -116,7 +110,7 @@ StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/etc /tmp /var/lib/rpm /var/lib/dpkg /var/cache/apt
+ReadWritePaths=/etc /tmp
 
 [Install]
 WantedBy=multi-user.target

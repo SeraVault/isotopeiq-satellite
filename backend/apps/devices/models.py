@@ -82,11 +82,6 @@ class Device(models.Model):
         null=True,
         help_text='TCP port the IsotopeIQ agent is listening on (default: 9322).',
     )
-    agent_token = EncryptedCharField(
-        max_length=512,
-        blank=True,
-        help_text='Shared secret sent as X-Agent-Token header when pulling from the agent.',
-    )
     # SSH host public key for host verification (base64 encoded).
     host_key = models.TextField(
         blank=True,

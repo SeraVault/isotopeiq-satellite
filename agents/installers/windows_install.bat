@@ -30,20 +30,13 @@ if not exist "!CONFIG_FILE!" (
 )
 
 REM ---- Parse config file ----
-set AGENT_TOKEN=
 set PORT=
 set SERVER=
 for /f "usebackq tokens=1,* delims==" %%a in ("!CONFIG_FILE!") do (
-    if "%%a"=="token"  set AGENT_TOKEN=%%b
     if "%%a"=="port"   set PORT=%%b
     if "%%a"=="server" set SERVER=%%b
 )
 if "!PORT!"=="" set PORT=9322
-
-if "!AGENT_TOKEN!"=="" (
-    echo ERROR: 'token' not found in !CONFIG_FILE!
-    exit /b 1
-)
 
 REM ---- Locate or download binary ----
 set BINARY=%~2

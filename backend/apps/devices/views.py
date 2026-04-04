@@ -27,40 +27,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
     filterset_fields = ['connection_type', 'is_active']
     ordering_fields = ['name', 'created_at']
 
-    def perform_create(self, serializer):
-        import secrets
-        data = serializer.validated_data
-        plaintext_token = None
-        if data.get('connection_type') == 'agent' and not data.get('agent_token'):
-            plaintext_token = secrets.token_hex(32)
-            instance = serializer.save(agent_token=plaintext_token)
-        else:
-            instance = serializer.save()
-        # Stash plaintext token so create() can include it in the response.
-        instance._plaintext_agent_token = plaintext_token
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        instance = serializer.instance
-        headers = self.get_success_headers(serializer.data)
-        response_data = serializer.data
-        if getattr(instance, '_plaintext_agent_token', None):
-            response_data = dict(response_data)
-            response_data['agent_token'] = instance._plaintext_agent_token
-        return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
-
-    @action(detail=True, methods=['post'], url_path='regenerate-token')
-    def regenerate_token(self, request, pk=None):
-        """Generate a new agent token for this device and return it in plaintext (only time it is readable)."""
-        import secrets
-        device = self.get_object()
-        plaintext_token = secrets.token_hex(32)
-        device.agent_token = plaintext_token
-        device.save(update_fields=['agent_token', 'updated_at'])
-        return Response({'agent_token': plaintext_token})
-
     @action(detail=True, methods=['get'], url_path='agent-bundle')
     def agent_bundle(self, request, pk=None):
         """
@@ -93,14 +59,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
             else getattr(django_settings, 'SATELLITE_URL', 'http://localhost:8000').rstrip('/')
         )
 
-        token = device.agent_token or ''
         port  = device.agent_port or 9322
-        import logging as _logging
-        _logging.getLogger(__name__).warning(
-            'agent_bundle: device=%s token_len=%d token_prefix=%s',
-            device.id, len(token), token[:8] if token else '(empty)'
-        )
-        config_content = f"server={server_url}\ntoken={token}\nport={port}\n"
+        config_content = f"server={server_url}\nport={port}\n"
 
         installer_path = Path('/agents/installers') / installer_file
 

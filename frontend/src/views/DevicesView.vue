@@ -196,21 +196,9 @@
                     <v-alert v-if="!deviceForm.id" density="compact" variant="tonal" color="info" rounded="lg" icon="mdi-download" class="text-body-2 w-100">
                       Save the device to generate a token and download the installer bundle.
                     </v-alert>
-                    <div v-else class="d-flex flex-column gap-2 w-100">
-                      <v-select
-                        v-model="deviceForm.bundleOs"
-                        :items="[{ title: 'Linux', value: 'linux' }, { title: 'Windows', value: 'windows' }, { title: 'macOS', value: 'macos' }]"
-                        label="OS"
-                        density="compact"
-                        hide-details
-                      />
-                      <v-btn variant="tonal" color="primary" prepend-icon="mdi-download" @click="downloadBundle(deviceForm.id, deviceForm.bundleOs || 'linux', deviceForm.name)">
-                        Download Installer Bundle
-                      </v-btn>
-                      <v-btn variant="tonal" color="warning" prepend-icon="mdi-refresh" @click="regenerateToken({ id: deviceForm.id, name: deviceForm.name, agent_port: deviceForm.agent_port })">
-                        Regenerate Token &amp; Download
-                      </v-btn>
-                    </div>
+                    <v-btn v-else variant="tonal" color="primary" prepend-icon="mdi-download" @click="openDownloadDialog({ id: deviceForm.id, name: deviceForm.name, agent_port: deviceForm.agent_port })">
+                      Download Agent
+                    </v-btn>
                   </v-col>
                 </template>
               </v-row>
@@ -259,11 +247,6 @@
               Install Agent — {{ tokenDialog.deviceName }}
             </v-card-title>
             <v-card-text>
-              <v-alert type="warning" variant="tonal" density="compact" class="mb-4 text-body-2">
-                This token does <strong>not expire</strong> but will <strong>not be shown again</strong>.
-                Download the installer bundle before closing.
-              </v-alert>
-
               <p class="text-body-2 mb-4">
                 Select your OS, download the bundle (config + installer), extract it, then run the installer.
                 The agent binary is fetched automatically from this server.
@@ -726,8 +709,8 @@ async function saveDevice() {
     } else {
       const created = await devStore.createDevice(payload)
       deviceForm.value.show = false
-      if (created.agent_token) {
-        tokenDialog.value = { show: true, deviceId: created.id, token: created.agent_token, deviceName: created.name, port: created.agent_port ?? 9322, os: 'windows' }
+      if (created.connection_type === 'agent') {
+        tokenDialog.value = { show: true, deviceId: created.id, deviceName: created.name, port: created.agent_port ?? 9322, os: 'windows' }
       }
     }
   } catch (e) {
@@ -735,8 +718,8 @@ async function saveDevice() {
   }
 }
 
-// ── agent token dialog ─────────────────────────────────────────────────────
-const tokenDialog = ref({ show: false, deviceId: null, token: '', deviceName: '', port: 9322, os: 'windows' })
+// ── agent download dialog ──────────────────────────────────────────────────
+const tokenDialog = ref({ show: false, deviceId: null, deviceName: '', port: 9322, os: 'windows' })
 
 function copyToClipboard(text) {
   if (navigator.clipboard) {
@@ -774,13 +757,8 @@ async function downloadBundle(deviceId, os, deviceName) {
   }
 }
 
-async function regenerateToken(device) {
-  try {
-    const { data } = await api.post(`/devices/${device.id}/regenerate-token/`)
-    tokenDialog.value = { show: true, deviceId: device.id, token: data.agent_token, deviceName: device.name, port: device.agent_port ?? 9322, os: 'windows' }
-  } catch (e) {
-    showSnack(false, `Failed to regenerate token: ${e.response?.data?.detail ?? e.message}`)
-  }
+function openDownloadDialog(device) {
+  tokenDialog.value = { show: true, deviceId: device.id, deviceName: device.name, port: device.agent_port ?? 9322, os: 'windows' }
 }
 
 async function removeDevice(id) {

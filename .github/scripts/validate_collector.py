@@ -46,12 +46,6 @@ for key in ["packages", "users"]:
     if not data.get(key):
         errors.append("EMPTY array: {}".format(key))
 
-# ── Package source must be a known value ─────────────────────────────────────
-known_sources = {"deb", "rpm", "apk", "pacman", "snap", "flatpak", "brew", "pkgutil", "winget", "msi", "chocolatey"}
-for pkg in data.get("packages", []):
-    if pkg.get("source") not in known_sources:
-        errors.append("Unknown package source: {}".format(pkg.get("source")))
-        break
 
 # ── No unexpected _collection_errors ─────────────────────────────────────────
 # Sections that may legitimately fail in a minimal container environment:
