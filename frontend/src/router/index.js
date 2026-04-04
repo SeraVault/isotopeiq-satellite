@@ -12,12 +12,14 @@ import AuditLogView from '../views/AuditLogView.vue'
 import VolatileRulesView from '../views/VolatileRulesView.vue'
 import SystemSettingsView from '../views/SystemSettingsView.vue'
 import UsersView from '../views/UsersView.vue'
+import AgentDownloadView from '../views/AgentDownloadView.vue'
 
 const routes = [
   { path: '/login', component: LoginView, meta: { public: true } },
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', component: DashboardView },
   { path: '/devices', component: DevicesView },
+  { path: '/agent-download', component: AgentDownloadView },
   { path: '/scripts', component: ScriptsView },
   { path: '/policies', component: PoliciesView },
   { path: '/jobs', component: JobMonitorView },

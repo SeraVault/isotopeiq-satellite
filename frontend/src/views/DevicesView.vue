@@ -193,12 +193,10 @@
                     <v-text-field v-model.number="deviceForm.agent_port" label="Agent Port" type="number" placeholder="9322" hint="TCP port the agent is listening on" persistent-hint />
                   </v-col>
                   <v-col cols="12" sm="6" class="d-flex align-center">
-                    <v-alert v-if="!deviceForm.id" density="compact" variant="tonal" color="info" rounded="lg" icon="mdi-download" class="text-body-2 w-100">
-                      Save the device to generate a token and download the installer bundle.
+                    <v-alert density="compact" variant="tonal" color="info" rounded="lg" icon="mdi-information-outline" class="text-body-2 w-100">
+                      Download the agent installer from
+                      <router-link to="/agent-download" @click="deviceForm.show = false">Download Agent</router-link>.
                     </v-alert>
-                    <v-btn v-else variant="tonal" color="primary" prepend-icon="mdi-download" @click="openDownloadDialog({ id: deviceForm.id, name: deviceForm.name, agent_port: deviceForm.agent_port })">
-                      Download Agent
-                    </v-btn>
                   </v-col>
                 </template>
               </v-row>
@@ -239,90 +237,25 @@
           </v-card>
         </v-dialog>
 
-        <!-- Agent token reveal dialog -->
-        <v-dialog v-model="tokenDialog.show" max-width="580" persistent>
-          <v-card rounded="lg">
-            <v-card-title class="d-flex align-center gap-2">
-              <v-icon color="primary">mdi-download</v-icon>
-              Install Agent — {{ tokenDialog.deviceName }}
-            </v-card-title>
-            <v-card-text>
-              <p class="text-body-2 mb-4">
-                Select your OS, download the bundle (config + installer), extract it, then run the installer.
-                The agent binary is fetched automatically from this server.
-              </p>
-
-              <v-tabs v-model="tokenDialog.os" density="compact" class="mb-4">
-                <v-tab value="windows">Windows</v-tab>
-                <v-tab value="linux">Linux</v-tab>
-                <v-tab value="macos">macOS</v-tab>
-              </v-tabs>
-
-              <v-window v-model="tokenDialog.os">
-                <v-window-item value="windows">
-                  <v-btn block color="primary" variant="tonal" prepend-icon="mdi-folder-zip"
-                    @click="downloadBundle(tokenDialog.deviceId, 'windows')">
-                    Download isotopeiq-agent-windows.zip
-                  </v-btn>
-                  <p class="text-body-2 text-medium-emphasis mt-3 mb-0">
-                    Extract the ZIP, then run from an elevated command prompt:
-                  </p>
-                  <v-text-field
-                    model-value="windows_install.bat" readonly variant="outlined" density="compact"
-                    style="font-family:monospace" class="mt-2"
-                    append-inner-icon="mdi-content-copy"
-                    @click:append-inner="() => { copyToClipboard('windows_install.bat'); showSnack(true, 'Copied.') }"
-                  />
-                </v-window-item>
-
-                <v-window-item value="linux">
-                  <v-btn block color="primary" variant="tonal" prepend-icon="mdi-folder-zip"
-                    @click="downloadBundle(tokenDialog.deviceId, 'linux')">
-                    Download isotopeiq-agent-linux.zip
-                  </v-btn>
-                  <p class="text-body-2 text-medium-emphasis mt-3 mb-0">
-                    Extract the ZIP, then run as root:
-                  </p>
-                  <v-text-field
-                    model-value="sudo bash linux_install.sh" readonly variant="outlined" density="compact"
-                    style="font-family:monospace" class="mt-2"
-                    append-inner-icon="mdi-content-copy"
-                    @click:append-inner="() => { copyToClipboard('sudo bash linux_install.sh'); showSnack(true, 'Copied.') }"
-                  />
-                </v-window-item>
-
-                <v-window-item value="macos">
-                  <v-btn block color="primary" variant="tonal" prepend-icon="mdi-folder-zip"
-                    @click="downloadBundle(tokenDialog.deviceId, 'macos')">
-                    Download isotopeiq-agent-macos.zip
-                  </v-btn>
-                  <p class="text-body-2 text-medium-emphasis mt-3 mb-0">
-                    Extract the ZIP, then run as root:
-                  </p>
-                  <v-text-field
-                    model-value="sudo bash macos_install.sh" readonly variant="outlined" density="compact"
-                    style="font-family:monospace" class="mt-2"
-                    append-inner-icon="mdi-content-copy"
-                    @click:append-inner="() => { copyToClipboard('sudo bash macos_install.sh'); showSnack(true, 'Copied.') }"
-                  />
-                </v-window-item>
-              </v-window>
-            </v-card-text>
-            <v-divider />
-            <v-card-actions class="pa-3">
-              <v-spacer />
-              <v-btn color="primary" variant="tonal" @click="tokenDialog.show = false">Done</v-btn>
-            </v-card-actions>
-          </v-card>
-        </v-dialog>
-
         <!-- Collect: policy picker dialog -->
         <v-dialog v-model="collectDialog.show" max-width="420">
           <v-card rounded="lg">
             <v-card-title>Collect — {{ collectDialog.device?.name }}</v-card-title>
-            <v-card-subtitle>Select which policy to run</v-card-subtitle>
+            <v-card-subtitle v-if="collectDialog.policies.length">Select which policy to run</v-card-subtitle>
             <v-card-text>
               <div v-if="collectDialog.loading" class="text-medium-emphasis py-2">Loading policies…</div>
+              <template v-else-if="collectDialog.policies.length === 0">
+                <v-alert type="warning" variant="tonal" density="compact" icon="mdi-alert-circle-outline">
+                  <div class="font-weight-medium mb-1">No policies assigned to this device.</div>
+                  <div class="text-body-2">
+                    To collect from this device, create or edit a Policy and add this device to it.
+                    Policies control the collection schedule, scripts, parser, and drift rules.
+                  </div>
+                </v-alert>
+                <v-btn variant="tonal" color="primary" class="mt-4" prepend-icon="mdi-shield-check-outline" to="/policies" @click="collectDialog.show = false">
+                  Go to Policies
+                </v-btn>
+              </template>
               <v-radio-group v-else v-model="collectDialog.policyId" hide-details>
                 <v-radio
                   v-for="p in collectDialog.policies"
@@ -336,7 +269,7 @@
             <v-card-actions>
               <v-spacer />
               <v-btn @click="collectDialog.show = false">Cancel</v-btn>
-              <v-btn color="primary" :disabled="!collectDialog.policyId" :loading="collectDialog.running" @click="submitCollect">Run</v-btn>
+              <v-btn v-if="collectDialog.policies.length" color="primary" :disabled="!collectDialog.policyId" :loading="collectDialog.running" @click="submitCollect">Run</v-btn>
             </v-card-actions>
           </v-card>
         </v-dialog>
@@ -707,58 +640,12 @@ async function saveDevice() {
       await devStore.updateDevice(deviceForm.value.id, payload)
       deviceForm.value.show = false
     } else {
-      const created = await devStore.createDevice(payload)
+      await devStore.createDevice(payload)
       deviceForm.value.show = false
-      if (created.connection_type === 'agent') {
-        tokenDialog.value = { show: true, deviceId: created.id, deviceName: created.name, port: created.agent_port ?? 9322, os: 'windows' }
-      }
     }
   } catch (e) {
     deviceForm.value.error = JSON.stringify(e.response?.data ?? 'Save failed.')
   }
-}
-
-// ── agent download dialog ──────────────────────────────────────────────────
-const tokenDialog = ref({ show: false, deviceId: null, deviceName: '', port: 9322, os: 'windows' })
-
-function copyToClipboard(text) {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text)
-  } else {
-    const el = document.createElement('textarea')
-    el.value = text
-    el.style.position = 'fixed'
-    el.style.opacity = '0'
-    document.body.appendChild(el)
-    el.focus()
-    el.select()
-    document.execCommand('copy')
-    document.body.removeChild(el)
-  }
-}
-
-async function downloadBundle(deviceId, os, deviceName) {
-  try {
-    const { data } = await api.get(`/devices/${deviceId}/agent-bundle/`, {
-      params: { os },
-      responseType: 'blob',
-    })
-    const name = (deviceName || tokenDialog.value.deviceName || deviceId).replace(/[^\w\-.]/g, '_')
-    const url = URL.createObjectURL(data)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `isotopeiq-agent-${name}-${os}.zip`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  } catch {
-    showSnack(false, 'Bundle download failed.')
-  }
-}
-
-function openDownloadDialog(device) {
-  tokenDialog.value = { show: true, deviceId: device.id, deviceName: device.name, port: device.agent_port ?? 9322, os: 'windows' }
 }
 
 async function removeDevice(id) {
@@ -770,28 +657,11 @@ const collectDialog = ref({ show: false, device: null, policies: [], policyId: n
 
 async function collect(device) {
   // Agent Pull devices: no policy selection — satellite calls the agent directly.
-  if (device.connection_type === 'agent') {
-    collecting.value = device.id
-    try {
-      await api.post('/jobs/trigger-agent-pull/', { device_id: device.id })
-      showSnack(true, `✓ ${device.name}: Agent pull triggered — check Job Monitor for results.`)
-    } catch (e) {
-      showSnack(false, `✗ ${device.name}: ${e.response?.data?.detail ?? 'Failed to trigger agent pull.'}`)
-    } finally {
-      collecting.value = null
-    }
-    return
-  }
-
   collecting.value = device.id
   collectDialog.value = { show: false, device, policies: [], policyId: null, loading: true, running: false, error: '' }
   try {
     const { data } = await api.get('/policies/', { params: { devices: device.id, is_active: true, page_size: 500 } })
     const policies = data.results ?? data
-    if (policies.length === 0) {
-      showSnack(false, `✗ ${device.name}: No active policies assigned.`)
-      return
-    }
     collectDialog.value.policies = policies
     collectDialog.value.policyId = policies[0].id
     collectDialog.value.loading = false

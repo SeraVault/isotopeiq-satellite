@@ -27,75 +27,37 @@ class DeviceViewSet(viewsets.ModelViewSet):
     filterset_fields = ['connection_type', 'is_active']
     ordering_fields = ['name', 'created_at']
 
+    @action(detail=False, methods=['get'], url_path='agent-bundle')
+    def agent_bundle_generic(self, request):
+        """
+        Return a ZIP for the given OS using the system-wide server URL and default port.
+        Query params: ?os=windows|linux|macos (default linux), ?port=9322 (optional override)
+        """
+        from django.http import HttpResponse
+        os_name = request.query_params.get('os', 'linux')
+        port    = int(request.query_params.get('port', 9322))
+        return HttpResponse(
+            _build_agent_bundle(os_name, port),
+            content_type='application/zip',
+            headers={'Content-Disposition': f'attachment; filename="isotopeiq-agent-{os_name}.zip"'},
+        )
+
     @action(detail=True, methods=['get'], url_path='agent-bundle')
     def agent_bundle(self, request, pk=None):
         """
-        Return a ZIP containing isotopeiq-agent.conf and the installer script
-        for the requested OS.  Query param: ?os=windows|linux|macos (default linux).
+        Return a ZIP using the device's configured agent_port.
+        Query param: ?os=windows|linux|macos (default linux).
         """
-        import io
-        import zipfile
-        from pathlib import Path
-        from django.http import HttpResponse
-
-        from django.conf import settings as django_settings
-        from apps.notifications.models import SystemSettings
-
-        device = self.get_object()
-
-        os_name = request.query_params.get('os', 'linux')
-        installer_map = {
-            'windows': 'windows_install.bat',
-            'linux':   'linux_install.sh',
-            'macos':   'macos_install.sh',
-        }
-        installer_file = installer_map.get(os_name, 'linux_install.sh')
-
-        # Use the admin-configured satellite URL; fall back to the env/settings value.
-        sys_settings = SystemSettings.objects.first()
-        server_url = (
-            sys_settings.satellite_url.rstrip('/')
-            if sys_settings and sys_settings.satellite_url
-            else getattr(django_settings, 'SATELLITE_URL', 'http://localhost:8000').rstrip('/')
-        )
-
-        port  = device.agent_port or 9322
-        config_content = f"server={server_url}\nport={port}\n"
-
-        installer_path = Path('/agents/installers') / installer_file
-
-        # Binaries to include per OS (all must live in /agents/)
-        binary_map = {
-            'windows': ['windows_collector.exe'],
-            'linux':   ['linux_collector_amd64', 'linux_collector_i686'],
-            'macos':   ['macos_collector'],
-        }
-        binaries = binary_map.get(os_name, [])
-
-        now = datetime.now().timetuple()[:6]
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(zipfile.ZipInfo('isotopeiq-agent.conf', now), config_content)
-            if installer_path.is_file():
-                info = zipfile.ZipInfo(installer_file, now)
-                info.compress_type = zipfile.ZIP_DEFLATED
-                info.external_attr = 0o755 << 16  # chmod +x
-                zf.writestr(info, installer_path.read_bytes())
-            for binary in binaries:
-                binary_path = Path('/agents') / binary
-                if binary_path.is_file():
-                    info = zipfile.ZipInfo(binary, now)
-                    info.compress_type = zipfile.ZIP_DEFLATED
-                    info.external_attr = 0o755 << 16  # chmod +x
-                    zf.writestr(info, binary_path.read_bytes())
-        buf.seek(0)
-
         import re
+        from django.http import HttpResponse
+        device  = self.get_object()
+        os_name = request.query_params.get('os', 'linux')
         safe_name = re.sub(r'[^\w\-.]', '_', device.name)
-        response = HttpResponse(buf.read(), content_type='application/zip')
-        zip_name  = f"isotopeiq-agent-{safe_name}-{os_name}.zip"
-        response['Content-Disposition'] = f'attachment; filename="{zip_name}"'
-        return response
+        return HttpResponse(
+            _build_agent_bundle(os_name, device.agent_port or 9322),
+            content_type='application/zip',
+            headers={'Content-Disposition': f'attachment; filename="isotopeiq-agent-{safe_name}-{os_name}.zip"'},
+        )
 
     @action(detail=True, methods=['post'])
     def collect(self, request, pk=None):
@@ -263,6 +225,56 @@ def _winrm_configure_envelope(collector):
         )
     except Exception:
         pass
+
+
+def _build_agent_bundle(os_name, port):
+    """Build and return the raw bytes of an agent installer ZIP."""
+    import io
+    import zipfile
+    from pathlib import Path
+    from django.conf import settings as django_settings
+    from apps.notifications.models import SystemSettings
+
+    sys_settings = SystemSettings.objects.first()
+    server_url = (
+        sys_settings.satellite_url.rstrip('/')
+        if sys_settings and sys_settings.satellite_url
+        else getattr(django_settings, 'SATELLITE_URL', 'http://localhost:8000').rstrip('/')
+    )
+
+    installer_map = {
+        'windows': 'windows_install.bat',
+        'linux':   'linux_install.sh',
+        'macos':   'macos_install.sh',
+    }
+    binary_map = {
+        'windows': ['windows_collector.exe'],
+        'linux':   ['linux_collector_amd64', 'linux_collector_i686'],
+        'macos':   ['macos_collector'],
+    }
+
+    installer_file = installer_map.get(os_name, 'linux_install.sh')
+    installer_path = Path('/agents/installers') / installer_file
+    config_content = f"server={server_url}\nport={port}\n"
+
+    now = datetime.now().timetuple()[:6]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(zipfile.ZipInfo('isotopeiq-agent.conf', now), config_content)
+        if installer_path.is_file():
+            info = zipfile.ZipInfo(installer_file, now)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o755 << 16
+            zf.writestr(info, installer_path.read_bytes())
+        for binary in binary_map.get(os_name, []):
+            binary_path = Path('/agents') / binary
+            if binary_path.is_file():
+                info = zipfile.ZipInfo(binary, now)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o755 << 16
+                zf.writestr(info, binary_path.read_bytes())
+    buf.seek(0)
+    return buf.read()
 
 
 
