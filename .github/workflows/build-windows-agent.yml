@@ -92,8 +92,8 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
           git add agents/windows_collector.exe
           git diff --cached --quiet && echo "No binary changes." || \
             git commit -m "chore: rebuild windows agent binary [skip ci]"
-          git pull --rebase origin main
           git push
