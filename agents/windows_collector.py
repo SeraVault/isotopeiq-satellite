@@ -75,7 +75,7 @@ def _read_config():
 # Helpers
 # ---------------------------------------------------------------------------
 
-def run(cmd, timeout=30):
+def run(cmd, timeout=60):
     """Run a shell command, return stdout as a string. Never raises."""
     try:
         proc = subprocess.Popen(
@@ -84,13 +84,13 @@ def run(cmd, timeout=30):
             stderr=subprocess.PIPE,
             shell=True,
         )
-        stdout, _ = proc.communicate()
+        stdout, _ = proc.communicate(timeout=timeout)
         return stdout.decode('utf-8', errors='replace').strip()
     except Exception:
         return ''
 
 
-def run_lines(cmd, timeout=30):
+def run_lines(cmd, timeout=60):
     """Run a command and return non-empty lines."""
     return [ln for ln in run(cmd, timeout).splitlines() if ln.strip()]
 

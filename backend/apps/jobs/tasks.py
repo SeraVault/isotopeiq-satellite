@@ -188,7 +188,7 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
             port = device.agent_port or 9322
             url = 'http://{host}:{port}/collect'.format(host=device.hostname, port=port)
             req = Request(url)  # nosec — internal network, known agent endpoint
-            with urlopen(req, timeout=30) as resp:  # noqa: S310
+            with urlopen(req, timeout=120) as resp:  # noqa: S310
                 raw = resp.read().decode('utf-8')
             result.raw_output = raw
             parsed = json.loads(raw)
@@ -253,7 +253,7 @@ def run_agent_pull(self, device_id: int, triggered_by: str = 'manual'):
         port = device.agent_port or 9322
         url = 'http://{host}:{port}/collect'.format(host=device.hostname, port=port)
         req = Request(url)  # nosec — internal network call to a known agent endpoint
-        with urlopen(req, timeout=30) as resp:  # noqa: S310
+        with urlopen(req, timeout=120) as resp:  # noqa: S310
             raw = resp.read().decode('utf-8')
 
         result.raw_output = raw
