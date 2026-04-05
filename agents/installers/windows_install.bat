@@ -14,8 +14,11 @@ REM ============================================================
 setlocal EnableDelayedExpansion
 
 REM Port the agent will listen on.  Substituted automatically by the
-REM IsotopeIQ server when generating the installer bundle.
+REM IsotopeIQ server when generating the installer bundle; you can override it here.
 set PORT=9322
+set /p PORT_INPUT="Port to listen on [%PORT%]: "
+if not "!PORT_INPUT!"=="" set PORT=!PORT_INPUT!
+echo Using port: %PORT%
 
 REM ---- Locate binary ----
 set BINARY=%~1

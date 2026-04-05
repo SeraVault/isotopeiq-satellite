@@ -10,8 +10,14 @@
 set -euo pipefail
 
 # Port the agent will listen on.  Substituted automatically by the IsotopeIQ
-# server when generating the installer bundle.
-PORT=9322
+# server when generating the installer bundle; you can override it here.
+_DEFAULT_PORT=9322
+read -r -p "Port to listen on [${_DEFAULT_PORT}]: " _INPUT_PORT
+PORT="${_INPUT_PORT:-${_DEFAULT_PORT}}"
+if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+    echo "ERROR: Invalid port '${PORT}'." >&2
+    exit 1
+fi
 
 # Pick the right binary name for this architecture
 ARCH=$(uname -m)

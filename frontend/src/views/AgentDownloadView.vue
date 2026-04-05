@@ -110,17 +110,6 @@
             </v-expansion-panel-text>
           </v-expansion-panel>
 
-          <v-expansion-panel title="Using a non-default port?">
-            <v-expansion-panel-text>
-              <p class="text-body-2 mb-3">
-                All agents default to port <strong>9322</strong>. If you need a different port,
-                enter it below before downloading. Make sure the matching device in IsotopeIQ
-                has the same port configured under <em>Agent Port</em>.
-              </p>
-              <v-text-field v-model.number="port" label="Agent Port" type="number"
-                variant="outlined" density="compact" style="max-width:160px" />
-            </v-expansion-panel-text>
-          </v-expansion-panel>
         </v-expansion-panels>
       </v-card-text>
     </v-card>
@@ -136,7 +125,6 @@ import { ref } from 'vue'
 import api from '../api'
 
 const os          = ref('windows')
-const port        = ref(9322)
 
 const airgapCommands = {
   'Windows':        'windows_collector.exe > baseline.json',
@@ -170,7 +158,7 @@ async function download(osName) {
   downloading.value = true
   try {
     const { data } = await api.get('/devices/agent-bundle/', {
-      params: { os: osName, port: port.value },
+      params: { os: osName },
       responseType: 'blob',
     })
     const url = URL.createObjectURL(data)
