@@ -649,12 +649,28 @@ async function removeDevice(id) {
 const collectDialog = ref({ show: false, device: null, policies: [], policyId: null, loading: false, running: false, error: '' })
 
 async function collect(device) {
-  // Agent Pull devices: no policy selection — satellite calls the agent directly.
   collecting.value = device.id
+  // Agent Pull devices: call trigger-agent-pull directly — no policy needed.
+  if (device.connection_type === 'agent') {
+    try {
+      const { data } = await api.post('/jobs/trigger-agent-pull/', { device_id: device.id })
+      showSnack(true, `✓ ${device.name}: ${data.detail}`)
+    } catch (e) {
+      showSnack(false, `✗ ${device.name}: ${e.response?.data?.detail ?? 'Failed to start agent pull.'}`)
+    } finally {
+      collecting.value = null
+    }
+    return
+  }
   collectDialog.value = { show: false, device, policies: [], policyId: null, loading: true, running: false, error: '' }
   try {
     const { data } = await api.get('/policies/', { params: { devices: device.id, is_active: true, page_size: 500 } })
     const policies = data.results ?? data
+    if (!policies.length) {
+      collectDialog.value.loading = false
+      collectDialog.value.show = true
+      return
+    }
     collectDialog.value.policies = policies
     collectDialog.value.policyId = policies[0].id
     collectDialog.value.loading = false

@@ -853,6 +853,21 @@ def strip_volatile(data: dict, spec: dict | None = None) -> dict:
                 item for item in section_data
                 if not (isinstance(item, dict) and item.get(key_field) in exclude_set)
             ]
+            section_data = data[section]
+
+        # Exclude entire items whose key field starts with a volatile prefix
+        # (e.g. net.ipv4.conf.<iface>.* — per-interface dynamic sysctl keys)
+        if 'exclude_key_prefixes' in spec_entry and isinstance(section_data, list):
+            cfg = spec_entry['exclude_key_prefixes']
+            key_field = cfg['key_field']
+            prefixes  = cfg['prefixes']
+            data[section] = [
+                item for item in section_data
+                if not (
+                    isinstance(item, dict)
+                    and any(str(item.get(key_field, '')).startswith(p) for p in prefixes)
+                )
+            ]
 
     return data
 

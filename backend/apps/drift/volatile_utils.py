@@ -33,6 +33,11 @@ def build_spec_from_rules(rules) -> dict:
             s['exclude_keys']['values'].add(rule.field_name)
         elif rule.spec_type == 'exclude_section':
             s['exclude_section'] = True
+        elif rule.spec_type == 'key_prefix':
+            key_field = rule.aux or 'key'
+            if 'exclude_key_prefixes' not in s:
+                s['exclude_key_prefixes'] = {'key_field': key_field, 'prefixes': set()}
+            s['exclude_key_prefixes']['prefixes'].add(rule.field_name)
     return spec
 
 

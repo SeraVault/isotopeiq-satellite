@@ -26,7 +26,6 @@ else
 fi
 
 INSTALL_PATH="/usr/local/bin/isotopeiq-agent"
-CONFIG_DEST="/etc/isotopeiq-agent.conf"
 PLIST_PATH="/Library/LaunchDaemons/com.isotopeiq.agent.plist"
 LOG_PATH="/var/log/isotopeiq-agent.log"
 
@@ -39,11 +38,6 @@ echo "Installing binary → ${INSTALL_PATH}"
 cp -f "$BINARY" "$INSTALL_PATH"
 chmod 700 "$INSTALL_PATH"
 chown root:wheel "$INSTALL_PATH"
-
-echo "Installing config → ${CONFIG_DEST}"
-cp -f "$CONFIG_FILE" "$CONFIG_DEST"
-chmod 600 "$CONFIG_DEST"
-chown root:wheel "$CONFIG_DEST"
 
 echo "Writing launchd plist → ${PLIST_PATH}"
 cat > "$PLIST_PATH" <<PLIST

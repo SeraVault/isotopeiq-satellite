@@ -31,12 +31,14 @@ class VolatileFieldRule(models.Model):
     SPEC_NESTED_FIELD    = 'nested_field'
     SPEC_EXCLUDE_KEY     = 'exclude_key'
     SPEC_EXCLUDE_SECTION = 'exclude_section'
+    SPEC_KEY_PREFIX      = 'key_prefix'
     SPEC_CHOICES = [
         (SPEC_SECTION_FIELD,   'Section field — drop from section dict'),
         (SPEC_ITEM_FIELD,      'Item field — drop from each array item'),
         (SPEC_NESTED_FIELD,    'Nested field — drop from nested array items'),
         (SPEC_EXCLUDE_KEY,     'Exclude item by key value'),
         (SPEC_EXCLUDE_SECTION, 'Exclude section — omit entire section from comparison'),
+        (SPEC_KEY_PREFIX,      'Exclude items whose key starts with prefix'),
     ]
 
     section     = models.CharField(max_length=100)

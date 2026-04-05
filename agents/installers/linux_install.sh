@@ -34,7 +34,6 @@ else
 fi
 
 INSTALL_PATH="/usr/local/bin/isotopeiq-agent"
-CONFIG_DEST="/etc/isotopeiq-agent.conf"
 UNIT_PATH="/etc/systemd/system/isotopeiq-agent.service"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -60,11 +59,6 @@ cp -f "$BINARY" "$INSTALL_PATH"
 chmod 700 "$INSTALL_PATH"
 chown root:root "$INSTALL_PATH"
 
-echo "Installing config → ${CONFIG_DEST}"
-cp -f "$CONFIG_FILE" "$CONFIG_DEST"
-chmod 600 "$CONFIG_DEST"
-chown root:root "$CONFIG_DEST"
-
 echo "Writing systemd unit → ${UNIT_PATH}"
 cat > "$UNIT_PATH" <<UNIT
 [Unit]
@@ -83,7 +77,7 @@ StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/etc /tmp
+ReadWritePaths=/tmp
 
 [Install]
 WantedBy=multi-user.target

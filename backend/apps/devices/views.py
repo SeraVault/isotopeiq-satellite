@@ -152,15 +152,14 @@ def _run_connection_test(connection_type, hostname, port, credential,
 
     if connection_type == 'agent':
         from urllib.request import urlopen, Request
-        from urllib.error import URLError
         agent_port = port or 9322
-        url = f'http://{hostname}:{agent_port}/collect'
+        url = f'http://{hostname}:{agent_port}/health'
         try:
             req = Request(url)
-            with urlopen(req, timeout=10) as resp:
+            with urlopen(req, timeout=5) as resp:
                 if resp.status == 200:
                     return Response(
-                        {'success': True, 'detail': f'Agent reachable at {hostname}:{agent_port} — responded HTTP 200.'},
+                        {'success': True, 'detail': f'Agent reachable at {hostname}:{agent_port}.'},
                         status=status.HTTP_200_OK,
                     )
                 return Response(
