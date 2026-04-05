@@ -4,66 +4,26 @@ REM IsotopeIQ Windows Agent Installer
 REM Registers the agent as a scheduled task that runs at system
 REM startup under SYSTEM — no third-party dependencies required.
 REM
-REM Workflow:
-REM   1. Add the device in IsotopeIQ and download isotopeiq-agent.conf.
-REM   2. Place isotopeiq-agent.conf in the same folder as this script.
-REM   3. Run from an elevated (Administrator) command prompt:
-REM        windows_install.bat [config-file] [path-to-binary]
+REM Usage (from an elevated Administrator command prompt):
+REM   windows_install.bat [path-to-binary]
 REM
-REM Arguments:
-REM   config-file    : path to isotopeiq-agent.conf
-REM                    (default: isotopeiq-agent.conf in the script directory)
-REM   path-to-binary : path to windows_collector.exe
-REM                    (default: windows_collector.exe in the script directory)
+REM The binary is included in the ZIP downloaded from IsotopeIQ.
+REM Pass an explicit path only if placing the binary elsewhere.
 REM ============================================================
 
 setlocal EnableDelayedExpansion
 
-REM ---- Locate config file ----
-set CONFIG_FILE=%~1
-if "!CONFIG_FILE!"=="" set CONFIG_FILE=%~dp0isotopeiq-agent.conf
+REM Port the agent will listen on.  Substituted automatically by the
+REM IsotopeIQ server when generating the installer bundle.
+set PORT=9322
 
-if not exist "!CONFIG_FILE!" (
-    echo ERROR: Config file not found: !CONFIG_FILE!
-    echo Download isotopeiq-agent.conf from IsotopeIQ and place it alongside this script.
-    exit /b 1
-)
-
-REM ---- Parse config file ----
-set PORT=
-set SERVER=
-for /f "usebackq tokens=1,* delims==" %%a in ("!CONFIG_FILE!") do (
-    if "%%a"=="port"   set PORT=%%b
-    if "%%a"=="server" set SERVER=%%b
-)
-if "!PORT!"=="" set PORT=9322
-
-REM ---- Locate or download binary ----
-set BINARY=%~2
-set CLEANUP_BIN=0
+REM ---- Locate binary ----
+set BINARY=%~1
 if "!BINARY!"=="" (
     if exist "%~dp0windows_collector.exe" (
         set BINARY=%~dp0windows_collector.exe
-    ) else if not "!SERVER!"=="" (
-        echo Downloading windows_collector.exe from !SERVER!...
-        set DOWNLOAD_TMP=%TEMP%\isotopeiq_agent_dl.exe
-        powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-            "$url = '!SERVER!/api/agents/windows_collector.exe';" ^
-            "$out = '!DOWNLOAD_TMP!';" ^
-            "(New-Object System.Net.WebClient).DownloadFile($url, $out);" ^
-            "$infoJson = (New-Object System.Net.WebClient).DownloadString('!SERVER!/api/agents/windows_collector.exe/info');" ^
-            "$info = ConvertFrom-Json $infoJson;" ^
-            "$actual = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower();" ^
-            "if ($actual -ne $info.sha256) { Remove-Item $out -Force; throw ('SHA-256 mismatch: expected ' + $info.sha256 + ', got ' + $actual) }"
-        if errorlevel 1 (
-            echo ERROR: Binary download or SHA-256 verification failed.
-            exit /b 1
-        )
-        echo SHA-256 verified.
-        set BINARY=!DOWNLOAD_TMP!
-        set CLEANUP_BIN=1
     ) else (
-        echo ERROR: Binary not found locally and no 'server' in !CONFIG_FILE! to download from.
+        echo ERROR: Binary not found. Place windows_collector.exe alongside this script.
         exit /b 1
     )
 )
@@ -71,7 +31,6 @@ if "!BINARY!"=="" (
 set TASK_NAME=IsotopeIQAgent
 set INSTALL_DIR=C:\Program Files\IsotopeIQ
 set INSTALL_PATH=%INSTALL_DIR%\isotopeiq-agent.exe
-set CONFIG_DEST=C:\ProgramData\IsotopeIQ\agent.conf
 set LOG_DIR=C:\ProgramData\IsotopeIQ\logs
 
 REM ---- Stop and remove any existing installation ----
@@ -88,15 +47,6 @@ REM ---- Copy binary ----
 if not exist "%INSTALL_DIR%\" mkdir "%INSTALL_DIR%"
 echo Copying binary to %INSTALL_PATH%
 copy /Y "!BINARY!" "%INSTALL_PATH%" >nul
-
-REM ---- Install config file ----
-if not exist "C:\ProgramData\IsotopeIQ\" mkdir "C:\ProgramData\IsotopeIQ"
-REM Reset ACL before copying so reinstalls can overwrite a previously locked config
-if exist "%CONFIG_DEST%" icacls "%CONFIG_DEST%" /reset >nul 2>&1
-echo Installing config to %CONFIG_DEST%
-copy /Y "!CONFIG_FILE!" "%CONFIG_DEST%" >nul
-REM Restrict read access to SYSTEM and Administrators only
-icacls "%CONFIG_DEST%" /inheritance:r /grant:r "SYSTEM:(R)" "Administrators:(R)" >nul
 
 REM ---- Create log directory ----
 if not exist "%LOG_DIR%\" mkdir "%LOG_DIR%"
@@ -134,8 +84,6 @@ netsh advfirewall firewall add rule ^
 REM ---- Start immediately without requiring a reboot ----
 echo Starting %TASK_NAME%...
 schtasks /run /tn "%TASK_NAME%"
-
-if "!CLEANUP_BIN!"=="1" del /f /q "!DOWNLOAD_TMP!" >nul 2>&1
 
 echo.
 echo Done.  Agent listening on 0.0.0.0:!PORT!

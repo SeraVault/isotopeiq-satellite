@@ -233,15 +233,6 @@ def _build_agent_bundle(os_name, port):
     import io
     import zipfile
     from pathlib import Path
-    from django.conf import settings as django_settings
-    from apps.notifications.models import SystemSettings
-
-    sys_settings = SystemSettings.objects.first()
-    server_url = (
-        sys_settings.satellite_url.rstrip('/')
-        if sys_settings and sys_settings.satellite_url
-        else getattr(django_settings, 'SATELLITE_URL', 'http://localhost:8000').rstrip('/')
-    )
 
     installer_map = {
         'windows': 'windows_install.bat',
@@ -254,20 +245,25 @@ def _build_agent_bundle(os_name, port):
         'macos':   ['macos_collector'],
     }
 
+    from django.conf import settings as django_settings
     agents_dir = Path(os.environ.get('AGENTS_DIR', str(django_settings.BASE_DIR.parent / 'agents')))
     installer_file = installer_map.get(os_name, 'linux_install.sh')
     installer_path = agents_dir / 'installers' / installer_file
-    config_content = f"server={server_url}\nport={port}\n"
 
     now = datetime.now().timetuple()[:6]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(zipfile.ZipInfo('isotopeiq-agent.conf', now), config_content)
         if installer_path.is_file():
+            # Substitute the PORT value in the installer script
+            installer_content = installer_path.read_text(encoding='utf-8')
+            if os_name == 'windows':
+                installer_content = installer_content.replace('set PORT=9322', f'set PORT={port}')
+            else:
+                installer_content = installer_content.replace('PORT=9322', f'PORT={port}')
             info = zipfile.ZipInfo(installer_file, now)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o755 << 16
-            zf.writestr(info, installer_path.read_bytes())
+            zf.writestr(info, installer_content.encode('utf-8'))
         for binary in binary_map.get(os_name, []):
             binary_path = agents_dir / binary
             if binary_path.is_file():

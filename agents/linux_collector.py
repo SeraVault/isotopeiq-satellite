@@ -34,38 +34,6 @@ except ImportError:
     HAS_ARGPARSE = False  # Python 2.6 — manual fallback below
 
 
-# ---------------------------------------------------------------------------
-# Config file
-# The agent reads server and port from isotopeiq-agent.conf.
-# Checked in order: next to the binary, then /etc/isotopeiq-agent.conf.
-# Format (key=value, one per line, # comments ignored):
-#   server=http://192.168.1.10:8000
-#   port=9322
-# ---------------------------------------------------------------------------
-
-def _read_config():
-    paths = []
-    try:
-        paths.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'isotopeiq-agent.conf'))
-    except Exception:
-        pass
-    paths.append('/etc/isotopeiq-agent.conf')
-    for path in paths:
-        try:
-            cfg = {}
-            with open(path, 'r') as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line or line.startswith('#') or '=' not in line:
-                        continue
-                    key, _, val = line.partition('=')
-                    cfg[key.strip()] = val.strip()
-            if cfg:
-                return cfg
-        except Exception:
-            pass
-    return {}
-
 PY2 = sys.version_info[0] == 2
 
 if PY2:
@@ -1911,33 +1879,10 @@ def collect():
     return output
 
 
-def _resolve_server_ips(server_url):
-    """Return the set of IPs the satellite hostname resolves to, or empty set if unset."""
-    if not server_url:
-        return set()
-    try:
-        try:
-            from urllib.parse import urlparse
-        except ImportError:
-            from urlparse import urlparse
-        import socket
-        host = urlparse(server_url).hostname or server_url
-        return set(r[4][0] for r in socket.getaddrinfo(host, None))
-    except Exception:
-        return set()
-
-
-def _make_handler(allowed_ips):
-    """Return an HTTPRequestHandler class that only serves requests from allowed_ips."""
+def _make_handler():
+    """Return an HTTPRequestHandler class for the agent."""
     class AgentHandler(BaseHTTPRequestHandler):
         def do_GET(self):
-            if allowed_ips and self.client_address[0] not in allowed_ips:
-                self.send_response(403)
-                self.send_header('Content-Type', 'text/plain')
-                self.end_headers()
-                self.wfile.write(b'Forbidden')
-                return
-
             if self.path != '/collect':
                 self.send_response(404)
                 self.send_header('Content-Type', 'text/plain')
@@ -1976,13 +1921,7 @@ def main():
             if a == '--port' and i + 1 < len(sys.argv): args.port = int(sys.argv[i + 1])
 
     if args.serve:
-        cfg = _read_config()
-        allowed_ips = _resolve_server_ips(cfg.get('server', ''))
-        if allowed_ips:
-            sys.stderr.write('IsotopeIQ agent: only accepting connections from {0}\n'.format(', '.join(sorted(allowed_ips))))
-        else:
-            sys.stderr.write('IsotopeIQ agent: WARNING — no server= in config, accepting connections from any host\n')
-        server = HTTPServer(('0.0.0.0', args.port), _make_handler(allowed_ips))
+        server = HTTPServer(('0.0.0.0', args.port), _make_handler())
         sys.stderr.write('IsotopeIQ agent listening on 0.0.0.0:{0}\n'.format(args.port))
         try:
             server.serve_forever()

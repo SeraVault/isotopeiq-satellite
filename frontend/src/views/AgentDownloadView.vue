@@ -2,8 +2,8 @@
   <v-container max-width="700" class="py-8">
     <div class="text-h5 font-weight-bold mb-1">Download Agent</div>
     <p class="text-body-2 text-medium-emphasis mb-4">
-      Download the installer bundle for your OS. The bundle includes the agent binary,
-      a config file pre-filled with your server address, and the installer script.
+      Download the installer bundle for your OS. The bundle includes the agent binary
+      and the installer script — extract and run.
     </p>
     <v-alert type="info" variant="tonal" density="compact" class="mb-6 text-body-2">
       <div class="font-weight-medium mb-1">Agents are optional</div>
