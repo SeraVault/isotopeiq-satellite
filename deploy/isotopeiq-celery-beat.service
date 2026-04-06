@@ -1,0 +1,33 @@
+[Unit]
+Description=IsotopeIQ Satellite — Celery Beat Scheduler
+After=network.target postgresql.service redis-server.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=forking
+User=isotopeiq
+Group=isotopeiq
+WorkingDirectory=/opt/isotopeiq/backend
+EnvironmentFile=/etc/isotopeiq/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+
+ExecStart=/opt/isotopeiq/venv/bin/celery \
+    -A config beat \
+    --loglevel=info \
+    --scheduler django_celery_beat.schedulers:DatabaseScheduler \
+    --logfile=/var/log/isotopeiq/celery-beat.log \
+    --pidfile=/run/isotopeiq/celery-beat.pid \
+    --detach
+
+PIDFile=/run/isotopeiq/celery-beat.pid
+
+Restart=on-failure
+RestartSec=10s
+
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/isotopeiq /var/log/isotopeiq /run/isotopeiq /tmp
+
+[Install]
+WantedBy=multi-user.target

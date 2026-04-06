@@ -20,3 +20,11 @@ frontend/dist/
 
 # Logs
 *.log
+
+# Build / export artifacts
+isotopeiq-satellite-*.tar.gz
+isotopeiq-satellite-*.tar.gz.tmp
+*.ova
+
+# Stray files from shell redirects involving SSH (e.g. user@host)
+*@*.*.*.*

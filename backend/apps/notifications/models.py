@@ -52,6 +52,42 @@ class SystemSettings(models.Model):
         help_text='Public base URL of this satellite (used in agent download links, etc.)',
     )
 
+    # LDAP authentication (optional)
+    ldap_enabled = models.BooleanField(default=False)
+    ldap_server_uri = models.CharField(
+        max_length=255, blank=True,
+        help_text='LDAP server URI, e.g. ldap://ldap.example.com:389',
+    )
+    ldap_bind_dn = models.CharField(
+        max_length=255, blank=True,
+        help_text='DN of the account used to bind for searches',
+    )
+    ldap_bind_password = EncryptedCharField(max_length=1024, blank=True)
+    ldap_start_tls = models.BooleanField(default=False)
+    ldap_user_search_base = models.CharField(
+        max_length=255, blank=True,
+        help_text='Base DN for user searches, e.g. ou=users,dc=example,dc=com',
+    )
+    ldap_user_search_filter = models.CharField(
+        max_length=255, blank=True, default='(uid=%(user)s)',
+        help_text='LDAP filter for user lookup',
+    )
+    ldap_group_search_base = models.CharField(
+        max_length=255, blank=True,
+        help_text='Base DN for group searches (optional)',
+    )
+    ldap_attr_first_name = models.CharField(max_length=64, blank=True, default='givenName')
+    ldap_attr_last_name  = models.CharField(max_length=64, blank=True, default='sn')
+    ldap_attr_email      = models.CharField(max_length=64, blank=True, default='mail')
+    ldap_superuser_group = models.CharField(
+        max_length=255, blank=True,
+        help_text='Full DN of the group whose members become Django superusers',
+    )
+    ldap_staff_group = models.CharField(
+        max_length=255, blank=True,
+        help_text='Full DN of the group whose members get Django staff access',
+    )
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -22,7 +22,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_celery_beat',
     'django_celery_results',
-'django_filters',
+    'django_filters',
+    'import_export',
     # Authentication (conditionally added below when configured)
 
     # Local
@@ -158,54 +159,16 @@ SYSLOG_FACILITY = config('SYSLOG_FACILITY', default='local0')
 
 # ── Authentication Backends ───────────────────────────────────────────────────
 # Always include the local Django DB backend.
-# LDAP and SAML backends are prepended below only when configured.
+# The database-driven LDAP backend is always registered; it checks the
+# SystemSettings.ldap_enabled flag at runtime so no restart is needed.
 AUTHENTICATION_BACKENDS = [
+    'core.auth.ldap.DatabaseLDAPBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
-# ── LDAP (optional) ───────────────────────────────────────────────────────────
-_LDAP_SERVER_URI = config('LDAP_SERVER_URI', default='')
-if _LDAP_SERVER_URI:
-    import ldap
-    from django_auth_ldap.config import LDAPSearch, GroupOfNamesType
-
-    INSTALLED_APPS += ['django_auth_ldap']
-    AUTHENTICATION_BACKENDS.insert(0, 'django_auth_ldap.backend.LDAPBackend')
-
-    AUTH_LDAP_SERVER_URI = _LDAP_SERVER_URI
-    AUTH_LDAP_BIND_DN = config('LDAP_BIND_DN', default='')
-    AUTH_LDAP_BIND_PASSWORD = config('LDAP_BIND_PASSWORD', default='')
-    AUTH_LDAP_START_TLS = config('LDAP_START_TLS', default=False, cast=bool)
-
-    _LDAP_USER_BASE = config('LDAP_USER_SEARCH_BASE', default='')
-    if _LDAP_USER_BASE:
-        AUTH_LDAP_USER_SEARCH = LDAPSearch(
-            _LDAP_USER_BASE,
-            ldap.SCOPE_SUBTREE,
-            config('LDAP_USER_SEARCH_FILTER', default='(uid=%(user)s)'),
-        )
-
-    _LDAP_GROUP_BASE = config('LDAP_GROUP_SEARCH_BASE', default='')
-    if _LDAP_GROUP_BASE:
-        AUTH_LDAP_GROUP_SEARCH = LDAPSearch(
-            _LDAP_GROUP_BASE,
-            ldap.SCOPE_SUBTREE,
-            '(objectClass=groupOfNames)',
-        )
-        AUTH_LDAP_GROUP_TYPE = GroupOfNamesType()
-
-    AUTH_LDAP_USER_ATTR_MAP = {
-        'first_name': config('LDAP_ATTR_FIRST_NAME', default='givenName'),
-        'last_name': config('LDAP_ATTR_LAST_NAME', default='sn'),
-        'email': config('LDAP_ATTR_EMAIL', default='mail'),
-    }
-    AUTH_LDAP_USER_FLAGS_BY_GROUP = {
-        'is_superuser': config('LDAP_SUPERUSER_GROUP', default=''),
-        'is_staff': config('LDAP_STAFF_GROUP', default=''),
-    }
-    AUTH_LDAP_ALWAYS_UPDATE_USER = True
-    AUTH_LDAP_FIND_GROUP_PERMS = True
-    AUTH_LDAP_CACHE_TIMEOUT = 3600
+# django-auth-ldap must be installed for DatabaseLDAPBackend to work.
+# It is always added to INSTALLED_APPS since it's in requirements.txt.
+INSTALLED_APPS += ['django_auth_ldap']
 
 # ── SAML 2.0 (optional) ───────────────────────────────────────────────────────
 _SAML_IDP_METADATA_URL = config('SAML_IDP_METADATA_URL', default='')

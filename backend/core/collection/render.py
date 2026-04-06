@@ -31,13 +31,23 @@ Device identity
   {{CONNECTION_TYPE}}   Connection type (ssh / telnet / winrm / etc.)
 
 Satellite / push
-  {{SATELLITE_URL}}     Base URL of this Satellite server (from SATELLITE_URL env var)
+  {{SATELLITE_URL}}     Base URL of this Satellite server (from System Settings in the UI, falling back to SATELLITE_URL env var)
   {{PUSH_TOKEN}}        Device push token (for push-mode agents)
 """
 
 import re
 
 from django.conf import settings
+
+
+def _get_satellite_url() -> str:
+    """Return the satellite URL from the database System Settings, falling back
+    to the SATELLITE_URL env var in case the DB is not yet available."""
+    try:
+        from apps.notifications.models import SystemSettings
+        return SystemSettings.get().satellite_url
+    except Exception:
+        return getattr(settings, 'SATELLITE_URL', '')
 
 _PLACEHOLDER_RE = re.compile(r'\{\{([A-Z0-9_]+)\}')
 
@@ -77,7 +87,7 @@ def render_script(content: str, device) -> str:
         'DEVICE_TYPE':     getattr(device, 'device_type', ''),
         'OS_TYPE':         getattr(device, 'os_type', ''),
         'CONNECTION_TYPE': getattr(device, 'connection_type', ''),
-        'SATELLITE_URL':   getattr(settings, 'SATELLITE_URL', ''),
+        'SATELLITE_URL':   _get_satellite_url(),
         'PUSH_TOKEN':      str(getattr(device, 'push_token', '') or ''),
     }
 

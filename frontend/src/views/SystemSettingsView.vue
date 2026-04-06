@@ -219,6 +219,144 @@
         </v-card-text>
       </v-card>
 
+      <!-- LDAP -->
+      <v-card rounded="lg" elevation="1" class="mb-5" style="max-width:660px">
+        <v-card-title class="text-body-1 font-weight-bold pt-4 px-4">
+          LDAP Authentication
+        </v-card-title>
+        <v-card-text>
+          <v-switch
+            v-model="form.ldap_enabled"
+            label="Enable LDAP authentication"
+            color="primary"
+            class="mb-2"
+            hide-details
+          />
+          <v-row dense>
+            <v-col cols="12">
+              <v-text-field
+                v-model="form.ldap_server_uri"
+                label="Server URI"
+                placeholder="ldap://ldap.example.com:389"
+                hint="Use ldaps:// for SSL, ldap:// with Start TLS, or ldap:// for plain"
+                persistent-hint
+                :disabled="!form.ldap_enabled"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-checkbox
+                v-model="form.ldap_start_tls"
+                label="Use StartTLS"
+                density="compact"
+                hide-details
+                :disabled="!form.ldap_enabled"
+                class="mb-2"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field
+                v-model="form.ldap_bind_dn"
+                label="Bind DN"
+                placeholder="cn=readonly,dc=example,dc=com"
+                autocomplete="off"
+                :disabled="!form.ldap_enabled"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field
+                v-model="form.ldap_bind_password"
+                label="Bind Password"
+                type="password"
+                autocomplete="new-password"
+                :disabled="!form.ldap_enabled"
+                :hint="serverData.ldap_bind_password_set ? 'Leave blank to keep existing password' : ''"
+                persistent-hint
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-divider class="my-2" />
+              <div class="text-caption text-medium-emphasis mb-3">User Search</div>
+            </v-col>
+            <v-col cols="12">
+              <v-text-field
+                v-model="form.ldap_user_search_base"
+                label="User Search Base DN"
+                placeholder="ou=users,dc=example,dc=com"
+                :disabled="!form.ldap_enabled"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field
+                v-model="form.ldap_user_search_filter"
+                label="User Search Filter"
+                placeholder="(uid=%(user)s)"
+                :disabled="!form.ldap_enabled"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-divider class="my-2" />
+              <div class="text-caption text-medium-emphasis mb-3">Group Search (optional)</div>
+            </v-col>
+            <v-col cols="12">
+              <v-text-field
+                v-model="form.ldap_group_search_base"
+                label="Group Search Base DN"
+                placeholder="ou=groups,dc=example,dc=com"
+                :disabled="!form.ldap_enabled"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field
+                v-model="form.ldap_superuser_group"
+                label="Superuser Group DN"
+                placeholder="cn=admins,ou=groups,dc=example,dc=com"
+                hint="Members of this group become Django superusers"
+                persistent-hint
+                :disabled="!form.ldap_enabled"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field
+                v-model="form.ldap_staff_group"
+                label="Staff Group DN"
+                placeholder="cn=staff,ou=groups,dc=example,dc=com"
+                hint="Members of this group get Django staff (admin) access"
+                persistent-hint
+                :disabled="!form.ldap_enabled"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-divider class="my-2" />
+              <div class="text-caption text-medium-emphasis mb-3">Attribute Mapping</div>
+            </v-col>
+            <v-col cols="4">
+              <v-text-field
+                v-model="form.ldap_attr_first_name"
+                label="First Name Attr"
+                placeholder="givenName"
+                :disabled="!form.ldap_enabled"
+              />
+            </v-col>
+            <v-col cols="4">
+              <v-text-field
+                v-model="form.ldap_attr_last_name"
+                label="Last Name Attr"
+                placeholder="sn"
+                :disabled="!form.ldap_enabled"
+              />
+            </v-col>
+            <v-col cols="4">
+              <v-text-field
+                v-model="form.ldap_attr_email"
+                label="Email Attr"
+                placeholder="mail"
+                :disabled="!form.ldap_enabled"
+              />
+            </v-col>
+          </v-row>
+        </v-card-text>
+      </v-card>
+
       <v-btn color="primary" :loading="saving" @click="save">Save</v-btn>
     </template>
   </div>
@@ -259,10 +397,23 @@ const form = ref({
   ftp_username: '',
   ftp_password: '',
   ftp_remote_path: '/',
+  ldap_enabled: false,
+  ldap_server_uri: '',
+  ldap_bind_dn: '',
+  ldap_bind_password: '',
+  ldap_start_tls: false,
+  ldap_user_search_base: '',
+  ldap_user_search_filter: '(uid=%(user)s)',
+  ldap_group_search_base: '',
+  ldap_attr_first_name: 'givenName',
+  ldap_attr_last_name: 'sn',
+  ldap_attr_email: 'mail',
+  ldap_superuser_group: '',
+  ldap_staff_group: '',
 })
 
 // Tracks server-side state (e.g. whether passwords are already set)
-const serverData = ref({ email_password_set: false, ftp_password_set: false })
+const serverData = ref({ email_password_set: false, ftp_password_set: false, ldap_bind_password_set: false })
 
 const loading = ref(false)
 const saving  = ref(false)
@@ -277,8 +428,9 @@ onMounted(async () => {
     // Populate form with all non-password fields; passwords are write-only on the server
     Object.assign(form.value, {
       ...data,
-      email_password: '',
-      ftp_password:   '',
+      email_password:      '',
+      ftp_password:        '',
+      ldap_bind_password:  '',
     })
   } finally {
     loading.value = false
@@ -292,8 +444,9 @@ async function save() {
   try {
     const payload = { ...form.value }
     // Don't send blank passwords — server will keep the existing value
-    if (!payload.email_password) delete payload.email_password
-    if (!payload.ftp_password)   delete payload.ftp_password
+    if (!payload.email_password)     delete payload.email_password
+    if (!payload.ftp_password)       delete payload.ftp_password
+    if (!payload.ldap_bind_password) delete payload.ldap_bind_password
     const { data } = await api.patch('/settings/', payload)
     serverData.value = data
     saved.value = true

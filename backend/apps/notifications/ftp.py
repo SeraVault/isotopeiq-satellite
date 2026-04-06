@@ -7,7 +7,6 @@ SFTP — paramiko (already a project dependency for SSH collection)
 import io
 import json
 import logging
-from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +23,7 @@ class FtpExporter:
         s = _get_ftp_config()
         if not s.ftp_enabled:
             return
-        filename = '{}_{}_baseline.json'.format(
-            device.name.replace(' ', '_'),
-            datetime.now(tz=timezone.utc).strftime('%Y%m%d_%H%M%S'),
-        )
+        filename = '{}_baseline.json'.format(device.name.replace(' ', '_'))
         content = json.dumps(baseline.parsed_data, indent=2).encode('utf-8')
         remote_path = s.ftp_remote_path.rstrip('/') + '/' + filename
 

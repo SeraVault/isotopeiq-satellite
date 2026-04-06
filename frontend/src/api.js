@@ -6,9 +6,10 @@ const api = axios.create({ baseURL: '/api' })
 // Reactive auth state — components import this instead of reading localStorage
 export const isLoggedIn = ref(!!localStorage.getItem('access_token'))
 
-export function setTokens(access, refresh, username) {
+export function setTokens(access, refresh, username, isSuperuser) {
   localStorage.setItem('access_token', access)
   if (refresh) localStorage.setItem('refresh_token', refresh)
+  if (isSuperuser !== undefined) localStorage.setItem('is_superuser', isSuperuser ? '1' : '')
   if (username) localStorage.setItem('username', username)
   isLoggedIn.value = true
 }
@@ -16,6 +17,7 @@ export function setTokens(access, refresh, username) {
 export function clearTokens() {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
+  localStorage.removeItem('is_superuser')
   localStorage.removeItem('username')
   isLoggedIn.value = false
 }

@@ -13,10 +13,15 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True,
         style={'input_type': 'password'},
     )
+    ldap_bind_password = serializers.CharField(
+        write_only=True, required=False, allow_blank=True,
+        style={'input_type': 'password'},
+    )
     # Expose boolean flags so the UI knows whether a password is stored
     # without revealing the value itself.
-    email_password_set = serializers.SerializerMethodField(read_only=True)
-    ftp_password_set   = serializers.SerializerMethodField(read_only=True)
+    email_password_set      = serializers.SerializerMethodField(read_only=True)
+    ftp_password_set        = serializers.SerializerMethodField(read_only=True)
+    ldap_bind_password_set  = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = SystemSettings
@@ -29,9 +34,12 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
     def get_ftp_password_set(self, obj):
         return bool(obj.ftp_password)
 
+    def get_ldap_bind_password_set(self, obj):
+        return bool(obj.ldap_bind_password)
+
     def update(self, instance, validated_data):
         # If a password field is omitted or blank, keep the existing value.
-        for field in ('email_password', 'ftp_password'):
+        for field in ('email_password', 'ftp_password', 'ldap_bind_password'):
             if field in validated_data and not validated_data[field]:
                 validated_data.pop(field)
         return super().update(instance, validated_data)

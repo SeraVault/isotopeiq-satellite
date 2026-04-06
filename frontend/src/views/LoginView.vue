@@ -66,7 +66,11 @@ async function submit() {
       username: username.value,
       password: password.value,
     })
-    setTokens(data.access, data.refresh, username.value)
+    // Fetch profile to get is_superuser before storing tokens
+    const me = await axios.get('/api/users/me/', {
+      headers: { Authorization: `Bearer ${data.access}` },
+    })
+    setTokens(data.access, data.refresh, username.value, me.data.is_superuser)
     router.push('/')
   } catch {
     error.value = 'Invalid username or password.'

@@ -1,0 +1,39 @@
+[Unit]
+Description=IsotopeIQ Satellite — Django/Gunicorn Backend
+After=network.target postgresql.service redis-server.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=notify
+User=isotopeiq
+Group=isotopeiq
+WorkingDirectory=/opt/isotopeiq/backend
+EnvironmentFile=/etc/isotopeiq/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+
+ExecStart=/opt/isotopeiq/venv/bin/gunicorn \
+    --workers 4 \
+    --worker-class sync \
+    --bind unix:/run/isotopeiq/gunicorn.sock \
+    --timeout 120 \
+    --access-logfile /var/log/isotopeiq/access.log \
+    --error-logfile /var/log/isotopeiq/gunicorn.log \
+    config.wsgi:application
+
+ExecReload=/bin/kill -s HUP $MAINPID
+
+RuntimeDirectory=isotopeiq
+RuntimeDirectoryMode=0755
+PIDFile=/run/isotopeiq/gunicorn.pid
+
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/isotopeiq /var/log/isotopeiq /run/isotopeiq /tmp
+
+[Install]
+WantedBy=multi-user.target

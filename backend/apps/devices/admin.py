@@ -1,9 +1,10 @@
 from django.contrib import admin
+from import_export.admin import ImportExportModelAdmin
 from .models import Credential, Device
 
 
 @admin.register(Credential)
-class CredentialAdmin(admin.ModelAdmin):
+class CredentialAdmin(ImportExportModelAdmin):
     list_display = ['name', 'credential_type', 'username', 'created_at']
     list_filter = ['credential_type']
     search_fields = ['name', 'username']
@@ -12,7 +13,7 @@ class CredentialAdmin(admin.ModelAdmin):
 
 
 @admin.register(Device)
-class DeviceAdmin(admin.ModelAdmin):
+class DeviceAdmin(ImportExportModelAdmin):
     list_display = ['name', 'hostname', 'port', 'connection_type', 'is_active']
     list_filter = ['connection_type', 'is_active']
     search_fields = ['name', 'hostname', 'fqdn']

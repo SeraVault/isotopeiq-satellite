@@ -1,4 +1,5 @@
 from django.contrib import admin
+from import_export.admin import ImportExportModelAdmin
 from .models import Job, DeviceJobResult
 
 
@@ -11,7 +12,7 @@ class DeviceJobResultInline(admin.TabularInline):
 
 
 @admin.register(Job)
-class JobAdmin(admin.ModelAdmin):
+class JobAdmin(ImportExportModelAdmin):
     list_display = ['id', 'policy', 'status', 'triggered_by', 'started_at', 'finished_at']
     list_filter = ['status', 'triggered_by']
     readonly_fields = ['celery_task_id', 'created_at', 'started_at', 'finished_at']
@@ -19,7 +20,7 @@ class JobAdmin(admin.ModelAdmin):
 
 
 @admin.register(DeviceJobResult)
-class DeviceJobResultAdmin(admin.ModelAdmin):
+class DeviceJobResultAdmin(ImportExportModelAdmin):
     list_display = ['id', 'job', 'device', 'status', 'started_at', 'finished_at']
     list_filter = ['status']
     search_fields = ['device__name']

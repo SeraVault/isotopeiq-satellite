@@ -56,6 +56,7 @@
         <v-list-item to="/volatile-rules" prepend-icon="mdi-tune" title="Volatile Rules" color="primary" />
         <v-list-item to="/users" prepend-icon="mdi-account-group-outline" title="Users" color="primary" />
         <v-list-item to="/system-settings" prepend-icon="mdi-cog-outline" title="System Settings" color="primary" />
+        <v-list-item v-if="isSuperuser" href="/admin/" target="_blank" prepend-icon="mdi-shield-crown-outline" title="Django Admin" color="primary" />
       </v-list>
 
       <!-- Footer -->
@@ -89,6 +90,12 @@ const dashboardStore = useDashboardStore()
 
 const drawer = ref(true)
 const rail   = ref(false)
+const isSuperuser = ref(!!localStorage.getItem('is_superuser'))
+
+// Keep isSuperuser in sync if localStorage changes (e.g. after re-login)
+window.addEventListener('storage', () => {
+  isSuperuser.value = !!localStorage.getItem('is_superuser')
+})
 
 // All badges derive from the central dashboard store.
 // Immediate mutations (WS messages, acknowledge, resolve) patch dashboardStore.stats directly.

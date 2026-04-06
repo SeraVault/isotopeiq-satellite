@@ -1,12 +1,26 @@
 from django.contrib.auth import get_user_model
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.permissions import IsAdminUser
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 
 from .serializers import UserSerializer
 
 User = get_user_model()
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me(request):
+    """Return key profile fields for the currently authenticated user."""
+    u = request.user
+    return Response({
+        'id': u.pk,
+        'username': u.username,
+        'email': u.email,
+        'is_staff': u.is_staff,
+        'is_superuser': u.is_superuser,
+    })
 
 
 class UserViewSet(viewsets.ModelViewSet):

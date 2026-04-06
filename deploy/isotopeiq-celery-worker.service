@@ -1,0 +1,35 @@
+[Unit]
+Description=IsotopeIQ Satellite — Celery Worker
+After=network.target postgresql.service redis-server.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=forking
+User=isotopeiq
+Group=isotopeiq
+WorkingDirectory=/opt/isotopeiq/backend
+EnvironmentFile=/etc/isotopeiq/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+
+ExecStart=/opt/isotopeiq/venv/bin/celery \
+    -A config worker \
+    --loglevel=info \
+    --logfile=/var/log/isotopeiq/celery-worker.log \
+    --pidfile=/run/isotopeiq/celery-worker.pid \
+    --detach
+
+ExecStop=/opt/isotopeiq/venv/bin/celery \
+    -A config control shutdown
+
+PIDFile=/run/isotopeiq/celery-worker.pid
+
+Restart=on-failure
+RestartSec=10s
+
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/isotopeiq /var/log/isotopeiq /run/isotopeiq /tmp
+
+[Install]
+WantedBy=multi-user.target

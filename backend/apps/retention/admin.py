@@ -1,9 +1,10 @@
 from django.contrib import admin
+from import_export.admin import ImportExportModelAdmin
 from .models import RetentionPolicy
 
 
 @admin.register(RetentionPolicy)
-class RetentionPolicyAdmin(admin.ModelAdmin):
+class RetentionPolicyAdmin(ImportExportModelAdmin):
     list_display = ['raw_data_days', 'parsed_data_days', 'job_history_days', 'log_days', 'updated_at']
     readonly_fields = ['updated_at']
 
