@@ -88,6 +88,7 @@ class DriftEventViewSet(viewsets.ReadOnlyModelViewSet):
         result = event.job_result
         if result and result.parsed_output is not None:
             from apps.baselines.models import Baseline
+            from apps.notifications.dispatcher import dispatch_actions
             # Use save() so auto_now=True on established_at fires correctly.
             try:
                 b = Baseline.objects.get(device=event.device)
@@ -96,12 +97,15 @@ class DriftEventViewSet(viewsets.ReadOnlyModelViewSet):
                 b.established_by = request.user.username
                 b.save()
             except Baseline.DoesNotExist:
-                Baseline.objects.create(
+                b = Baseline.objects.create(
                     device=event.device,
                     parsed_data=result.parsed_output,
                     source_result=result,
                     established_by=request.user.username,
                 )
+            # Fire new_baseline post-collection actions (FTP, email, syslog).
+            policy = getattr(getattr(result, 'job', None), 'policy', None)
+            dispatch_actions('new_baseline', policy, event.device, baseline=b)
 
         return Response(DriftEventSerializer(event).data)
 

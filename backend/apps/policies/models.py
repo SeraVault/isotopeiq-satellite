@@ -16,13 +16,13 @@ class Policy(models.Model):
         help_text='How collection is performed: poll agent HTTP endpoint or run a script via SSH/WinRM/Telnet.',
     )
     devices = models.ManyToManyField('devices.Device', related_name='policies', blank=True)
-    script_package = models.ForeignKey(
-        'scripts.ScriptPackage',
+    script_job = models.ForeignKey(
+        'scripts.ScriptJob',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='policies',
-        help_text='Collection Profile containing the collection + parser scripts. Required for Script Execution policies.',
+        help_text='Script Job containing the collection and parser scripts to run. Required for Script Execution policies.',
     )
     cron_schedule = models.CharField(
         max_length=100,

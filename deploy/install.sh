@@ -84,6 +84,25 @@ sudo -u "$APP_USER" DJANGO_SETTINGS_MODULE=config.settings.production \
     "$PYTHON" manage.py collectstatic --noinput -v 0
 
 log "Running database migrations…"
+# ── One-time fix: scripts.0006 was applied before policies.0005 on some DBs.
+# Resolve by applying policies.0005 schema changes directly and marking it applied.
+sudo -u "$APP_USER" DJANGO_SETTINGS_MODULE=config.settings.production \
+    "$PYTHON" manage.py shell -c "
+from django.db import connection
+cursor = connection.cursor()
+cursor.execute(\"SELECT COUNT(*) FROM django_migrations WHERE app='scripts' AND name='0006_delete_scriptpackage'\")
+scripts_006 = cursor.fetchone()[0] > 0
+cursor.execute(\"SELECT COUNT(*) FROM django_migrations WHERE app='policies' AND name='0005_flatten_script_fks'\")
+policies_005 = cursor.fetchone()[0] > 0
+if scripts_006 and not policies_005:
+    cursor.execute('ALTER TABLE policies_policy ADD COLUMN IF NOT EXISTS collection_script_id integer REFERENCES scripts_script(id) NULL')
+    cursor.execute('ALTER TABLE policies_policy ADD COLUMN IF NOT EXISTS parser_script_id integer REFERENCES scripts_script(id) NULL')
+    cursor.execute('ALTER TABLE policies_policy DROP COLUMN IF EXISTS script_package_id')
+    from django.utils.timezone import now
+    cursor.execute(\"INSERT INTO django_migrations (app, name, applied) VALUES ('policies', '0005_flatten_script_fks', %s)\", [now()])
+    connection.connection.commit()
+    print('Applied policies.0005 schema fix.')
+" 2>/dev/null || true
 sudo -u "$APP_USER" DJANGO_SETTINGS_MODULE=config.settings.production \
     "$PYTHON" manage.py migrate --noinput
 ok "Static files collected and migrations applied."

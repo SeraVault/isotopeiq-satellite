@@ -3,6 +3,7 @@ import LoginView from '../views/LoginView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import DevicesView from '../views/DevicesView.vue'
 import ScriptsView from '../views/ScriptsView.vue'
+import ScriptEditorView from '../views/ScriptEditorView.vue'
 import PoliciesView from '../views/PoliciesView.vue'
 import JobMonitorView from '../views/JobMonitorView.vue'
 import DriftView from '../views/DriftView.vue'
@@ -21,6 +22,8 @@ const routes = [
   { path: '/devices', component: DevicesView },
   { path: '/agent-download', component: AgentDownloadView },
   { path: '/scripts', component: ScriptsView },
+  { path: '/scripts/new', component: ScriptEditorView },
+  { path: '/scripts/:id/edit', component: ScriptEditorView },
   { path: '/policies', component: PoliciesView },
   { path: '/jobs', component: JobMonitorView },
   { path: '/drift', component: DriftView },

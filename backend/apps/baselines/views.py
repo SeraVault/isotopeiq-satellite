@@ -113,6 +113,9 @@ class BaselineViewSet(viewsets.ReadOnlyModelViewSet):
             baseline.source_result = result
             baseline.established_by = request.user.username
             baseline.save()
+        else:
+            from apps.notifications.dispatcher import dispatch_adhoc
+            dispatch_adhoc('ftp', device, baseline)
 
         return Response(
             {

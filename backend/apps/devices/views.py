@@ -68,9 +68,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         device = self.get_object()
         policy_id = request.data.get('policy_id')
 
-        policies = device.policies.filter(is_active=True).select_related(
-            'script_package__collection_script', 'script_package__parser_script'
-        )
+        policies = device.policies.filter(is_active=True).select_related('script_job')
         if policy_id:
             policy = policies.filter(pk=policy_id).first()
             if not policy:
@@ -81,10 +79,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'No active policy assigned to this device.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if policy.collection_method == 'script':
-            pkg = policy.script_package
-            if not pkg or not pkg.collection_script or not pkg.parser_script:
+            if not policy.script_job or not policy.script_job.steps.exists():
                 return Response(
-                    {'detail': f'Policy "{policy.name}" requires a Collection Profile with both a collection and a parser script.'},
+                    {'detail': f'Policy "{policy.name}" requires a Script Job with at least one step.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 

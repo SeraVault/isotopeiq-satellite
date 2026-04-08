@@ -28,6 +28,8 @@ def dispatch_actions(trigger: str, policy, device, baseline=None, drift_event=No
         drift_event: drift.DriftEvent instance (may be None for new-baseline calls)
     """
     if policy is None:
+        # No policy — fall back to global SystemSettings-level FTP/syslog if enabled.
+        _dispatch_global_fallback(trigger, device, baseline=baseline, drift_event=drift_event)
         return
 
     from .models import PostCollectionAction  # noqa: PLC0415
@@ -96,3 +98,34 @@ def _send_to_destination(destination: str, device, baseline, drift_event) -> Non
             logger.debug(
                 'FTP dispatch skipped for device "%s": no baseline available.', device
             )
+
+
+def _dispatch_global_fallback(trigger: str, device, baseline=None, drift_event=None) -> None:
+    """
+    When there is no policy, fire syslog/FTP based purely on whether they are
+    enabled in global SystemSettings. This covers agent-push and import flows
+    where no PostCollectionAction rows exist.
+    """
+    from .models import SystemSettings  # noqa: PLC0415
+    try:
+        s = SystemSettings.get()
+    except Exception:
+        return
+
+    if s.syslog_enabled:
+        try:
+            from .syslog import SyslogNotifier  # noqa: PLC0415
+            notifier = SyslogNotifier()
+            if drift_event is not None:
+                notifier.notify_drift(device, drift_event)
+            elif baseline is not None and trigger == 'new_baseline':
+                notifier.notify_baseline_established(device, baseline)
+        except Exception:
+            logger.exception('_dispatch_global_fallback: syslog error for device "%s".', device)
+
+    if s.ftp_enabled and baseline is not None and trigger == 'new_baseline':
+        try:
+            from .ftp import FtpExporter  # noqa: PLC0415
+            FtpExporter().export_baseline(device, baseline)
+        except Exception:
+            logger.exception('_dispatch_global_fallback: FTP error for device "%s".', device)

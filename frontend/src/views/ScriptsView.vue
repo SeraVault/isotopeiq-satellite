@@ -11,7 +11,7 @@
       <v-card rounded="lg">
         <v-card-title class="d-flex align-center pt-4 pb-2">
           <v-icon icon="mdi-script-text-outline" class="mr-2" color="primary" />
-          Scripts &amp; Collection Profiles
+          Scripts
           <v-spacer />
           <v-btn icon="mdi-close" variant="text" @click="showHelp = false" />
         </v-card-title>
@@ -21,9 +21,8 @@
           <p class="mb-3">
             Scripts are the executable units that Satellite uses to <strong>collect</strong>,
             <strong>parse</strong>, and optionally <strong>deploy</strong> configuration data.
-            Collection Profiles bundle a collection script and a parser script together so they
-            can be versioned and distributed as a single artefact. Deployment scripts are kept
-            separate and assigned directly to Policies.
+            Assign scripts directly to Policies (for scheduled baseline runs) or wire them
+            together in Script Jobs (for ad-hoc and utility workflows).
           </p>
 
           <v-divider class="my-3" />
@@ -42,6 +41,7 @@
                 <td class="font-weight-medium">Deployment</td>
                 <td>Optional. Pushed to the device to apply a remediation, hardening change, or golden configuration. Referenced by a Policy but only executed when explicitly triggered or when auto-remediation is enabled.</td>
               </tr>
+
             </tbody>
           </v-table>
 
@@ -101,50 +101,12 @@
     </v-dialog>
 
     <v-tabs v-model="activeTab" class="mb-5">
-      <v-tab value="CollectionProfiles">Collection Profiles</v-tab>
       <v-tab value="Scripts">Scripts</v-tab>
+      <v-tab value="ScriptJobs">Script Jobs</v-tab>
     </v-tabs>
 
-    <!-- ── PACKAGES TAB ───────────────────────────────────────────────────── -->
+    <!-- ── WINDOW ─────────────────────────────────────────────────────────── -->
     <v-window v-model="activeTab">
-      <v-window-item value="CollectionProfiles">
-        <div class="d-flex justify-space-between align-center mb-4">
-          <span class="text-body-2 text-medium-emphasis">{{ totalPackages }} collection profile(s)</span>
-          <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewPackage">New Collection Profile</v-btn>
-        </div>
-
-        <v-data-table-server
-          v-model:options="pkgTableOptions"
-          :headers="pkgHeaders"
-          :items="packages"
-          :items-length="totalPackages"
-          :loading="pkgLoading"
-          :items-per-page-options="[25, 50, 100]"
-          density="compact"
-          rounded="lg"
-          elevation="1"
-          hover
-          @update:options="onPkgTableOptions"
-        >
-          <template #item.collection_script_detail="{ item }">
-            {{ item.collection_script_detail?.name ?? '—' }}
-          </template>
-          <template #item.parser_script_detail="{ item }">
-            {{ item.parser_script_detail?.name ?? '—' }}
-          </template>
-          <template #item.is_active="{ item }">
-            <v-chip :color="item.is_active ? 'success' : 'default'" size="x-small" label>
-              {{ item.is_active ? 'Yes' : 'No' }}
-            </v-chip>
-          </template>
-          <template #item.actions="{ item }">
-            <div class="d-flex ga-1">
-              <v-btn size="x-small" variant="tonal" @click="openEditor(item)">Edit / Test</v-btn>
-              <v-btn size="x-small" color="error" variant="tonal" @click="removePkg(item.id)">Delete</v-btn>
-            </div>
-          </template>
-        </v-data-table-server>
-      </v-window-item>
 
       <!-- ── SCRIPTS TAB ────────────────────────────────────────────────────── -->
       <v-window-item value="Scripts">
@@ -166,6 +128,15 @@
           hover
           @update:options="onScrTableOptions"
         >
+          <template #item.run_on="{ item }">
+            <v-chip
+              size="x-small" label
+              :color="item.run_on === 'client' ? 'blue-darken-1' : item.run_on === 'server' ? 'purple-darken-1' : 'teal-darken-1'"
+            >{{ item.run_on }}</v-chip>
+          </template>
+          <template #item.language="{ item }">
+            <span class="text-caption text-medium-emphasis">{{ item.language || '—' }}</span>
+          </template>
           <template #item.is_active="{ item }">
             <v-chip :color="item.is_active ? 'success' : 'default'" size="x-small" label>
               {{ item.is_active ? 'Yes' : 'No' }}
@@ -179,157 +150,292 @@
           </template>
         </v-data-table-server>
       </v-window-item>
+
+      <!-- ── SCRIPT JOBS TAB ───────────────────────────────────────────────── -->
+      <v-window-item value="ScriptJobs">
+        <!-- What is a Script Job? -->
+        <v-alert type="info" variant="tonal" density="compact" rounded="lg" class="mb-4 text-body-2" icon="mdi-information-outline">
+          A <strong>Script Job</strong> is an ordered pipeline of steps. Each step runs a script on the remote
+          device (<em>client</em>) or the satellite (<em>server</em>), optionally piping its output to the next
+          step, saving results, and enabling baseline storage or drift detection.
+        </v-alert>
+
+        <div class="d-flex justify-space-between align-center mb-4">
+          <span class="text-body-2 text-medium-emphasis">{{ totalScriptJobs }} job definition(s)</span>
+          <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewScriptJob">New Script Job</v-btn>
+        </div>
+
+        <v-data-table
+          :headers="sjHeaders"
+          :items="scriptJobs"
+          :loading="sjLoading"
+          density="compact"
+          rounded="lg"
+          elevation="1"
+          hover
+        >
+          <template #item.steps="{ item }">
+            <div class="d-flex ga-1 flex-wrap">
+              <template v-if="item.steps?.length">
+                <v-chip
+                  v-for="(s, i) in item.steps"
+                  :key="i"
+                  size="x-small"
+                  label
+                  :color="s.run_on === 'client' ? 'blue-darken-1' : 'purple-darken-1'"
+                >
+                  {{ s.run_on === 'client' ? 'Client' : 'Server' }}
+                  <span class="ml-1 opacity-70">{{ s.script_name }}</span>
+                  <v-icon v-if="s.enable_baseline" size="12" class="ml-1">mdi-database</v-icon>
+                  <v-icon v-if="s.enable_drift" size="12" class="ml-1">mdi-chart-timeline-variant</v-icon>
+                </v-chip>
+              </template>
+              <span v-else class="text-caption text-medium-emphasis">No steps</span>
+            </div>
+          </template>
+          <template #item.is_active="{ item }">
+            <v-chip :color="item.is_active ? 'success' : 'default'" size="x-small" label>
+              {{ item.is_active ? 'Yes' : 'No' }}
+            </v-chip>
+          </template>
+          <template #item.actions="{ item }">
+            <div class="d-flex ga-1">
+              <v-btn size="x-small" variant="tonal" @click="openRunNow(item)">Run Now</v-btn>
+              <v-btn size="x-small" variant="tonal" @click="openScriptJobResults(item)">Results</v-btn>
+              <v-btn size="x-small" variant="tonal" @click="openEditScriptJob(item)">Edit</v-btn>
+              <v-btn size="x-small" color="error" variant="tonal" @click="removeScriptJob(item.id)">Delete</v-btn>
+            </div>
+          </template>
+        </v-data-table>
+      </v-window-item>
     </v-window>
 
+    <!-- ── SCRIPT JOB FORM ────────────────────────────────────────────────── -->
+    <v-dialog v-model="sjForm.show" max-width="860" scrollable>
+      <v-card rounded="lg">
+        <v-card-title class="pt-4">{{ sjForm.id ? 'Edit' : 'New' }} Script Job</v-card-title>
+        <v-divider />
+        <v-card-text class="pa-4">
+          <v-row dense>
+            <v-col cols="12" sm="6">
+              <v-text-field v-model="sjForm.name" label="Name *" density="compact" />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field v-model="sjForm.description" label="Description" density="compact" />
+            </v-col>
 
-
-    <!-- ── PACKAGE EDITOR (full-screen overlay) ───────────────────────────── -->
-    <div v-if="editor.show" class="pkg-overlay">
-
-      <!-- Top bar -->
-      <div class="pkg-topbar">
-        <div class="pkg-topbar-left">
-          <span class="pkg-title">{{ editor.scriptMode ? (editor.id ? 'Edit Script' : 'New Script') : (editor.id ? 'Edit Collection Profile' : 'New Collection Profile') }}</span>
-          <span v-if="editor.saveError" class="text-error text-caption">{{ editor.saveError }}</span>
-        </div>
-        <div class="pkg-topbar-right">
-          <v-btn variant="text" color="white" size="small" @click="editor.show = false">✕ Close</v-btn>
-          <v-btn color="primary" size="small" :loading="editor.saving" @click="editor.scriptMode ? saveStandaloneScript() : savePackage()">Save</v-btn>
-        </div>
-      </div>
-
-      <!-- Metadata row (package mode) -->
-      <div v-if="!editor.scriptMode" class="pkg-meta">
-        <v-text-field v-model="editor.name" label="Package Name" placeholder="e.g. Linux Baseline" required density="compact" variant="outlined" hide-details style="min-width:220px" />
-        <v-select v-model="editor.target_os" label="Target OS" :items="['linux','windows','macos','any']" density="compact" variant="outlined" hide-details style="min-width:130px" />
-        <v-text-field v-model="editor.version" label="Version" density="compact" variant="outlined" hide-details style="width:100px" />
-        <v-autocomplete
-          v-model="editor.deviceId"
-          label="Test Device"
-          :items="testDevices"
-          item-title="name"
-          item-value="id"
-          density="compact"
-          variant="outlined"
-          hide-details
-          style="min-width:220px"
-          clearable
-          no-filter
-          :loading="deviceSearchLoading"
-          placeholder="Search devices…"
-          @update:search="onDeviceSearch"
-        />
-        <v-text-field v-model="editor.description" label="Description" placeholder="optional" density="compact" variant="outlined" hide-details style="min-width:220px" />
-        <v-checkbox v-model="editor.is_active" label="Active" density="compact" hide-details style="align-self:center" />
-      </div>
-
-      <!-- Metadata row (script mode) -->
-      <div v-if="editor.scriptMode" class="pkg-meta">
-        <v-text-field v-model="editor.name" label="Script Name" required density="compact" variant="outlined" hide-details style="min-width:220px" />
-        <v-select v-model="editor.target_os" label="Target OS" :items="['linux','windows','macos','any']" density="compact" variant="outlined" hide-details style="min-width:130px" />
-        <v-text-field v-model="editor.version" label="Version" density="compact" variant="outlined" hide-details style="width:100px" />
-        <v-autocomplete
-          v-model="editor.deviceId"
-          label="Test Device"
-          :items="testDevices"
-          item-title="name"
-          item-value="id"
-          density="compact"
-          variant="outlined"
-          hide-details
-          style="min-width:220px"
-          clearable
-          no-filter
-          :loading="deviceSearchLoading"
-          placeholder="Search devices…"
-          @update:search="onDeviceSearch"
-        />
-        <v-text-field v-model="editor.description" label="Description" placeholder="optional" density="compact" variant="outlined" hide-details style="min-width:220px" />
-        <v-checkbox v-model="editor.is_active" label="Active" density="compact" hide-details style="align-self:center" />
-      </div>
-
-      <!-- Editor + results area (fills remaining space) -->
-      <div class="pkg-workspace" ref="workspaceEl">
-
-        <!-- Tabbed script editor -->
-        <div class="pkg-editor-tabs">
-          <button v-if="!editor.scriptMode || !editor.id || editor.scriptTab === 'collection'" :class="['pkg-tab', { 'pkg-tab--active': editor.scriptTab === 'collection' }]" @click="editor.scriptTab = 'collection'">
-            Collection<span class="pkg-tab-sub">runs on device</span>
-          </button>
-          <button v-if="!editor.scriptMode || !editor.id || editor.scriptTab === 'parser'" :class="['pkg-tab', { 'pkg-tab--active': editor.scriptTab === 'parser' }]" @click="editor.scriptTab = 'parser'">
-            Parser<span class="pkg-tab-sub">runs on server</span>
-          </button>
-          <button v-if="editor.scriptMode && (!editor.id || editor.scriptTab === 'deployment')" :class="['pkg-tab', { 'pkg-tab--active': editor.scriptTab === 'deployment' }]" @click="editor.scriptTab = 'deployment'">
-            Deployment<span class="pkg-tab-sub">optional · runs on device</span>
-          </button>
-          <div class="pkg-tab-actions">
-            <template v-if="editor.scriptTab === 'collection'">
-              <v-select v-model="editor.collectionLang" :items="langItems" item-title="title" item-value="value" density="compact" variant="outlined" hide-details style="max-width:160px" />
-              <v-btn v-if="!editor.scriptMode" color="primary" size="x-small" :loading="editor.collecting" :disabled="!editor.deviceId || !editor.collectionContent.trim()" :title="!editor.deviceId ? 'Select a test device first' : ''" @click="runCollector">▶ Run Collector</v-btn>
-            </template>
-            <template v-else-if="editor.scriptTab === 'parser'">
-              <v-btn v-if="!editor.scriptMode" color="primary" size="x-small" :loading="editor.parsing" :disabled="!editor.rawOutput || !editor.parserContent.trim()" :title="!editor.rawOutput ? 'Run the collector first' : ''" @click="runParser">▶ Run Parser</v-btn>
-            </template>
-            <template v-else>
-              <v-select v-model="editor.deploymentLang" :items="langItems" item-title="title" item-value="value" density="compact" variant="outlined" hide-details style="max-width:160px" />
-            </template>
-          </div>
-        </div>
-        <div class="pkg-editor-single" :style="{ height: editorHeight + 'px', flex: 'none' }">
-          <CodeEditor v-if="editor.scriptTab === 'collection'" v-model="editor.collectionContent" :language="editor.collectionLang" />
-          <CodeEditor v-else-if="editor.scriptTab === 'parser'" v-model="editor.parserContent" language="python" />
-          <CodeEditor v-else v-model="editor.deploymentContent" :language="editor.deploymentLang" />
-        </div>
-
-        <!-- Draggable splitter -->
-        <div
-          v-if="editor.rawOutput !== null || editor.collectError"
-          class="pkg-splitter"
-          @mousedown="startResize"
-        >
-          <div class="pkg-splitter-handle"></div>
-        </div>
-
-        <!-- Bottom: results panel -->
-        <div v-if="editor.rawOutput !== null || editor.collectError" class="pkg-results">
-          <div class="pkg-results-header">
-            <span class="pkg-results-title">Results</span>
-            <v-chip v-if="editor.parseResult" :color="editor.parseResult.success ? 'success' : 'error'" size="x-small" label>
-              {{ editor.parseResult.success ? '✓ PASS' : '✗ FAIL' }}
-            </v-chip>
-            <v-btn style="margin-left:auto" variant="text" size="x-small" color="grey" @click="clearResults">✕ Clear</v-btn>
-          </div>
-
-          <!-- Errors -->
-          <div v-if="editor.collectError" class="result-error-banner">
-            <strong>Collection error:</strong> {{ editor.collectError }}
-          </div>
-          <div v-if="editor.parseResult?.error" class="result-error-banner">
-            <strong>Parser error:</strong> {{ editor.parseResult.error }}
-          </div>
-          <div v-if="editor.parseResult?.validation_errors" class="result-error-banner">
-            <strong>Schema validation errors:</strong>
-            <pre style="margin-top:.35rem;background:transparent;color:inherit;padding:0;font-size:.82rem">{{ editor.parseResult.validation_errors }}</pre>
-          </div>
-          <div class="pkg-results-body">
-            <template v-if="editor.rawOutput !== null || editor.collectError">
-              <div class="result-pane">
-                <div class="result-pane-label">
-                  Raw Output
-                  <span v-if="editor.rawOutput" class="result-pane-hint">(captured — edit parser and click Run Parser)</span>
+            <!-- ── Steps ────────────────────────────────────────────────── -->
+            <v-col cols="12">
+              <div class="d-flex align-center mb-2 mt-2">
+                <div class="text-body-2 font-weight-bold text-medium-emphasis text-uppercase">Steps</div>
+                <div class="text-caption text-medium-emphasis ml-2">(execute in order — at least one required)</div>
+                <v-spacer />
+                <v-btn size="small" variant="tonal" prepend-icon="mdi-plus" @click="sjAddStep">Add Step</v-btn>
+              </div>
+              <div v-if="!sjForm.steps.length" class="text-caption text-medium-emphasis pa-3 text-center">
+                No steps yet. Click <strong>Add Step</strong> to define what this job does.
+              </div>
+              <v-card
+                v-for="(step, idx) in sjForm.steps"
+                :key="idx"
+                variant="outlined"
+                rounded="lg"
+                class="mb-3 pa-3"
+              >
+                <div class="d-flex align-center mb-3">
+                  <span class="text-caption font-weight-bold text-medium-emphasis text-uppercase">
+                    Step {{ idx + 1 }}
+                  </span>
+                  <v-spacer />
+                  <v-btn icon="mdi-arrow-up" size="x-small" variant="text" :disabled="idx === 0" @click="sjMoveStep(idx, -1)" />
+                  <v-btn icon="mdi-arrow-down" size="x-small" variant="text" :disabled="idx === sjForm.steps.length - 1" @click="sjMoveStep(idx, 1)" />
+                  <v-btn icon="mdi-delete-outline" size="x-small" variant="text" color="error" @click="sjRemoveStep(idx)" />
                 </div>
-                <pre class="result-pre">{{ editor.rawOutput || '(empty)' }}</pre>
-              </div>
-              <div class="result-pane">
-                <div class="result-pane-label">Parsed Output <span style="font-weight:400;color:#7a8a9a">(Canonical JSON)</span></div>
-                <pre class="result-pre">{{ editor.parseResult?.parsed_output ? JSON.stringify(editor.parseResult.parsed_output, null, 2) : '(run parser)' }}</pre>
-              </div>
-            </template>
-          </div>
-        </div>
+                <v-row dense>
+                  <v-col cols="12" sm="7">
+                    <v-select
+                      v-model="step.script"
+                      label="Script *"
+                      :items="allScripts"
+                      item-title="displayName"
+                      item-value="id"
+                      density="compact"
+                      clearable
+                    />
+                  </v-col>
+                  <v-col cols="12" sm="5" class="d-flex align-center">
+                    <v-btn-toggle v-model="step.run_on" mandatory density="compact" rounded="lg" style="width:100%">
+                      <v-btn value="client" size="small" style="flex:1">
+                        <v-icon start size="14">mdi-laptop</v-icon>Client
+                      </v-btn>
+                      <v-btn value="server" size="small" style="flex:1">
+                        <v-icon start size="14">mdi-server</v-icon>Server
+                      </v-btn>
+                    </v-btn-toggle>
+                  </v-col>
+                  <v-col cols="12">
+                    <div class="d-flex flex-wrap align-center" style="gap:4px 20px">
+                      <v-checkbox v-model="step.pipe_to_next" label="Pipe output to next step" density="compact" hide-details />
+                      <v-checkbox v-model="step.save_output" label="Save output" density="compact" hide-details />
+                      <v-checkbox v-model="step.enable_baseline" label="Save as baseline" density="compact" hide-details />
+                      <v-checkbox v-model="step.enable_drift" label="Check drift" density="compact" hide-details />
+                    </div>
+                    <div v-if="step.enable_baseline || step.enable_drift" class="text-caption text-medium-emphasis ml-1 mt-1">
+                      Output must be canonical JSON (use a server-side parser step to transform raw output first).
+                    </div>
+                  </v-col>
+                </v-row>
+              </v-card>
+            </v-col>
 
-      </div>
-    </div>
+            <v-col cols="12" class="mt-2">
+              <v-checkbox v-model="sjForm.is_active" label="Active" density="compact" hide-details />
+            </v-col>
+          </v-row>
+        </v-card-text>
+        <v-card-actions class="pa-4 pt-0">
+          <v-spacer />
+          <v-btn @click="sjForm.show = false">Cancel</v-btn>
+          <v-btn color="primary" variant="tonal" :loading="sjForm.saving" @click="saveScriptJob">Save</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- ── RUN NOW DIALOG ─────────────────────────────────────────────────── -->
+    <v-dialog v-model="runNowDialog.show" max-width="480">
+      <v-card rounded="lg">
+        <v-card-title class="pt-4">Run Now — {{ runNowDialog.job?.name }}</v-card-title>
+        <v-divider />
+        <v-card-text class="pa-4">
+          <v-autocomplete
+            v-model="runNowDialog.device_id"
+            :label="runNowDialog.needsDevice ? 'Device *' : 'Device (optional — leave blank for server-only)'"
+            :items="runNowDialog.devices"
+            item-title="name"
+            item-value="id"
+            :loading="runNowDialog.deviceLoading"
+            clearable
+            density="compact"
+            :hint="runNowDialog.needsDevice ? 'Required — this job has client steps.' : 'Leave blank to run server steps only.'"
+            persistent-hint
+          />
+          <v-alert
+            v-if="runNowDialog.needsDevice && !runNowDialog.device_id"
+            type="warning"
+            density="compact"
+            class="mt-3"
+            text="This job has at least one client step. Please select a device."
+          />
+        </v-card-text>
+        <v-card-actions class="pa-4 pt-0">
+          <v-spacer />
+          <v-btn @click="runNowDialog.show = false">Cancel</v-btn>
+          <v-btn
+            color="primary"
+            variant="tonal"
+            :loading="runNowDialog.running"
+            :disabled="runNowDialog.needsDevice && !runNowDialog.device_id"
+            @click="confirmRunNow"
+          >Run</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="3000" location="bottom right">
+      {{ snackbar.text }}
+    </v-snackbar>
+
+    <!-- ── SCRIPT JOB RESULTS ────────────────────────────────────────────── -->
+    <v-dialog v-model="sjResultsDialog.show" max-width="960" scrollable>
+      <v-card rounded="lg">
+        <v-card-title class="pt-4 d-flex align-center">
+          Results — {{ sjResultsDialog.job?.name }}
+          <v-spacer />
+          <v-btn icon="mdi-refresh" variant="text" size="small" :loading="sjResultsDialog.loading" @click="loadScriptJobResults" />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="sjResultsDialog.show = false" />
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pa-0">
+          <v-data-table
+            :headers="sjResultHeaders"
+            :items="sjResultsDialog.results"
+            :loading="sjResultsDialog.loading"
+            density="compact"
+            :items-per-page="25"
+            hover
+          >
+            <template #item.device="{ item }">{{ item.device_name || '(server)' }}</template>
+            <template #item.status="{ item }">
+              <v-chip
+                :color="{ success: 'success', failed: 'error', running: 'info', pending: 'default' }[item.status]"
+                size="x-small" label
+              >{{ item.status }}</v-chip>
+            </template>
+            <template #item.started_at="{ item }">{{ item.started_at ? new Date(item.started_at).toLocaleString() : '—' }}</template>
+            <template #item.finished_at="{ item }">{{ item.finished_at ? new Date(item.finished_at).toLocaleString() : '—' }}</template>
+            <template #item.actions="{ item }">
+              <v-btn size="x-small" variant="tonal" @click="viewScriptJobOutput(item)">Output</v-btn>
+            </template>
+          </v-data-table>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
+    <!-- ── SCRIPT JOB OUTPUT VIEWER ─────────────────────────────────────── -->
+    <v-dialog v-model="sjOutputDialog.show" max-width="900" scrollable>
+      <v-card rounded="lg">
+        <v-card-title class="pt-4 d-flex align-center">
+          Output
+          <v-chip :color="{ success: 'success', failed: 'error' }[sjOutputDialog.result?.status]" size="x-small" label class="ml-2">
+            {{ sjOutputDialog.result?.status }}
+          </v-chip>
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="sjOutputDialog.show = false" />
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pa-4">
+          <!-- Per-step outputs (new format) -->
+          <template v-if="sjOutputDialog.result?.step_outputs?.length">
+            <div
+              v-for="step in sjOutputDialog.result.step_outputs"
+              :key="step.order"
+              class="mb-4"
+            >
+              <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase mb-1">
+                Step {{ step.order + 1 }} — {{ step.script }}
+                <v-chip size="x-small" label :color="step.run_on === 'client' ? 'blue-darken-1' : 'purple-darken-1'" class="ml-1">
+                  {{ step.run_on }}
+                </v-chip>
+              </div>
+              <v-sheet rounded="lg" color="grey-darken-4" class="pa-3" style="font-family:monospace;font-size:0.8rem;white-space:pre-wrap;max-height:280px;overflow-y:auto">{{ step.output }}</v-sheet>
+            </div>
+          </template>
+          <!-- Legacy fields for older results -->
+          <template v-else>
+            <template v-if="sjOutputDialog.result?.client_output">
+              <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase mb-1">Client Output</div>
+              <v-sheet rounded="lg" color="grey-darken-4" class="pa-3 mb-4" style="font-family:monospace;font-size:0.8rem;white-space:pre-wrap;max-height:280px;overflow-y:auto">{{ sjOutputDialog.result.client_output }}</v-sheet>
+            </template>
+            <template v-if="sjOutputDialog.result?.server_output">
+              <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase mb-1">Server Output</div>
+              <v-sheet rounded="lg" color="grey-darken-4" class="pa-3 mb-4" style="font-family:monospace;font-size:0.8rem;white-space:pre-wrap;max-height:280px;overflow-y:auto">{{ sjOutputDialog.result.server_output }}</v-sheet>
+            </template>
+          </template>
+          <template v-if="sjOutputDialog.result?.parsed_output">
+            <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase mb-1">Parsed / Baseline Output</div>
+            <v-sheet rounded="lg" color="grey-darken-4" class="pa-3 mb-4" style="font-family:monospace;font-size:0.8rem;white-space:pre-wrap;max-height:280px;overflow-y:auto">{{ JSON.stringify(sjOutputDialog.result.parsed_output, null, 2) }}</v-sheet>
+          </template>
+          <template v-if="sjOutputDialog.result?.error_message">
+            <div class="text-caption font-weight-bold text-error text-uppercase mb-1">Error</div>
+            <v-sheet rounded="lg" color="red-darken-4" class="pa-3" style="font-family:monospace;font-size:0.8rem;white-space:pre-wrap">{{ sjOutputDialog.result.error_message }}</v-sheet>
+          </template>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
+
+
+    <!-- Script editor is now a separate page at /scripts/:id/edit and /scripts/new -->
 
     <!-- Confirm dialog -->
     <v-dialog v-model="confirmDialog.open" max-width="400" persistent>
@@ -347,7 +453,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 
 const confirmDialog = ref({ open: false, message: '', resolve: () => {} })
 function askConfirm(message) {
@@ -356,274 +463,11 @@ function askConfirm(message) {
   })
 }
 import api from '../api'
-import CodeEditor from '../components/CodeEditor.vue'
 
-const activeTab  = ref('CollectionProfiles')
+const router = useRouter()
+
+const activeTab  = ref('Scripts')
 const showHelp   = ref(false)
-
-const langItems = [
-  { title: 'Shell / Bash', value: 'shell' },
-  { title: 'PowerShell', value: 'powershell' },
-  { title: 'Batch (.bat)', value: 'batch' },
-  { title: 'VBScript', value: 'vbscript' },
-  { title: 'Python', value: 'python' },
-  { title: 'JavaScript', value: 'javascript' },
-  { title: 'SQL', value: 'sql' },
-]
-
-// ── workspace splitter ────────────────────────────────────────────────────────
-const workspaceEl = ref(null)
-const editorHeight = ref(400)
-let dragging = false
-let dragStartY = 0
-let dragStartH = 0
-
-function startResize(e) {
-  dragging = true
-  dragStartY = e.clientY
-  dragStartH = editorHeight.value
-  document.addEventListener('mousemove', onMouseMove)
-  document.addEventListener('mouseup', stopResize)
-}
-
-function onMouseMove(e) {
-  if (!dragging) return
-  const delta = e.clientY - dragStartY
-  const workspace = workspaceEl.value
-  const min = 120
-  const max = workspace ? workspace.clientHeight - 80 : window.innerHeight - 80
-  editorHeight.value = Math.min(max, Math.max(min, dragStartH + delta))
-}
-
-function stopResize() {
-  dragging = false
-  document.removeEventListener('mousemove', onMouseMove)
-  document.removeEventListener('mouseup', stopResize)
-}
-
-onBeforeUnmount(() => {
-  document.removeEventListener('mousemove', onMouseMove)
-  document.removeEventListener('mouseup', stopResize)
-})
-
-// ── packages ─────────────────────────────────────────────────────────────────
-const packages = ref([])
-const pkgLoading = ref(false)
-const totalPackages = ref(0)
-const pkgTableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
-const pkgHeaders = [
-  { title: 'Name',              key: 'name' },
-  { title: 'Target OS',         key: 'target_os' },
-  { title: 'Version',           key: 'version' },
-  { title: 'Collection Script', key: 'collection_script_detail', sortable: false },
-  { title: 'Parser Script',     key: 'parser_script_detail',     sortable: false },
-  { title: 'Active',            key: 'is_active',                sortable: false },
-  { title: '',                  key: 'actions',                  sortable: false, align: 'end' },
-]
-
-function onPkgTableOptions(options) {
-  pkgTableOptions.value = options
-  loadPackages(options)
-}
-const testDevices = ref([])
-const deviceSearchLoading = ref(false)
-let deviceSearchTimer = null
-
-function onDeviceSearch(q) {
-  clearTimeout(deviceSearchTimer)
-  // Preserve the currently selected device in the list while searching
-  deviceSearchTimer = setTimeout(() => searchTestDevices(q), 300)
-}
-
-async function searchTestDevices(q) {
-  deviceSearchLoading.value = true
-  try {
-    const { data } = await api.get('/devices/', { params: { search: q || '', is_active: true, page: 1 } })
-    const results = data.results ?? data
-    // Keep the currently selected device in the list so the label stays visible
-    if (editor.value.deviceId) {
-      const alreadyIn = results.some(d => d.id === editor.value.deviceId)
-      if (!alreadyIn) {
-        const existing = testDevices.value.find(d => d.id === editor.value.deviceId)
-        if (existing) results.unshift(existing)
-      }
-    }
-    testDevices.value = results
-  } finally {
-    deviceSearchLoading.value = false
-  }
-}
-
-async function loadPackages(options = pkgTableOptions.value) {
-  pkgLoading.value = true
-  try {
-    const { data } = await api.get('/scripts/packages/', {
-      params: { page: options.page, page_size: options.itemsPerPage },
-    })
-    packages.value      = data.results ?? data
-    totalPackages.value = data.count   ?? packages.value.length
-  } finally {
-    pkgLoading.value = false
-  }
-}
-
-async function removePkg(id) {
-  if (!await askConfirm('Delete this collection profile? The underlying scripts will not be deleted.')) return
-  await api.delete(`/scripts/packages/${id}/`)
-  loadPackages()
-}
-
-// ── package editor ────────────────────────────────────────────────────────────
-const editor = ref(blankEditor())
-
-function blankEditor() {
-  return {
-    show: false, id: null, scriptMode: false, scriptTab: 'collection',
-    name: '', description: '', target_os: 'any', version: '1.0.0', is_active: true,
-    collectionScriptId: null, collectionContent: '', collectionLang: 'shell',
-    parserScriptId: null,     parserContent: '',
-    deploymentScriptId: null, deploymentContent: '', deploymentLang: 'shell',
-    deviceId: null,
-    saving: false, saveError: '',
-    collecting: false, collectError: null,
-    rawOutput: null,
-    parsing: false, parseResult: null,
-  }
-}
-
-function openNewPackage() {
-  editor.value = { ...blankEditor(), show: true }
-}
-
-function openEditor(pkg) {
-  editor.value = {
-    ...blankEditor(),
-    show: true,
-    id: pkg.id,
-    name: pkg.name,
-    description: pkg.description ?? '',
-    target_os: pkg.target_os,
-    version: pkg.version,
-    is_active: pkg.is_active,
-    collectionScriptId: pkg.collection_script ?? null,
-    collectionContent: pkg.collection_script_detail?.content ?? '',
-    parserScriptId: pkg.parser_script ?? null,
-    parserContent: pkg.parser_script_detail?.content ?? '',
-  }
-}
-
-async function savePackage({ requireParser = true } = {}) {
-  editor.value.saveError = ''
-  if (!editor.value.name.trim()) { editor.value.saveError = 'Collection profile name is required.'; return }
-  if (!editor.value.collectionContent.trim()) { editor.value.saveError = 'Collection script content is required.'; return }
-  if (requireParser && !editor.value.parserContent.trim()) { editor.value.saveError = 'Parser script content is required.'; return }
-  editor.value.saving = true
-  try {
-    const ids = await _ensureScripts()
-    const payload = {
-      name: editor.value.name,
-      description: editor.value.description,
-      target_os: editor.value.target_os,
-      version: editor.value.version,
-      is_active: editor.value.is_active,
-      collection_script: ids.collection,
-      parser_script: ids.parser,
-    }
-    if (editor.value.id) {
-      const { data } = await api.patch(`/scripts/packages/${editor.value.id}/`, payload)
-      editor.value.id = data.id
-    } else {
-      const { data } = await api.post('/scripts/packages/', payload)
-      editor.value.id = data.id
-    }
-    loadPackages()
-  } catch (e) {
-    editor.value.saveError = JSON.stringify(e.response?.data ?? 'Save failed.')
-  } finally {
-    editor.value.saving = false
-  }
-}
-
-async function runCollector() {
-  await savePackage({ requireParser: false })
-  if (editor.value.saveError) return
-  editor.value.collecting = true
-  editor.value.collectError = null
-  editor.value.rawOutput = null
-  editor.value.parseResult = null
-  try {
-    const { data } = await api.post(`/scripts/packages/${editor.value.id}/collect/`, {
-      device_id: editor.value.deviceId,
-      collection_content: editor.value.collectionContent,
-    })
-    if (data.success) {
-      editor.value.rawOutput = data.raw_output
-    } else {
-      editor.value.collectError = data.error
-    }
-  } catch (e) {
-    editor.value.collectError = e.response?.data?.error ?? e.response?.data?.detail ?? 'Request failed.'
-  } finally {
-    editor.value.collecting = false
-  }
-}
-
-async function runParser() {
-  editor.value.parsing = true
-  editor.value.parseResult = null
-  try {
-    const { data } = await api.post(`/scripts/packages/${editor.value.id}/parse/`, {
-      raw_output: editor.value.rawOutput,
-      parser_content: editor.value.parserContent,
-    })
-    editor.value.parseResult = data
-  } catch (e) {
-    editor.value.parseResult = {
-      success: false, parsed_output: null, validation_errors: null,
-      error: e.response?.data?.error ?? e.response?.data?.detail ?? 'Request failed.',
-    }
-  } finally {
-    editor.value.parsing = false
-  }
-}
-
-function clearResults() {
-  editor.value.rawOutput = null
-  editor.value.collectError = null
-  editor.value.parseResult = null
-}
-
-async function _ensureScripts() {
-  const col = await _upsertScript(editor.value.collectionScriptId, `${editor.value.name} — Collector`, 'collection', editor.value.collectionContent)
-  editor.value.collectionScriptId = col
-
-  let par = editor.value.parserScriptId
-  if (editor.value.parserContent.trim()) {
-    par = await _upsertScript(editor.value.parserScriptId, `${editor.value.name} — Parser`, 'parser', editor.value.parserContent)
-    editor.value.parserScriptId = par
-  }
-
-  return { collection: col, parser: par }
-}
-
-async function _upsertScript(id, name, type, content) {
-  const payload = { name, script_type: type, content, target_os: editor.value.target_os, version: editor.value.version, is_active: editor.value.is_active }
-  if (id) {
-    const { data } = await api.patch(`/scripts/${id}/`, payload)
-    return data.id
-  } else {
-    try {
-      const { data } = await api.post('/scripts/', payload)
-      return data.id
-    } catch (e) {
-      if (e.response?.data?.name) {
-        const { data } = await api.post('/scripts/', { ...payload, name: `${name} (${Date.now()})` })
-        return data.id
-      }
-      throw e
-    }
-  }
-}
 
 // ── individual scripts ────────────────────────────────────────────────────────
 const scripts = ref([])
@@ -633,6 +477,8 @@ const scrTableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
 const scrHeaders = [
   { title: 'Name',      key: 'name' },
   { title: 'Type',      key: 'script_type' },
+  { title: 'Runs On',   key: 'run_on',     sortable: false },
+  { title: 'Language',  key: 'language',   sortable: false },
   { title: 'Target OS', key: 'target_os' },
   { title: 'Version',   key: 'version' },
   { title: 'Active',    key: 'is_active',  sortable: false },
@@ -664,246 +510,210 @@ async function removeScript(id) {
 }
 
 function openNewScriptInEditor() {
-  editor.value = { ...blankEditor(), show: true, scriptMode: true }
+  router.push('/scripts/new')
 }
 
 function openScriptInEditor(s) {
-  const tab = s.script_type === 'parser' ? 'parser' : s.script_type === 'deployment' ? 'deployment' : 'collection'
-  editor.value = {
-    ...blankEditor(),
-    show: true,
-    scriptMode: true,
-    scriptTab: tab,
-    collectionScriptId: s.script_type === 'collection' ? s.id : null,
-    parserScriptId:     s.script_type === 'parser'     ? s.id : null,
-    deploymentScriptId: s.script_type === 'deployment' ? s.id : null,
-    collectionContent:  s.script_type === 'collection' ? s.content : '',
-    parserContent:      s.script_type === 'parser'     ? s.content : '',
-    deploymentContent:  s.script_type === 'deployment' ? s.content : '',
-    name:        s.name,
-    description: s.description ?? '',
-    version:     s.version,
-    target_os:   s.target_os,
-    is_active:   s.is_active,
+  router.push(`/scripts/${s.id}/edit`)
+}
+
+// ── script jobs ───────────────────────────────────────────────────────────────
+const scriptJobs = ref([])
+const sjLoading = ref(false)
+const totalScriptJobs = ref(0)
+const allScripts = ref([])
+
+const sjHeaders = [
+  { title: 'Name',   key: 'name',      sortable: true },
+  { title: 'Steps',  key: 'steps',     sortable: false },
+  { title: 'Active', key: 'is_active', sortable: false },
+  { title: '',       key: 'actions',   sortable: false, align: 'end' },
+]
+const sjResultHeaders = [
+  { title: 'Device',       key: 'device',       sortable: false },
+  { title: 'Status',       key: 'status',       sortable: false },
+  { title: 'Triggered By', key: 'triggered_by', sortable: false },
+  { title: 'Started',      key: 'started_at',   sortable: false },
+  { title: 'Finished',     key: 'finished_at',  sortable: false },
+  { title: '',             key: 'actions',      sortable: false, align: 'end' },
+]
+
+async function loadScriptJobs() {
+  sjLoading.value = true
+  try {
+    const res = await api.get('/scripts/script-jobs/')
+    scriptJobs.value = res.data?.results ?? res.data ?? []
+    totalScriptJobs.value = scriptJobs.value.length
+  } finally {
+    sjLoading.value = false
   }
 }
 
-async function saveStandaloneScript() {
-  editor.value.saveError = ''
-  if (!editor.value.name.trim()) { editor.value.saveError = 'Name is required.'; return }
-  editor.value.saving = true
-  const tab = editor.value.scriptTab
-  const contentMap = { collection: editor.value.collectionContent, parser: editor.value.parserContent, deployment: editor.value.deploymentContent }
-  const idMap = { collection: editor.value.collectionScriptId, parser: editor.value.parserScriptId, deployment: editor.value.deploymentScriptId }
-  const payload = {
-    name: editor.value.name,
-    description: editor.value.description,
-    script_type: tab,
-    target_os: editor.value.target_os,
-    version: editor.value.version,
-    is_active: editor.value.is_active,
-    content: contentMap[tab],
-  }
+async function loadAllScripts() {
+  const res = await api.get('/scripts/', { params: { page_size: 1000 } })
+  allScripts.value = (res.data?.results ?? res.data ?? []).map(s => ({
+    ...s,
+    displayName: `${s.name} (${s.script_type})`,
+  }))
+}
+
+// ── Script Job form ──────────────────────────────────────────────────────────
+const BLANK_STEP = () => ({
+  script: null,
+  run_on: 'client',
+  pipe_to_next: true,
+  save_output: false,
+  enable_baseline: false,
+  enable_drift: false,
+})
+const BLANK_SJ_FORM = () => ({
+  show: false, id: null, saving: false,
+  name: '', description: '',
+  steps: [],
+  is_active: true,
+})
+const sjForm = ref(BLANK_SJ_FORM())
+
+function sjAddStep() {
+  sjForm.value.steps.push(BLANK_STEP())
+}
+function sjRemoveStep(idx) {
+  sjForm.value.steps.splice(idx, 1)
+}
+function sjMoveStep(idx, dir) {
+  const steps = sjForm.value.steps
+  const newIdx = idx + dir
+  if (newIdx < 0 || newIdx >= steps.length) return
+  const [item] = steps.splice(idx, 1)
+  steps.splice(newIdx, 0, item)
+}
+
+// Run Now dialog
+const runNowDialog = ref({ show: false, job: null, device_id: null, devices: [], deviceLoading: false, running: false, needsDevice: false })
+const snackbar = ref({ show: false, text: '', color: 'success' })
+
+function showSnack(text, color = 'success') {
+  snackbar.value = { show: true, text, color }
+}
+
+async function openRunNow(item) {
+  const needsDevice = (item.steps ?? []).some(s => s.run_on === 'client')
+  runNowDialog.value = { show: true, job: item, device_id: null, devices: [], deviceLoading: true, running: false, needsDevice }
   try {
-    const id = idMap[tab]
-    if (id) {
-      await api.patch(`/scripts/${id}/`, payload)
-    } else {
-      await api.post('/scripts/', payload)
-    }
-    loadScripts()
-    editor.value.show = false
-  } catch (e) {
-    editor.value.saveError = JSON.stringify(e.response?.data ?? 'Save failed.')
+    const res = await api.get('/devices/', { params: { page_size: 1000 } })
+    runNowDialog.value.devices = res.data?.results ?? res.data ?? []
   } finally {
-    editor.value.saving = false
+    runNowDialog.value.deviceLoading = false
   }
 }
+
+async function confirmRunNow() {
+  runNowDialog.value.running = true
+  try {
+    const body = runNowDialog.value.device_id ? { device_id: runNowDialog.value.device_id } : {}
+    await api.post(`/scripts/script-jobs/${runNowDialog.value.job.id}/run/`, body)
+    runNowDialog.value.show = false
+    showSnack('Job queued successfully.')
+  } catch (e) {
+    showSnack(e.response?.data?.detail ?? 'Failed to queue job.', 'error')
+  } finally {
+    runNowDialog.value.running = false
+  }
+}
+
+async function openNewScriptJob() {
+  await loadAllScripts()
+  sjForm.value = BLANK_SJ_FORM()
+  sjForm.value.show = true
+}
+
+async function openEditScriptJob(item) {
+  await loadAllScripts()
+  sjForm.value = {
+    ...BLANK_SJ_FORM(),
+    id: item.id, name: item.name, description: item.description,
+    steps: (item.steps ?? []).map(s => ({
+      script: s.script,
+      run_on: s.run_on,
+      pipe_to_next: s.pipe_to_next,
+      save_output: s.save_output,
+      enable_baseline: s.enable_baseline,
+      enable_drift: s.enable_drift,
+    })),
+    is_active: item.is_active,
+    show: true,
+  }
+}
+
+async function saveScriptJob() {
+  if (!sjForm.value.name) { alert('Name is required.'); return }
+  if (!sjForm.value.steps.length) {
+    alert('At least one step is required.')
+    return
+  }
+  if (sjForm.value.steps.some(s => !s.script)) {
+    alert('Each step must have a script selected.')
+    return
+  }
+  sjForm.value.saving = true
+  try {
+    const payload = {
+      name: sjForm.value.name,
+      description: sjForm.value.description,
+      steps: sjForm.value.steps.map((s, i) => ({
+        order: i * 10,
+        script: s.script,
+        run_on: s.run_on,
+        pipe_to_next: s.pipe_to_next,
+        save_output: s.save_output,
+        enable_baseline: s.enable_baseline,
+        enable_drift: s.enable_drift,
+      })),
+      is_active: sjForm.value.is_active,
+    }
+    if (sjForm.value.id) await api.put(`/scripts/script-jobs/${sjForm.value.id}/`, payload)
+    else await api.post('/scripts/script-jobs/', payload)
+    sjForm.value.show = false
+    await loadScriptJobs()
+  } finally {
+    sjForm.value.saving = false
+  }
+}
+
+async function removeScriptJob(id) {
+  if (!await askConfirm('Delete this Script Job?')) return
+  await api.delete(`/scripts/script-jobs/${id}/`)
+  await loadScriptJobs()
+}
+
+
+
+// Results + output
+const sjResultsDialog = ref({ show: false, job: null, loading: false, results: [] })
+const sjOutputDialog  = ref({ show: false, result: null })
+
+async function openScriptJobResults(item) {
+  sjResultsDialog.value = { show: true, job: item, loading: false, results: [] }
+  await loadScriptJobResults()
+}
+async function loadScriptJobResults() {
+  if (!sjResultsDialog.value.job) return
+  sjResultsDialog.value.loading = true
+  try {
+    const res = await api.get(`/scripts/script-jobs/${sjResultsDialog.value.job.id}/results/`)
+    sjResultsDialog.value.results = res.data?.results ?? res.data ?? []
+  } finally {
+    sjResultsDialog.value.loading = false
+  }
+}
+function viewScriptJobOutput(item) { sjOutputDialog.value = { show: true, result: item } }
 
 // ── init ─────────────────────────────────────────────────────────────────────
-onMounted(async () => {
-  editorHeight.value = Math.floor(window.innerHeight * 0.6)
-  // Pre-populate test device picker
-  searchTestDevices('')
+onMounted(() => {
+  loadScriptJobs()
+  loadAllScripts()
 })
 </script>
 
 <style scoped>
-/* ── Package editor overlay ───────────────────────────────────────────────── */
-.pkg-overlay {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 220px;
-  background: #f0f2f5;
-  z-index: 300;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.pkg-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: .75rem 1.25rem;
-  background: #16213e;
-  color: #fff;
-  flex-shrink: 0;
-}
-.pkg-topbar-left { display: flex; align-items: center; gap: 1rem; }
-.pkg-topbar-right { display: flex; align-items: center; gap: .5rem; }
-.pkg-title { font-size: 1rem; font-weight: 600; }
-
-.pkg-meta {
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
-  padding: .75rem 1.25rem;
-  background: #fff;
-  border-bottom: 1px solid #e8e8e8;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.pkg-workspace {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
-}
-
-.pkg-splitter {
-  flex-shrink: 0;
-  height: 6px;
-  cursor: ns-resize;
-  background: #e0e0e0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  user-select: none;
-}
-.pkg-splitter:hover, .pkg-splitter:active { background: #4fc3f7; }
-.pkg-splitter-handle {
-  width: 32px;
-  height: 3px;
-  border-radius: 2px;
-  background: #a0aec0;
-  pointer-events: none;
-}
-.pkg-splitter:hover .pkg-splitter-handle,
-.pkg-splitter:active .pkg-splitter-handle { background: #fff; }
-
-.pkg-editor-tabs {
-  display: flex;
-  align-items: center;
-  background: #eef0f3;
-  border-bottom: 1px solid #d0d5de;
-  flex-shrink: 0;
-}
-.pkg-tab {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: .6rem 1.25rem;
-  font-size: .82rem;
-  font-weight: 600;
-  color: #5a6280;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  border-bottom: 3px solid transparent;
-  transition: color .15s, border-color .15s;
-  white-space: nowrap;
-}
-.pkg-tab:hover { color: #1a1a2e; }
-.pkg-tab--active { color: #4fc3f7; border-bottom-color: #4fc3f7; }
-.pkg-tab-sub {
-  font-size: .7rem;
-  font-weight: 400;
-  color: #7a8a9a;
-  margin-top: .1rem;
-  letter-spacing: .02em;
-}
-.pkg-tab--active .pkg-tab-sub { color: #a8d8ea; }
-.pkg-tab-actions {
-  display: flex;
-  align-items: center;
-  gap: .75rem;
-  margin-left: auto;
-  padding: 0 1rem;
-}
-.pkg-editor-single {
-  flex: none;
-  overflow: hidden;
-}
-
-.pkg-results {
-  flex: 1;
-  min-height: 0;
-  background: #1a1a2e;
-  color: #e2e8f0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-.pkg-results-header {
-  display: flex;
-  align-items: center;
-  gap: .75rem;
-  padding: .6rem 1.25rem;
-  background: #16213e;
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-}
-.pkg-results-title { font-weight: 700; font-size: .9rem; }
-.result-error-banner {
-  margin: .75rem 1.25rem 0;
-  padding: .65rem .85rem;
-  background: rgba(248,215,218,.15);
-  border: 1px solid rgba(252,129,129,.3);
-  border-radius: 6px;
-  color: #fc8181;
-  font-size: .85rem;
-}
-.pkg-results-body {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  padding: .75rem 1.25rem 1rem;
-  flex: 1;
-  min-height: 0;
-}
-.result-pane { display: flex; flex-direction: column; min-height: 0; }
-.result-pane-hint {
-  font-size: .72rem;
-  font-weight: 400;
-  color: #7a8a9a;
-  margin-left: .4rem;
-}
-.result-pane-label {
-  font-size: .78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  color: #4fc3f7;
-  margin-bottom: .4rem;
-}
-.result-pre {
-  flex: 1;
-  min-height: 0;
-  background: #13131f;
-  color: #cdd6f4;
-  border: 1px solid #313244;
-  border-radius: 4px;
-  padding: .65rem .75rem;
-  font-size: .8rem;
-  line-height: 1.5;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
 </style>

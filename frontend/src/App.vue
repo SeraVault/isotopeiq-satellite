@@ -71,7 +71,8 @@
 
     <!-- Main content -->
     <v-main :style="isLoggedIn ? '' : 'padding: 0'">
-      <v-container fluid class="pa-6">
+      <router-view v-if="isEditorRoute" />
+      <v-container v-else fluid class="pa-6">
         <router-view />
       </v-container>
     </v-main>
@@ -80,11 +81,13 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { isLoggedIn, clearTokens } from './api'
 import { useDashboardStore } from './stores/dashboard'
 
 const router   = useRouter()
+const route    = useRoute()
+const isEditorRoute = computed(() => route.path === '/scripts/new' || route.path.endsWith('/edit'))
 const username = ref(localStorage.getItem('username') || '')
 const dashboardStore = useDashboardStore()
 

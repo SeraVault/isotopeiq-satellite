@@ -10,8 +10,6 @@ from .models import Job, DeviceJobResult
 from core.collection.ssh import SSHCollector
 from core.collection.telnet import TelnetCollector
 from core.collection.winrm import WinRMCollector
-from core.collection.render import render_script
-from core.parser.runner import run_parser
 from core.canonical import validate_canonical
 
 _SUPPORTED_CONNECTION_TYPES = ('ssh', 'telnet', 'winrm')
@@ -32,7 +30,6 @@ def _apply_baseline_and_drift(device, result) -> None:
     from apps.baselines.models import Baseline
     from apps.drift.detector import detect_drift
     from apps.drift.models import DriftEvent
-    from apps.notifications.syslog import SyslogNotifier
     from apps.notifications.dispatcher import dispatch_actions
 
     policy = getattr(getattr(result, 'job', None), 'policy', None)
@@ -65,10 +62,8 @@ def _apply_baseline_and_drift(device, result) -> None:
                 diff=diffs,
                 baseline_snapshot=baseline_data,
             )
-            # Global syslog notification (always fires when syslog is enabled in settings)
-            SyslogNotifier().notify_drift(device, drift_event)
             logger.warning('Drift detected for device "%s" (event %s).', device, drift_event.pk)
-        # Per-policy post-collection actions (email, FTP, additional syslog rules, etc.)
+        # Per-policy post-collection actions (email, FTP, syslog, etc.)
         dispatch_actions('drift_detected', policy, device, baseline=baseline, drift_event=drift_event)
 
 
@@ -78,19 +73,18 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
 
     policy = (
         Policy.objects
-        .prefetch_related('devices')
-        .select_related('script_package__collection_script', 'script_package__parser_script')
+        .prefetch_related('devices', 'script_job__steps__script')
         .get(pk=policy_id)
     )
 
     if policy.collection_method == 'script':
         config_error = None
-        if not policy.script_package:
-            config_error = 'Policy misconfigured: no Collection Profile assigned.'
-        elif not policy.script_package.collection_script:
-            config_error = 'Policy misconfigured: Collection Profile has no collection script.'
-        elif not policy.script_package.parser_script:
-            config_error = 'Policy misconfigured: Collection Profile has no parser script.'
+        if not policy.script_job:
+            config_error = 'Policy misconfigured: no Script Job assigned.'
+        else:
+            sj_steps = list(policy.script_job.steps.all())
+            if not any(s.run_on == 'client' for s in sj_steps):
+                config_error = 'Policy misconfigured: Script Job has no client step to collect data.'
         if config_error:
             job = Job.objects.create(
                 policy=policy,
@@ -104,17 +98,57 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
             return
 
     if policy.collection_method == 'agent':
-        candidates = list(policy.devices.filter(is_active=True, connection_type='agent'))
+        all_active = list(policy.devices.filter(is_active=True))
+        agent_devices  = [d for d in all_active if d.connection_type == 'agent']
         script_devices = []
-        agent_devices  = candidates
+        skipped        = [d for d in all_active if d.connection_type != 'agent']
     else:
-        candidates = list(policy.devices.filter(is_active=True, connection_type__in=_SUPPORTED_CONNECTION_TYPES))
-        script_devices = candidates
+        all_active = list(policy.devices.filter(is_active=True))
+        script_devices = [d for d in all_active if d.connection_type in _SUPPORTED_CONNECTION_TYPES]
         agent_devices  = []
+        skipped        = [d for d in all_active if d.connection_type not in _SUPPORTED_CONNECTION_TYPES]
 
     if device_id is not None:
         script_devices = [d for d in script_devices if d.id == device_id]
         agent_devices  = [d for d in agent_devices  if d.id == device_id]
+        skipped        = [d for d in skipped        if d.id == device_id]
+
+    # Create failed Job records for devices whose connection type is incompatible
+    # with this policy so they show up in the job monitor rather than silently disappearing.
+    for device in skipped:
+        expected = 'agent' if policy.collection_method == 'agent' else '/'.join(_SUPPORTED_CONNECTION_TYPES)
+        msg = (
+            f'Device skipped: connection type "{device.connection_type}" is not compatible '
+            f'with this policy\'s collection method "{policy.collection_method}" '
+            f'(expected {expected}).'
+        )
+        logger.warning('run_policy id=%s: %s (device=%s)', policy_id, msg, device)
+        _now = timezone.now()
+        _job = Job.objects.create(
+            policy=policy, device=device, triggered_by=triggered_by,
+            status='failed', started_at=_now, finished_at=_now,
+            celery_task_id=self.request.id or '',
+        )
+        DeviceJobResult.objects.create(
+            job=_job, device=device,
+            status='failed', started_at=_now, finished_at=_now,
+            error_message=msg,
+        )
+
+    # Guard: if no valid devices remain emit a single failed sentinel job.
+    if not script_devices and not agent_devices:
+        _now = timezone.now()
+        msg = (
+            'No eligible devices for this policy run. '
+            'Check that assigned devices are active and have a compatible connection type.'
+        )
+        logger.warning('run_policy id=%s: %s', policy_id, msg)
+        Job.objects.create(
+            policy=policy, device=None, triggered_by=triggered_by,
+            status='failed', started_at=_now, finished_at=_now,
+            celery_task_id=self.request.id or '',
+        )
+        return
 
     # ── SSH / WinRM / Telnet devices ─────────────────────────────────────────
     devices = script_devices
@@ -138,13 +172,14 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
         )
 
         try:
+            from apps.scripts.tasks import _execute_steps
+            sj_steps = list(policy.script_job.steps.select_related('script').order_by('order'))
             collector = _get_collector(device)
-            raw_output = collector.run(render_script(policy.script_package.collection_script.content, device))
+            step_outputs, raw_output, parsed_output, any_baseline, any_drift = _execute_steps(
+                sj_steps, device, collector
+            )
             result.raw_output = raw_output
-
-            parsed = run_parser(policy.script_package.parser_script.content, raw_output)
-            validate_canonical(parsed)
-            result.parsed_output = parsed
+            result.parsed_output = parsed_output
             result.status = 'success'
         except Exception as exc:
             logger.exception('Error processing device "%s" in job %s.', device, job.id)
@@ -158,7 +193,7 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
         job.finished_at = timezone.now()
         job.save()
 
-        if result.status == 'success':
+        if result.status == 'success' and result.parsed_output and (any_baseline or any_drift):
             try:
                 _apply_baseline_and_drift(device, result)
             except Exception:
@@ -192,9 +227,6 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
                 raw = resp.read().decode('utf-8')
             result.raw_output = raw
             parsed = json.loads(raw)
-            if policy.script_package and policy.script_package.parser_script:
-                parsed = run_parser(policy.script_package.parser_script.content, raw)
-            validate_canonical(parsed)
             result.parsed_output = parsed
             result.status = 'success'
         except (URLError, OSError) as exc:

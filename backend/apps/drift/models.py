@@ -77,6 +77,8 @@ class DriftEvent(models.Model):
     job_result = models.ForeignKey(
         'jobs.DeviceJobResult',
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name='drift_events',
     )
     diff = models.JSONField()

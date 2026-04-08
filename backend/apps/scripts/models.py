@@ -6,6 +6,7 @@ class Script(models.Model):
         ('collection', 'Collection'),
         ('parser', 'Parser'),
         ('deployment', 'Deployment'),
+        ('utility', 'Utility'),
     ]
     TARGET_OS_CHOICES = [
         ('linux', 'Linux'),
@@ -13,11 +14,18 @@ class Script(models.Model):
         ('macos', 'macOS'),
         ('any', 'Any'),
     ]
+    RUN_ON_CHOICES = [
+        ('client', 'Client (remote device)'),
+        ('server', 'Server (satellite)'),
+        ('both', 'Both'),
+    ]
 
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
     script_type = models.CharField(max_length=20, choices=SCRIPT_TYPE_CHOICES)
+    run_on = models.CharField(max_length=10, choices=RUN_ON_CHOICES, default='client')
     target_os = models.CharField(max_length=20, choices=TARGET_OS_CHOICES, default='any')
+    language = models.CharField(max_length=30, default='shell')
     content = models.TextField()
     version = models.CharField(max_length=50, default='1.0.0')
     is_active = models.BooleanField(default=True)
@@ -31,5 +39,5 @@ class Script(models.Model):
         return f'{self.name} ({self.script_type})'
 
 
-# Import here so `from apps.scripts.models import ScriptPackage` works.
-from apps.scripts.package_models import ScriptPackage  # noqa: E402, F401
+# Import here so re-exports from apps.scripts.models work.
+from apps.scripts.job_models import ScriptJob, ScriptJobStep, ScriptJobResult  # noqa: E402, F401

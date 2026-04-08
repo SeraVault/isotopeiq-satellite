@@ -2,6 +2,15 @@
   <div>
     <div class="text-h5 font-weight-bold mb-5">Job Monitor</div>
 
+    <v-tabs v-model="activeTab" class="mb-5">
+      <v-tab value="policy">Policy Jobs</v-tab>
+      <v-tab value="script">Script Job Runs</v-tab>
+    </v-tabs>
+
+    <v-window v-model="activeTab">
+      <!-- ── POLICY JOBS TAB ─────────────────────────────────────────── -->
+      <v-window-item value="policy">
+
     <!-- Filters -->
     <v-card rounded="lg" elevation="1" class="mb-5 pa-4">
       <v-row dense align="end">
@@ -132,6 +141,78 @@
             </div>
           </template>
           <div v-else class="text-medium-emphasis pa-2">No result data yet.</div>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
+      </v-window-item>
+
+      <!-- ── SCRIPT JOB RUNS TAB ─────────────────────────────────────── -->
+      <v-window-item value="script">
+        <div class="d-flex align-center justify-space-between mb-4">
+          <div class="text-caption text-medium-emphasis">Results from ad-hoc and policy-triggered script job executions.</div>
+          <v-btn size="small" variant="tonal" prepend-icon="mdi-refresh" :loading="sjRuns.loading" @click="loadSjRuns">Refresh</v-btn>
+        </div>
+        <v-data-table
+          :headers="sjRunHeaders"
+          :items="sjRuns.items"
+          :loading="sjRuns.loading"
+          density="compact"
+          rounded="lg"
+          elevation="1"
+          :items-per-page="25"
+          no-data-text="No script job runs yet."
+          hover
+        >
+          <template #item.script_job_name="{ item }">
+            <span class="font-weight-medium">{{ item.script_job_name }}</span>
+          </template>
+          <template #item.device_name="{ item }">{{ item.device_name || '(server-only)' }}</template>
+          <template #item.status="{ item }">
+            <v-chip :color="statusColor(item.status)" size="x-small" label>{{ item.status }}</v-chip>
+          </template>
+          <template #item.started_at="{ item }">
+            <span class="text-caption text-medium-emphasis">{{ item.started_at ? fmt(item.started_at) : '—' }}</span>
+          </template>
+          <template #item.duration="{ item }">
+            <span class="text-caption text-medium-emphasis">{{ duration(item) }}</span>
+          </template>
+          <template #item.actions="{ item }">
+            <v-btn size="x-small" variant="tonal" @click="openSjDetail(item)">Details</v-btn>
+          </template>
+        </v-data-table>
+      </v-window-item>
+    </v-window>
+
+    <!-- Script job run detail dialog -->
+    <v-dialog v-model="sjDetailOpen" max-width="760" scrollable>
+      <v-card v-if="sjSelected" rounded="lg">
+        <v-card-title class="d-flex justify-space-between align-center">
+          <div>
+            <span>{{ sjSelected.script_job_name }}</span>
+            <v-chip :color="statusColor(sjSelected.status)" size="x-small" label class="ml-2">{{ sjSelected.status }}</v-chip>
+          </div>
+          <v-btn icon="mdi-close" variant="text" size="small" @click="sjDetailOpen = false" />
+        </v-card-title>
+        <v-card-subtitle>
+          Device: {{ sjSelected.device_name || '(server-only)' }}
+          · triggered by {{ sjSelected.triggered_by }}
+          · {{ sjSelected.started_at ? fmt(sjSelected.started_at) : '—' }}
+        </v-card-subtitle>
+        <v-card-text>
+          <v-alert v-if="sjSelected.error_message" type="error" variant="tonal" density="compact" class="mb-4">
+            {{ sjSelected.error_message }}
+          </v-alert>
+          <template v-if="sjSelected.step_outputs?.length">
+            <div v-for="step in sjSelected.step_outputs" :key="step.order" class="mb-4">
+              <div class="d-flex align-center ga-2 mb-1">
+                <span class="text-caption font-weight-bold text-medium-emphasis text-uppercase">Step {{ step.order + 1 }} — {{ step.script }}</span>
+                <v-chip size="x-small" label :color="step.run_on === 'client' ? 'blue-darken-1' : 'purple-darken-1'">{{ step.run_on }}</v-chip>
+              </div>
+              <pre class="result-pre">{{ step.output || '(empty)' }}</pre>
+            </div>
+          </template>
+          <div v-else class="text-medium-emphasis pa-2">No step output recorded.</div>
         </v-card-text>
       </v-card>
     </v-dialog>
@@ -309,6 +390,42 @@ async function cancel(job) {
   if (selectedId.value === job.id) detailOpen.value = false
 }
 
+// ── Script Job Runs tab ──────────────────────────────────────────────────────
+const activeTab = ref('policy')
+
+const sjRunHeaders = [
+  { title: 'Script Job',   key: 'script_job_name', sortable: false },
+  { title: 'Device',       key: 'device_name',     sortable: false },
+  { title: 'Triggered By', key: 'triggered_by',    sortable: false },
+  { title: 'Status',       key: 'status',          sortable: false },
+  { title: 'Started',      key: 'started_at',      sortable: false },
+  { title: 'Duration',     key: 'duration',        sortable: false },
+  { title: '',             key: 'actions',         sortable: false, align: 'end' },
+]
+
+const sjRuns = ref({ items: [], loading: false })
+const sjDetailOpen = ref(false)
+const sjSelected = ref(null)
+
+async function loadSjRuns() {
+  sjRuns.value.loading = true
+  try {
+    const res = await api.get('/scripts/script-jobs/results/', { params: { page_size: 100, ordering: '-started_at' } })
+    sjRuns.value.items = res.data?.results ?? res.data ?? []
+  } finally {
+    sjRuns.value.loading = false
+  }
+}
+
+function openSjDetail(item) {
+  sjSelected.value = item
+  sjDetailOpen.value = true
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'script' && !sjRuns.value.items.length) loadSjRuns()
+})
+
 onMounted(async () => {
   const [dRes, pRes] = await Promise.all([
     api.get('/devices/', { params: { page_size: 50 } }),
@@ -316,7 +433,9 @@ onMounted(async () => {
   ])
   devices.value  = dRes.data.results ?? dRes.data
   policies.value = pRes.data.results ?? pRes.data
+  applyFilters()
   store.startPolling()
+  loadSjRuns()
 })
 onUnmounted(() => store.stopPolling())
 </script>

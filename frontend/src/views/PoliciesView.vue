@@ -262,11 +262,31 @@
               </div>
             </v-col>
 
-            <!-- Collection Script (script mode only) -->
+            <!-- Script Job (script mode only) -->
             <v-col v-if="form.collection_method === 'script'" cols="12" sm="6">
-              <v-select v-model="form.script_package" label="Collection Profile *" hint="Bundles the collection and parser scripts together." persistent-hint :items="scriptPackages" item-title="name" item-value="id" clearable density="compact" />
+              <v-select
+                v-model="form.script_job"
+                label="Script Job *"
+                hint="Defines the collection and parser scripts to run."
+                persistent-hint
+                :items="scriptJobs"
+                item-title="name"
+                item-value="id"
+                clearable
+                density="compact"
+              >
+                <template #item="{ item, props }">
+                  <v-list-item v-bind="props">
+                    <template #subtitle>
+                      <span v-if="item.raw.steps?.length" class="text-caption text-medium-emphasis">
+                        {{ item.raw.steps.length }} step{{ item.raw.steps.length !== 1 ? 's' : '' }}:
+                        {{ item.raw.steps.map(s => `${s.run_on === 'client' ? '➡ device' : '⚙ server'} ${s.script_name}`).join(' → ') }}
+                      </span>
+                    </template>
+                  </v-list-item>
+                </template>
+              </v-select>
             </v-col>
-
 
 
             <!-- ── Device picker ─────────────────────────────────────────── -->
@@ -669,7 +689,7 @@ async function loadMoreDevices() {
 
 const policies          = ref([])
 const totalPolicies     = ref(0)
-const scriptPackages    = ref([])
+const scriptJobs        = ref([])
 const loading   = ref(false)
 const showHelp  = ref(false)
 const showForm  = ref(false)
@@ -709,16 +729,15 @@ function blank() {
     name: '', description: '', cron_schedule: '0 2 * * *',
     collection_method: 'script',
     delay_between_devices: 0,
-    devices: [], script_package: null, is_active: true,
+    devices: [], script_job: null, is_active: true,
   }
 }
 
 onMounted(async () => {
   try {
     await Promise.all([
-      api.get('/scripts/packages/').then(r => {
-        const pkgs = r.data.results ?? r.data
-        scriptPackages.value = pkgs.filter(p => p.is_active)
+      api.get('/scripts/script-jobs/', { params: { page_size: 1000 } }).then(r => {
+        scriptJobs.value = r.data.results ?? r.data ?? []
       }),
       fetchDevices(),
     ])
@@ -739,7 +758,7 @@ function openNew() {
 function openEdit(p) {
   form.value = {
     ...p,
-    script_package: p.script_package?.id ?? p.script_package ?? null,
+    script_job: p.script_job_detail?.id ?? p.script_job ?? null,
   }
   // Preserve full device objects so chips show names (policy API returns nested objects)
   selectedDevices.value = (p.devices ?? []).map(d =>

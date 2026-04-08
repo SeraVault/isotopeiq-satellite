@@ -1,5 +1,5 @@
 <template>
-  <div ref="el" class="cm-host"></div>
+  <div ref="el" class="h-100 overflow-hidden"></div>
 </template>
 
 <script setup>
@@ -14,7 +14,6 @@ import { StreamLanguage } from '@codemirror/language'
 import { shell } from '@codemirror/legacy-modes/mode/shell'
 import { powerShell } from '@codemirror/legacy-modes/mode/powershell'
 import { vbScript } from '@codemirror/legacy-modes/mode/vbscript'
-import { oneDark } from '@codemirror/theme-one-dark'
 import { bracketMatching, indentOnInput, foldGutter } from '@codemirror/language'
 import { closeBrackets } from '@codemirror/autocomplete'
 
@@ -46,7 +45,7 @@ onMounted(() => {
     state: EditorState.create({
       doc: props.modelValue,
       extensions: [
-        oneDark,
+
         langCompartment.of(langExtension(props.language)),
         lineNumbers(),
         highlightActiveLine(),
@@ -63,8 +62,8 @@ onMounted(() => {
           }
         }),
         EditorView.theme({
-          '&': { height: '100%', fontSize: '0.83rem' },
-          '.cm-scroller': { fontFamily: "'JetBrains Mono','Fira Code','Cascadia Code',monospace", overflow: 'auto' },
+          '&': { height: '100%' },
+          '.cm-scroller': { overflow: 'auto' },
         }),
       ],
     }),
@@ -87,15 +86,4 @@ watch(() => props.modelValue, val => {
 onBeforeUnmount(() => { view?.destroy() })
 </script>
 
-<style scoped>
-.cm-host {
-  height: 100%;
-  overflow: hidden;
-  border-radius: 6px;
-  border: 1px solid #313244;
-}
-.cm-host:focus-within {
-  border-color: #4fc3f7;
-  box-shadow: 0 0 0 2px rgba(79,195,247,.2);
-}
-</style>
+

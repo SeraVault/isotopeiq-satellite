@@ -110,6 +110,9 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
+# Use a project-specific queue so tasks from other projects sharing the same
+# Redis instance are not accidentally consumed or discarded.
+CELERY_TASK_DEFAULT_QUEUE = 'isotopeiq_satellite_2'
 
 # Static beat schedule — retention pruning runs daily at 03:00 UTC.
 # Policy-driven schedules are registered dynamically via django_celery_beat.
