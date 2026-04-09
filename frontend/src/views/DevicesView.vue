@@ -170,17 +170,16 @@
             <v-card-text>
               <v-row dense>
                 <v-col cols="12" sm="6"><v-text-field v-model="deviceForm.name" label="Name *" /></v-col>
-                <v-col cols="12" sm="6"><v-text-field v-model="deviceForm.hostname" label="Hostname / IP *" /></v-col>
-                <v-col cols="12" sm="6"><v-text-field v-model="deviceForm.fqdn" label="FQDN" placeholder="optional" /></v-col>
-                <v-col cols="12" sm="6"><v-text-field v-model.number="deviceForm.port" label="Port" type="number" :placeholder="String(defaultPort(deviceForm.connection_type))" /></v-col>
+                <v-col cols="12" sm="6"><v-text-field v-model="deviceForm.hostname" label="Hostname / IP / FQDN *" /></v-col>
                 <v-col cols="12" sm="6">
                   <v-select v-model="deviceForm.connection_type" label="Connection Type" :items="connTypeItems" @update:modelValue="onConnectionTypeChange" />
                 </v-col>
-                <v-col cols="12" sm="6">
-                  <v-select v-model="deviceForm.credential" label="Credential" :items="credentialItems" clearable />
-                </v-col>
-                <v-col v-if="deviceForm.connection_type === 'ssh'" cols="12">
-                  <v-text-field v-model="deviceForm.host_key" label="SSH Host Key (optional)" placeholder="base64 public key — run: ssh-keyscan -t rsa <hostname>" style="font-family:monospace" />
+                <v-col cols="12" sm="6"><v-text-field v-model.number="deviceForm.port" label="Port" type="number" :placeholder="String(defaultPort(deviceForm.connection_type))" /></v-col>
+                <v-col cols="12" sm="12">
+                  <div class="d-flex align-center ga-2">
+                    <v-select v-model="deviceForm.credential" label="Credential" :items="credentialItems" clearable class="flex-grow-1" />
+                    <v-btn icon="mdi-plus" size="small" variant="tonal" color="primary" title="Add new credential" @click="openNewCredFromDevice" />
+                  </div>
                 </v-col>
                 <template v-if="deviceForm.connection_type === 'agent'">
                   <v-col cols="12" sm="6">
@@ -194,17 +193,6 @@
                   </v-col>
                 </template>
               </v-row>
-
-              <v-expansion-panels class="mt-2" variant="accordion">
-                <v-expansion-panel title="Inline credentials (fallback)">
-                  <v-expansion-panel-text>
-                    <v-row dense>
-                      <v-col cols="6"><v-text-field v-model="deviceForm.username" label="Username" autocomplete="off" /></v-col>
-                      <v-col cols="6"><v-text-field v-model="deviceForm.password" label="Password" type="password" autocomplete="new-password" /></v-col>
-                    </v-row>
-                  </v-expansion-panel-text>
-                </v-expansion-panel>
-              </v-expansion-panels>
 
               <v-text-field v-model="deviceForm.tagsRaw" label="Tags (comma-separated)" placeholder="prod, linux, web" class="mt-3" />
               <v-textarea v-model="deviceForm.notes" label="Notes" rows="2" class="mt-1" />
@@ -362,29 +350,29 @@
           </v-data-table>
         </v-card>
 
-        <!-- Credential dialog -->
-        <v-dialog v-model="credForm.show" max-width="480" scrollable>
-          <v-card rounded="lg">
-            <v-card-title>{{ credForm.id ? 'Edit' : 'Add' }} Credential</v-card-title>
-            <v-card-text>
-              <v-text-field v-model="credForm.name" label="Name *" class="mb-2" />
-              <v-select v-model="credForm.credential_type" label="Type" :items="credTypeItems" class="mb-2" />
-              <v-text-field v-if="credForm.credential_type !== 'api_token'" v-model="credForm.username" label="Username" class="mb-2" />
-              <v-text-field v-if="credForm.credential_type === 'password'" v-model="credForm.password" label="Password" type="password" autocomplete="new-password" placeholder="leave blank to keep existing" class="mb-2" />
-              <v-textarea v-if="credForm.credential_type === 'private_key'" v-model="credForm.private_key" label="Private Key (PEM)" rows="8" style="font-family:monospace;font-size:.82rem" placeholder="-----BEGIN ... PRIVATE KEY-----&#10;...&#10;-----END ... PRIVATE KEY-----" class="mb-2" />
-              <v-text-field v-if="credForm.credential_type === 'api_token'" v-model="credForm.token" label="Token" type="password" autocomplete="new-password" placeholder="leave blank to keep existing" class="mb-2" />
-              <v-textarea v-model="credForm.notes" label="Notes" rows="2" />
-              <v-alert v-if="credForm.error" type="error" variant="tonal" density="compact" class="mt-3">{{ credForm.error }}</v-alert>
-            </v-card-text>
-            <v-card-actions>
-              <v-spacer />
-              <v-btn @click="credForm.show = false">Cancel</v-btn>
-              <v-btn color="primary" @click="saveCred">Save</v-btn>
-            </v-card-actions>
-          </v-card>
-        </v-dialog>
       </v-window-item>
     </v-window>
+    <!-- Credential dialog -->
+    <v-dialog v-model="credForm.show" max-width="480" scrollable>
+      <v-card rounded="lg">
+        <v-card-title>{{ credForm.id ? 'Edit' : 'Add' }} Credential</v-card-title>
+        <v-card-text>
+          <v-text-field v-model="credForm.name" label="Name *" class="mb-2" data-lpignore="true" />
+          <v-select v-model="credForm.credential_type" label="Type" :items="credTypeItems" class="mb-2" />
+          <v-text-field v-if="credForm.credential_type !== 'api_token'" v-model="credForm.username" label="Username" class="mb-2" autocomplete="off" data-lpignore="true" />
+          <v-text-field v-if="credForm.credential_type === 'password'" v-model="credForm.password" label="Password" type="password" autocomplete="new-password" placeholder="leave blank to keep existing" class="mb-2" data-lpignore="true" />
+          <v-textarea v-if="credForm.credential_type === 'private_key'" v-model="credForm.private_key" label="Private Key (PEM)" rows="8" style="font-family:monospace;font-size:.82rem" placeholder="-----BEGIN ... PRIVATE KEY-----&#10;...&#10;-----END ... PRIVATE KEY-----" class="mb-2" />
+          <v-text-field v-if="credForm.credential_type === 'api_token'" v-model="credForm.token" label="Token" type="password" autocomplete="new-password" placeholder="leave blank to keep existing" class="mb-2" data-lpignore="true" />
+          <v-textarea v-model="credForm.notes" label="Notes" rows="2" />
+          <v-alert v-if="credForm.error" type="error" variant="tonal" density="compact" class="mt-3">{{ credForm.error }}</v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="credForm.show = false">Cancel</v-btn>
+          <v-btn color="primary" @click="saveCred">Save</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
     <!-- Confirm dialog -->
     <v-dialog v-model="confirmDialog.open" max-width="400" persistent>
       <v-card rounded="lg">
@@ -494,8 +482,7 @@ function fmt(iso) { return new Date(iso).toLocaleString() }
 function infoRows(d) {
   return [
     { label: 'Name',        value: d.name },
-    { label: 'Hostname',    value: d.hostname },
-    { label: 'FQDN',        value: d.fqdn || '—' },
+    { label: 'Hostname',    value: d.fqdn || d.hostname },
     { label: 'Port',        value: d.port },
     { label: 'Connection',  value: d.connection_type },
     { label: 'Credential',  value: credName(d.credential) },
@@ -553,11 +540,17 @@ function credName(credId) {
   return c ? c.name : `#${credId}`
 }
 
+const afterCredSave = ref(null)
+
 const credForm = ref(blankCred())
 function blankCred() {
   return { show: false, id: null, name: '', credential_type: 'password', username: '', password: '', private_key: '', token: '', notes: '', error: '' }
 }
-function openNewCred()  { credForm.value = { ...blankCred(), show: true } }
+function openNewCred()  { afterCredSave.value = null; credForm.value = { ...blankCred(), show: true } }
+function openNewCredFromDevice() {
+  afterCredSave.value = (newCred) => { deviceForm.value.credential = newCred.id }
+  credForm.value = { ...blankCred(), show: true }
+}
 function openEditCred(c) {
   credForm.value = { ...blankCred(), show: true, id: c.id, name: c.name, credential_type: c.credential_type, username: c.username || '', notes: c.notes || '' }
 }
@@ -576,6 +569,7 @@ async function saveCred() {
     } else {
       const { data } = await api.post('/devices/credentials/', payload)
       credentials.value.push(data)
+      if (afterCredSave.value) { afterCredSave.value(data); afterCredSave.value = null }
     }
     credForm.value.show = false
   } catch (e) {
@@ -613,18 +607,16 @@ function onConnectionTypeChange() {
 
 const deviceForm = ref(blankDevice())
 function blankDevice() {
-  return { show: false, id: null, name: '', hostname: '', fqdn: '', port: 22, connection_type: 'ssh', credential: null, username: '', password: '', host_key: '', agent_port: 9322, tagsRaw: '', notes: '', is_active: true, error: '', testing: false, testResult: null }
+  return { show: false, id: null, name: '', hostname: '', port: 22, connection_type: 'ssh', credential: null, agent_port: 9322, tagsRaw: '', notes: '', is_active: true, error: '', testing: false, testResult: null }
 }
 function openNewDevice()  { deviceForm.value = { ...blankDevice(), show: true } }
 function openEditDevice(d) {
-  deviceForm.value = { ...blankDevice(), show: true, id: d.id, name: d.name, hostname: d.hostname, fqdn: d.fqdn || '', port: d.port, connection_type: d.connection_type, credential: d.credential ?? null, host_key: d.host_key || '', agent_port: d.agent_port ?? 9322, tagsRaw: (d.tags ?? []).join(', '), notes: d.notes || '', is_active: d.is_active }
+  deviceForm.value = { ...blankDevice(), show: true, id: d.id, name: d.name, hostname: d.fqdn || d.hostname, port: d.port, connection_type: d.connection_type, credential: d.credential ?? null, agent_port: d.agent_port ?? 9322, tagsRaw: (d.tags ?? []).join(', '), notes: d.notes || '', is_active: d.is_active }
 }
 
 async function saveDevice() {
   deviceForm.value.error = ''
-  const payload = { name: deviceForm.value.name, hostname: deviceForm.value.hostname, fqdn: deviceForm.value.fqdn, port: deviceForm.value.port, connection_type: deviceForm.value.connection_type, credential: deviceForm.value.credential, host_key: deviceForm.value.host_key, tags: deviceForm.value.tagsRaw.split(',').map(t => t.trim()).filter(Boolean), notes: deviceForm.value.notes, is_active: deviceForm.value.is_active }
-  if (deviceForm.value.username) payload.username = deviceForm.value.username
-  if (deviceForm.value.password) payload.password = deviceForm.value.password
+  const payload = { name: deviceForm.value.name, hostname: deviceForm.value.hostname, fqdn: deviceForm.value.hostname, port: deviceForm.value.port, connection_type: deviceForm.value.connection_type, credential: deviceForm.value.credential, tags: deviceForm.value.tagsRaw.split(',').map(t => t.trim()).filter(Boolean), notes: deviceForm.value.notes, is_active: deviceForm.value.is_active }
   if (deviceForm.value.connection_type === 'agent') {
     payload.agent_port = deviceForm.value.agent_port || 9322
   }
@@ -728,12 +720,14 @@ async function testConnInModal() {
     if (deviceForm.value.id) {
       ;({ data } = await api.post(`/devices/${deviceForm.value.id}/test-connection/`))
     } else {
-      ;({ data } = await api.post('/devices/test-connection/', { connection_type: deviceForm.value.connection_type, hostname: deviceForm.value.hostname, port: deviceForm.value.connection_type === 'agent' ? (deviceForm.value.agent_port || 9322) : deviceForm.value.port, host_key: deviceForm.value.host_key, credential: deviceForm.value.credential, username: deviceForm.value.username, password: deviceForm.value.password }))
+      ;({ data } = await api.post('/devices/test-connection/', { connection_type: deviceForm.value.connection_type, hostname: deviceForm.value.hostname, port: deviceForm.value.connection_type === 'agent' ? (deviceForm.value.agent_port || 9322) : deviceForm.value.port, credential: deviceForm.value.credential }))
     }
     deviceForm.value.testResult = { ok: true, detail: data.detail }
   } catch (e) {
     const resp = e.response?.data
-    deviceForm.value.testResult = { ok: false, detail: resp?.detail ?? resp?.error ?? JSON.stringify(resp) ?? 'Connection failed.' }
+    const detail = resp?.detail ?? resp?.error ?? JSON.stringify(resp) ?? 'Connection failed.'
+    const tb = resp?.traceback ?? null
+    deviceForm.value.testResult = { ok: false, detail: tb ? `${detail}\n\n${tb}` : detail }
   } finally {
     deviceForm.value.testing = false
   }

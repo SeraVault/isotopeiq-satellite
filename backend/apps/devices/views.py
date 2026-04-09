@@ -1,7 +1,11 @@
+import logging
 import os
+import traceback
 from datetime import datetime
 
 from rest_framework import viewsets, status
+
+log = logging.getLogger(__name__)
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -114,6 +118,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
           credential (ID, optional), username, password
         """
         d = request.data
+        log.info('test-connection inline: %s', dict(d))
         credential = None
         cred_id = d.get('credential')
         if cred_id:
@@ -122,10 +127,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
             except Credential.DoesNotExist:
                 return Response({'detail': 'Credential not found.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        try:
+            port = int(d.get('port') or 22)
+        except (TypeError, ValueError):
+            return Response({'detail': f'Invalid port: {d.get("port")!r}'}, status=status.HTTP_400_BAD_REQUEST)
+
         return _run_connection_test(
             connection_type=d.get('connection_type', 'ssh'),
             hostname=d.get('hostname', ''),
-            port=int(d.get('port', 22)),
+            port=port,
             credential=credential,
             username=d.get('username', ''),
             password=d.get('password', ''),
@@ -199,7 +209,9 @@ def _run_connection_test(connection_type, hostname, port, credential,
             _winrm_configure_envelope(collector)
             return Response({'success': True, 'detail': _WINRM_ONBOARDING_DETAIL}, status=status.HTTP_200_OK)
     except Exception as exc:
-        return Response({'success': False, 'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        tb = traceback.format_exc()
+        log.error('Connection test failed:\n%s', tb)
+        return Response({'success': False, 'detail': str(exc), 'traceback': tb}, status=status.HTTP_400_BAD_REQUEST)
 
     return Response({'success': True, 'detail': 'Connection successful.'}, status=status.HTTP_200_OK)
 

@@ -4,9 +4,8 @@ from django.db import models
 class ScriptJob(models.Model):
     """
     A reusable script execution definition consisting of an ordered pipeline of
-    ScriptJobSteps.  Each step declares which script to run, where to run it
-    (client device or satellite server), and whether to pass output downstream,
-    save it, or use it for baseline / drift detection.
+    ScriptJobSteps.  Each step's execution location (device or Satellite) is
+    determined by the script's own run_on field — not set per-step.
     """
 
     name = models.CharField(max_length=255, unique=True)
@@ -27,18 +26,13 @@ class ScriptJobStep(models.Model):
     """
     A single step in a ScriptJob pipeline.
 
-    Steps run in ascending `order`.  Each step can:
-      - run a script on the remote device (client) or the satellite (server)
+    Steps run in ascending `order`.  Execution location (device or Satellite)
+    is inherited from the script's run_on field.  Each step can:
       - receive the previous step's output as context (`pipe_to_next` on previous)
       - persist its raw output (`save_output`)
       - produce canonical JSON and save it as a device baseline (`enable_baseline`)
       - compare canonical JSON against the existing baseline (`enable_drift`)
     """
-
-    RUN_ON_CHOICES = [
-        ('client', 'Client (remote device)'),
-        ('server', 'Server (satellite)'),
-    ]
 
     script_job = models.ForeignKey(
         ScriptJob,
@@ -50,12 +44,6 @@ class ScriptJobStep(models.Model):
         'scripts.Script',
         on_delete=models.PROTECT,
         related_name='job_steps',
-    )
-    run_on = models.CharField(
-        max_length=20,
-        choices=RUN_ON_CHOICES,
-        default='client',
-        help_text='Where this script runs.',
     )
     pipe_to_next = models.BooleanField(
         default=True,

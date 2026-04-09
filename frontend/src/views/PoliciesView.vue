@@ -280,7 +280,7 @@
                     <template #subtitle>
                       <span v-if="item.raw.steps?.length" class="text-caption text-medium-emphasis">
                         {{ item.raw.steps.length }} step{{ item.raw.steps.length !== 1 ? 's' : '' }}:
-                        {{ item.raw.steps.map(s => `${s.run_on === 'client' ? '➡ device' : '⚙ server'} ${s.script_name}`).join(' → ') }}
+                        {{ item.raw.steps.map(s => `${s.script_run_on === 'client' ? '➡ device' : '⚙ Satellite'}: ${s.script_name}`).join(' → ') }}
                       </span>
                     </template>
                   </v-list-item>

@@ -36,7 +36,13 @@ def _run_server_step(script_content, previous_output, device):
         },
     }
     exec(script_content, ns)  # noqa: S102 — admin-created scripts only
-    return json.dumps(ns['output'])
+    result = ns['output']
+    # Collection scripts set output to a plain string; return it as-is so the
+    # next step (parser) receives raw text in `result`/`raw_output`.
+    # Parser scripts set output to a canonical dict; JSON-serialise it.
+    if isinstance(result, str):
+        return result
+    return json.dumps(result)
 
 
 def _execute_steps(steps, device, collector):
@@ -64,10 +70,11 @@ def _execute_steps(steps, device, collector):
     any_drift = False
 
     for step in steps:
-        if step.run_on == 'client':
+        run_on = step.script.run_on
+        if run_on in ('client', 'both'):
             if not device:
                 raise ValueError(
-                    f'Step {step.order} ("{step.script}") is a client step '
+                    f'Step {step.order} ("{step.script}") runs on the device '
                     'but no device connection is available.'
                 )
             rendered = render_script(step.script.content, device)
@@ -90,7 +97,7 @@ def _execute_steps(steps, device, collector):
         step_outputs.append({
             'order': step.order,
             'script': step.script.name,
-            'run_on': step.run_on,
+            'run_on': run_on,
             'output': step_out,
         })
 
@@ -189,49 +196,50 @@ def _apply_baseline_and_drift(device, result, enable_baseline, enable_drift, job
     from apps.baselines.models import Baseline
     from apps.drift.detector import detect_drift
     from apps.drift.models import DriftEvent
-    from apps.notifications.syslog import SyslogNotifier
+    from apps.notifications.dispatcher import dispatch_actions
 
-    # -- Baseline ----------------------------------------------------------------
+    baseline = Baseline.objects.filter(device=device).first()
+
     if enable_baseline:
-        baseline, created = Baseline.objects.get_or_create(
-            device=device,
-            defaults={
-                'parsed_data': result.parsed_output,
-                'source_result': None,
-            },
-        )
-        if not created:
+        if baseline is None:
+            baseline = Baseline.objects.create(
+                device=device,
+                parsed_data=result.parsed_output,
+                source_result=None,
+            )
+            logger.info('Baseline established for device "%s" via %s.', device, job_label)
+        else:
             baseline.parsed_data = result.parsed_output
             baseline.source_result = None
             baseline.save(update_fields=['parsed_data', 'source_result', 'established_at'])
             logger.info('Baseline updated for device "%s" via %s.', device, job_label)
+        dispatch_actions('new_baseline', None, device, baseline=baseline)
+        return
+
+    if not enable_drift or baseline is None:
+        if baseline:
+            dispatch_actions('collection_success', None, device, baseline=baseline)
+        return
+
+    diffs = detect_drift(baseline.parsed_data, result.parsed_output)
+    if diffs:
+        existing = DriftEvent.objects.filter(device=device, status='new').order_by('-created_at').first()
+        if existing:
+            existing.diff = diffs
+            existing.baseline_snapshot = baseline.parsed_data
+            existing.save(update_fields=['diff', 'baseline_snapshot'])
+            logger.warning('Drift updated for device "%s" (event %s).', device, existing.pk)
+            drift_event = existing
         else:
-            logger.info('Baseline established for device "%s" via %s.', device, job_label)
-
-    # -- Drift -------------------------------------------------------------------
-    if enable_drift:
-        try:
-            baseline = Baseline.objects.get(device=device)
-        except Baseline.DoesNotExist:
-            logger.warning('Drift requested for "%s" but no baseline exists yet.', device)
-            return
-
-        diffs = detect_drift(baseline.parsed_data, result.parsed_output)
-        if diffs:
-            existing = DriftEvent.objects.filter(device=device, status='new').order_by('-created_at').first()
-            if existing:
-                existing.diff = diffs
-                existing.baseline_snapshot = baseline.parsed_data
-                existing.save(update_fields=['diff', 'baseline_snapshot'])
-                logger.warning('Drift updated for device "%s" (event %s).', device, existing.pk)
-            else:
-                drift_event = DriftEvent.objects.create(
-                    device=device,
-                    job_result=None,
-                    diff=diffs,
-                    baseline_snapshot=baseline.parsed_data,
-                )
-                SyslogNotifier().notify_drift(device, drift_event)
-                logger.warning('Drift detected for device "%s" (event %s).', device, drift_event.pk)
+            drift_event = DriftEvent.objects.create(
+                device=device,
+                job_result=result,
+                diff=diffs,
+                baseline_snapshot=baseline.parsed_data,
+            )
+            logger.warning('Drift detected for device "%s" (event %s).', device, drift_event.pk)
+        dispatch_actions('drift_detected', None, device, baseline=baseline, drift_event=drift_event)
+    else:
+        dispatch_actions('collection_success', None, device, baseline=baseline)
 
 

@@ -207,7 +207,7 @@
             <div v-for="step in sjSelected.step_outputs" :key="step.order" class="mb-4">
               <div class="d-flex align-center ga-2 mb-1">
                 <span class="text-caption font-weight-bold text-medium-emphasis text-uppercase">Step {{ step.order + 1 }} — {{ step.script }}</span>
-                <v-chip size="x-small" label :color="step.run_on === 'client' ? 'blue-darken-1' : 'purple-darken-1'">{{ step.run_on }}</v-chip>
+                <v-chip size="x-small" label :color="step.run_on === 'client' ? 'blue-darken-1' : 'purple-darken-1'">{{ step.run_on === 'client' ? 'Push to device' : 'Run on Satellite' }}</v-chip>
               </div>
               <pre class="result-pre">{{ step.output || '(empty)' }}</pre>
             </div>
@@ -221,8 +221,11 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useJobsStore } from '../stores/jobs'
 import api from '../api'
+
+const route = useRoute()
 
 const store = useJobsStore()
 
@@ -391,7 +394,7 @@ async function cancel(job) {
 }
 
 // ── Script Job Runs tab ──────────────────────────────────────────────────────
-const activeTab = ref('policy')
+const activeTab = ref(route.query.tab === 'script' ? 'script' : 'policy')
 
 const sjRunHeaders = [
   { title: 'Script Job',   key: 'script_job_name', sortable: false },
@@ -422,9 +425,15 @@ function openSjDetail(item) {
   sjDetailOpen.value = true
 }
 
+// Refresh script job runs on tab switch and every 10s while on that tab
+let sjPollTimer = null
 watch(activeTab, (tab) => {
-  if (tab === 'script' && !sjRuns.value.items.length) loadSjRuns()
-})
+  clearInterval(sjPollTimer)
+  if (tab === 'script') {
+    loadSjRuns()
+    sjPollTimer = setInterval(loadSjRuns, 10_000)
+  }
+}, { immediate: true })
 
 onMounted(async () => {
   const [dRes, pRes] = await Promise.all([
@@ -435,9 +444,11 @@ onMounted(async () => {
   policies.value = pRes.data.results ?? pRes.data
   applyFilters()
   store.startPolling()
-  loadSjRuns()
 })
-onUnmounted(() => store.stopPolling())
+onUnmounted(() => {
+  store.stopPolling()
+  clearInterval(sjPollTimer)
+})
 </script>
 
 <style scoped>

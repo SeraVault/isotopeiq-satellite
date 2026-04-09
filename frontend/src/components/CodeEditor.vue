@@ -14,7 +14,7 @@ import { StreamLanguage } from '@codemirror/language'
 import { shell } from '@codemirror/legacy-modes/mode/shell'
 import { powerShell } from '@codemirror/legacy-modes/mode/powershell'
 import { vbScript } from '@codemirror/legacy-modes/mode/vbscript'
-import { bracketMatching, indentOnInput, foldGutter } from '@codemirror/language'
+import { bracketMatching, indentOnInput, foldGutter, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { closeBrackets } from '@codemirror/autocomplete'
 
 const props = defineProps({
@@ -45,7 +45,7 @@ onMounted(() => {
     state: EditorState.create({
       doc: props.modelValue,
       extensions: [
-
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         langCompartment.of(langExtension(props.language)),
         lineNumbers(),
         highlightActiveLine(),

@@ -21,7 +21,7 @@ class PolicySerializer(serializers.ModelSerializer):
                     {
                         'order': s.order,
                         'script_name': s.script.name,
-                        'run_on': s.run_on,
+                        'run_on': s.script.run_on,
                     }
                     for s in steps
                 ],

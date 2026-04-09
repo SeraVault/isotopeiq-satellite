@@ -26,7 +26,7 @@ def _get_collector(device):
 logger = logging.getLogger(__name__)
 
 
-def _apply_baseline_and_drift(device, result) -> None:
+def _apply_baseline_and_drift(device, result, enable_baseline=True, enable_drift=True) -> None:
     from apps.baselines.models import Baseline
     from apps.drift.detector import detect_drift
     from apps.drift.models import DriftEvent
@@ -34,24 +34,38 @@ def _apply_baseline_and_drift(device, result) -> None:
 
     policy = getattr(getattr(result, 'job', None), 'policy', None)
 
-    baseline, created = Baseline.objects.get_or_create(
-        device=device,
-        defaults={'parsed_data': result.parsed_output, 'source_result': result},
-    )
-    if created:
-        logger.info('Baseline established for device "%s".', device)
-        dispatch_actions('new_baseline', policy, device, baseline=baseline)
+    baseline = Baseline.objects.filter(device=device).first()
+
+    if enable_baseline:
+        if baseline is None:
+            baseline = Baseline.objects.create(
+                device=device,
+                parsed_data=result.parsed_output,
+                source_result=result,
+            )
+            logger.info('Baseline established for device "%s".', device)
+            dispatch_actions('new_baseline', policy, device, baseline=baseline)
+            return
+        else:
+            baseline.parsed_data = result.parsed_output
+            baseline.source_result = result
+            baseline.save(update_fields=['parsed_data', 'source_result', 'established_at'])
+            logger.info('Baseline updated for device "%s".', device)
+            dispatch_actions('new_baseline', policy, device, baseline=baseline)
+            return
+
+    if not enable_drift or baseline is None:
+        if baseline:
+            dispatch_actions('collection_success', policy, device, baseline=baseline)
         return
 
-    baseline_data = baseline.parsed_data
-    diffs = detect_drift(baseline_data, result.parsed_output)
+    diffs = detect_drift(baseline.parsed_data, result.parsed_output)
     if diffs:
-        # Reuse an existing open event rather than piling up one per collection run.
         existing = DriftEvent.objects.filter(device=device, status='new').order_by('-created_at').first()
         if existing:
             existing.diff = diffs
             existing.job_result = result
-            existing.baseline_snapshot = baseline_data
+            existing.baseline_snapshot = baseline.parsed_data
             existing.save(update_fields=['diff', 'job_result', 'baseline_snapshot'])
             logger.warning('Drift updated for device "%s" (event %s).', device, existing.pk)
             drift_event = existing
@@ -60,11 +74,12 @@ def _apply_baseline_and_drift(device, result) -> None:
                 device=device,
                 job_result=result,
                 diff=diffs,
-                baseline_snapshot=baseline_data,
+                baseline_snapshot=baseline.parsed_data,
             )
             logger.warning('Drift detected for device "%s" (event %s).', device, drift_event.pk)
-        # Per-policy post-collection actions (email, FTP, syslog, etc.)
         dispatch_actions('drift_detected', policy, device, baseline=baseline, drift_event=drift_event)
+    else:
+        dispatch_actions('collection_success', policy, device, baseline=baseline)
 
 
 @shared_task(bind=True)
@@ -81,10 +96,8 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
         config_error = None
         if not policy.script_job:
             config_error = 'Policy misconfigured: no Script Job assigned.'
-        else:
-            sj_steps = list(policy.script_job.steps.all())
-            if not any(s.run_on == 'client' for s in sj_steps):
-                config_error = 'Policy misconfigured: Script Job has no client step to collect data.'
+        elif not policy.script_job.steps.exists():
+            config_error = 'Policy misconfigured: Script Job has no steps.'
         if config_error:
             job = Job.objects.create(
                 policy=policy,
@@ -195,7 +208,7 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
 
         if result.status == 'success' and result.parsed_output and (any_baseline or any_drift):
             try:
-                _apply_baseline_and_drift(device, result)
+                _apply_baseline_and_drift(device, result, enable_baseline=any_baseline, enable_drift=any_drift)
             except Exception:
                 logger.exception('Baseline/drift error for device "%s".', device)
 

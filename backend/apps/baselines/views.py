@@ -26,26 +26,6 @@ class BaselineViewSet(viewsets.ReadOnlyModelViewSet):
             return BaselineListSerializer
         return BaselineSerializer
 
-    @action(detail=True, methods=['post'])
-    def promote(self, request, pk=None):
-        """Promote a DeviceJobResult's parsed output as the new baseline for its device."""
-        baseline = self.get_object()
-        result_id = request.data.get('result_id')
-        if not result_id:
-            return Response({'error': 'result_id required'}, status=status.HTTP_400_BAD_REQUEST)
-        from apps.jobs.models import DeviceJobResult
-        try:
-            result = DeviceJobResult.objects.get(pk=result_id, device=baseline.device)
-        except DeviceJobResult.DoesNotExist:
-            return Response({'error': 'Result not found for this device'}, status=status.HTTP_404_NOT_FOUND)
-        if result.parsed_output is None:
-            return Response({'error': 'Result has no parsed output'}, status=status.HTTP_400_BAD_REQUEST)
-        baseline.parsed_data = result.parsed_output
-        baseline.source_result = result
-        baseline.established_by = request.user.username
-        baseline.save()
-        return Response(BaselineSerializer(baseline).data)
-
     @action(detail=False, methods=['post'], url_path='import')
     def import_baseline(self, request):
         """
@@ -53,9 +33,9 @@ class BaselineViewSet(viewsets.ReadOnlyModelViewSet):
 
         Body: { "device_id": <int>, "canonical_data": { ... } }
 
-        Behaves identically to a push-mode submission: validates the canonical
-        schema, creates a Job/DeviceJobResult for audit purposes, then runs
-        drift detection against the existing baseline (if any).
+        Validates the canonical schema, creates a Job/DeviceJobResult for audit
+        purposes, runs drift detection against the existing baseline (if any),
+        then writes the new baseline directly.
         """
         device_id = request.data.get('device_id')
         canonical_data = request.data.get('canonical_data')
@@ -106,7 +86,8 @@ class BaselineViewSet(viewsets.ReadOnlyModelViewSet):
         if not created:
             diffs = detect_drift(baseline.parsed_data, canonical_data)
             if diffs:
-                event = DriftEvent.objects.create(device=device, job_result=result, diff=diffs)
+                event = DriftEvent.objects.create(device=device, job_result=result, diff=diffs,
+                                                  baseline_snapshot=baseline.parsed_data)
                 SyslogNotifier().notify_drift(device, event)
                 drift_count = len(diffs)
             baseline.parsed_data = canonical_data
@@ -114,8 +95,8 @@ class BaselineViewSet(viewsets.ReadOnlyModelViewSet):
             baseline.established_by = request.user.username
             baseline.save()
         else:
-            from apps.notifications.dispatcher import dispatch_adhoc
-            dispatch_adhoc('ftp', device, baseline)
+            from apps.notifications.dispatcher import dispatch_actions
+            dispatch_actions('new_baseline', None, device, baseline=baseline)
 
         return Response(
             {
@@ -144,3 +125,4 @@ class BaselineViewSet(viewsets.ReadOnlyModelViewSet):
         from apps.notifications.dispatcher import dispatch_adhoc
         dispatch_adhoc(destination, baseline.device, baseline)
         return Response({'status': 'dispatched', 'destination': destination})
+

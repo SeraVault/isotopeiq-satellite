@@ -56,14 +56,18 @@ class ScriptViewSet(viewsets.ModelViewSet):
                 rendered = render_script(content, device)
                 collector = _get_collector(device)
                 output = collector.run(rendered)
+                print_output = None
                 error = None
             except Device.DoesNotExist:
                 return Response({'error': 'Device not found'}, status=status.HTTP_404_NOT_FOUND)
             except Exception as exc:
                 output = ''
+                print_output = None
                 error = ''.join(traceback.format_exception(exc))
         else:  # server
             try:
+                import io
+                import contextlib
                 from apps.scripts.tasks import _run_server_step
                 device = None
                 if device_id:
@@ -72,10 +76,14 @@ class ScriptViewSet(viewsets.ModelViewSet):
                         device = Device.objects.get(pk=device_id, is_active=True)
                     except Device.DoesNotExist:
                         pass
-                output = _run_server_step(content, stdin, device)
+                stdout_cap = io.StringIO()
+                with contextlib.redirect_stdout(stdout_cap):
+                    output = _run_server_step(content, stdin, device)
+                print_output = stdout_cap.getvalue() or None
                 error = None
             except Exception as exc:
                 output = ''
+                print_output = None
                 error = ''.join(traceback.format_exception(exc))
 
         finished = timezone.now()
@@ -83,6 +91,7 @@ class ScriptViewSet(viewsets.ModelViewSet):
 
         return Response({
             'output': output,
+            'print_output': print_output,
             'error': error,
             'duration_ms': duration_ms,
         })

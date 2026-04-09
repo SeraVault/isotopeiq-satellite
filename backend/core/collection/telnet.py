@@ -15,17 +15,20 @@ _PROMPT_RE = re.compile(
     re.MULTILINE,
 )
 
-# Patterns that indicate a login or password prompt.
+# Built-in fallback patterns used when no credential expectations are defined.
 _LOGIN_RE = re.compile(rb'[Uu]ser\s*[Nn]ame[:\s]|[Ll]ogin[:\s]', re.IGNORECASE)
 _PASS_RE = re.compile(rb'[Pp]ass(?:word)?[:\s]', re.IGNORECASE)
 
 
 def _resolve_credentials(device):
-    """Return (username, password) for the device."""
+    """Return (username, password, expectations) for the device."""
     cred = device.credential
     if cred:
-        return cred.username, cred.password
-    return device.username, device.password
+        exps = list(
+            cred.expectations.order_by('order').values_list('prompt_pattern', 'response')
+        )
+        return cred.username, cred.password, exps
+    return device.username, device.password, []
 
 
 class TelnetCollector:
@@ -45,8 +48,8 @@ class TelnetCollector:
 
     # Commands to suppress paging on common platforms, sent before the script.
     _PAGING_CMDS = [
-        b'terminal length 0\n',   # Cisco IOS / IOS-XE / NX-OS
-        b'terminal pager 0\n',    # Cisco IOS-XR
+        b'terminal length 0\n',        # Cisco IOS / IOS-XE / NX-OS
+        b'terminal pager 0\n',         # Cisco IOS-XR
         b'set cli screen-length 0\n',  # Juniper JunOS
     ]
 
@@ -55,12 +58,15 @@ class TelnetCollector:
 
     def run(self, script_content: str) -> str:
         """Connect via Telnet, execute each script line, return all output."""
-        username, password = _resolve_credentials(self._device)
+        username, password, expectations = _resolve_credentials(self._device)
         port = self._device.port or 23
 
         tn = telnetlib.Telnet(self._device.hostname, port, timeout=CONNECT_TIMEOUT)
         try:
-            output = self._authenticate(tn, username, password)
+            if expectations:
+                output = self._authenticate_custom(tn, username, password, expectations)
+            else:
+                output = self._authenticate(tn, username, password)
             output += self._run_script(tn, script_content)
         finally:
             tn.close()
@@ -69,8 +75,44 @@ class TelnetCollector:
 
     # ── private helpers ───────────────────────────────────────────────────
 
+    def _authenticate_custom(
+        self,
+        tn: telnetlib.Telnet,
+        username: str,
+        password: str,
+        expectations: list,
+    ) -> str:
+        """
+        Drive the login sequence using the ordered prompt/response pairs
+        stored on the credential.  Special response tokens:
+          {username}  — substituted with the credential username
+          {password}  — substituted with the credential password
+        Any expectation whose pattern matches the received text causes the
+        corresponding response to be sent.  Processing stops once the device
+        prompt is detected.
+        """
+        buf = b''
+
+        # Build compiled pattern list: credential expectations + prompt sentinel.
+        patterns = [re.compile(p.encode(), re.IGNORECASE) for p, _ in expectations]
+        patterns.append(_PROMPT_RE)
+        prompt_index = len(patterns) - 1
+
+        while True:
+            index, _, data = tn.expect(patterns, timeout=LOGIN_TIMEOUT)
+            buf += data
+            if index == -1 or index == prompt_index:
+                # Timed out or reached the shell prompt — done.
+                break
+            _, response = expectations[index]
+            response = response.replace('{username}', username or '')
+            response = response.replace('{password}', password or '')
+            tn.write((response + '\n').encode())
+
+        return buf.decode('utf-8', errors='replace')
+
     def _authenticate(self, tn: telnetlib.Telnet, username: str, password: str) -> str:
-        """Handle login/password prompts and return any output received."""
+        """Handle login/password prompts using built-in patterns (no expectations set)."""
         buf = b''
 
         # Wait for either a login prompt or a command prompt (already logged in).

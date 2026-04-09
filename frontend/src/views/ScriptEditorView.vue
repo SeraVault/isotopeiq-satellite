@@ -8,10 +8,71 @@
       <v-toolbar-title>{{ isNew ? 'New Script' : 'Edit Script' }}</v-toolbar-title>
       <template #append>
         <span v-if="saveError" class="text-error text-caption mr-3">{{ saveError }}</span>
+        <v-btn icon="mdi-help-circle-outline" variant="text" size="small" class="mr-1" @click="showHelp = true" />
         <v-btn variant="text" size="small" class="mr-1" @click="goBack">Cancel</v-btn>
         <v-btn color="primary" size="small" variant="tonal" :loading="saving" class="mr-2" @click="save">Save</v-btn>
       </template>
     </v-toolbar>
+
+    <!-- ── Placeholders help dialog ──────────────────────────────────────── -->
+    <v-dialog v-model="showHelp" max-width="600" scrollable>
+      <v-card rounded="lg">
+        <v-card-title class="d-flex align-center pt-4 pb-2">
+          <v-icon icon="mdi-code-braces" class="mr-2" color="primary" />
+          Script Placeholders
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" @click="showHelp = false" />
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pa-5" style="font-size:0.92rem;line-height:1.7">
+          <p v-pre class="mb-4">
+            Use <code>{{VARIABLE}}</code> syntax anywhere in your script. Satellite substitutes
+            the values at runtime from the device's credential record — secrets are never stored
+            in the script itself.
+          </p>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">Credential / Auth</div>
+          <v-table density="compact" class="mb-4 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
+            <tbody v-pre>
+              <tr><td style="width:170px"><code>{{USERNAME}}</code></td><td>Login username</td></tr>
+              <tr><td><code>{{PASSWORD}}</code></td><td>Login password</td></tr>
+              <tr><td><code>{{PRIVATE_KEY}}</code></td><td>PEM private key</td></tr>
+              <tr><td><code>{{TOKEN}}</code></td><td>API token</td></tr>
+            </tbody>
+          </v-table>
+
+          <div class="text-subtitle-2 font-weight-bold mb-2">Elevation</div>
+          <v-table density="compact" class="mb-4 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
+            <tbody v-pre>
+              <tr><td style="width:170px"><code>{{ELEVATE}}</code></td><td>Elevation method derived from credential type: <code>sudo_pass</code> (password cred), <code>sudo</code> (private key), <code>none</code> (token or no cred). Use this to branch your script's privilege logic.</td></tr>
+              <tr><td><code>{{ELEVATE_PASS}}</code></td><td>The credential password — alias for <code>{{PASSWORD}}</code>, named for clarity in sudo contexts. Example: <code>echo "{{ELEVATE_PASS}}" | sudo -S whoami</code></td></tr>
+              <tr><td><code>{{ENABLE_PASS}}</code></td><td>Enable / privileged-exec password for network devices such as Cisco IOS. Same value as <code>{{PASSWORD}}</code>, named for clarity. Example: send <code>enable</code> then <code>{{ENABLE_PASS}}</code> to enter privileged mode.</td></tr>
+            </tbody>
+          </v-table>
+
+          <div class="text-subtitle-2 font-weight-bold mb-2">Device Identity</div>
+          <v-table density="compact" class="mb-4 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
+            <tbody v-pre>
+              <tr><td style="width:170px"><code>{{HOSTNAME}}</code></td><td>Device hostname or IP address</td></tr>
+              <tr><td><code>{{FQDN}}</code></td><td>Fully qualified domain name</td></tr>
+              <tr><td><code>{{PORT}}</code></td><td>Connection port</td></tr>
+              <tr><td><code>{{DEVICE_TYPE}}</code></td><td>Device type — <code>linux</code>, <code>windows</code>, <code>network</code>, etc.</td></tr>
+              <tr><td><code>{{OS_TYPE}}</code></td><td>OS type — <code>linux</code>, <code>windows</code>, <code>ios</code>, <code>junos</code>, etc.</td></tr>
+              <tr><td><code>{{CONNECTION_TYPE}}</code></td><td>Transport in use — <code>ssh</code>, <code>telnet</code>, <code>winrm</code>, <code>agent</code></td></tr>
+            </tbody>
+          </v-table>
+
+          <div class="text-subtitle-2 font-weight-bold mb-2">Satellite</div>
+          <v-table density="compact" class="rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
+            <tbody v-pre>
+              <tr><td style="width:170px"><code>{{SATELLITE_URL}}</code></td><td>Base URL of this Satellite server — useful in deployment scripts that need to call back home</td></tr>
+              <tr><td><code>{{PUSH_TOKEN}}</code></td><td>Per-device push token for agent-mode devices</td></tr>
+            </tbody>
+          </v-table>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
 
     <!-- ── Metadata bar ───────────────────────────────────────────────────── -->
     <v-sheet
@@ -21,26 +82,32 @@
       <v-text-field v-model="form.name" label="Name *" density="compact" variant="outlined"
         hide-details style="min-width:180px;max-width:240px" />
       <v-select v-model="form.script_type" label="Type" density="compact" variant="outlined"
-        hide-details style="min-width:120px;max-width:145px"
+        hide-details style="min-width:140px;max-width:170px"
         :items="[
-          { title: 'Collection', value: 'collection' },
-          { title: 'Parser',     value: 'parser' },
-          { title: 'Deployment', value: 'deployment' },
-          { title: 'Utility',    value: 'utility' },
+          { title: 'Collection',  value: 'collection' },
+          { title: 'Parser',      value: 'parser' },
+          { title: 'Deployment',  value: 'deployment' },
+          { title: 'Utility',     value: 'utility' },
         ]" item-title="title" item-value="value" />
-      <v-select v-model="form.run_on" label="Runs On" density="compact" variant="outlined"
-        hide-details style="min-width:120px;max-width:160px"
+      <v-select v-model="form.run_on" label="Execution" density="compact" variant="outlined"
+        hide-details style="min-width:160px;max-width:200px"
         :items="[
-          { title: 'Client', value: 'client' },
-          { title: 'Server', value: 'server' },
-          { title: 'Both',   value: 'both' },
+          { title: 'Push to device',    value: 'client' },
+          { title: 'Run on Satellite',  value: 'server' },
+          { title: 'Both',              value: 'both' },
         ]" item-title="title" item-value="value" />
-      <v-select v-model="form.target_os" label="OS" density="compact" variant="outlined"
-        hide-details style="min-width:90px;max-width:115px"
-        :items="['linux','windows','macos','any']" />
       <v-select v-model="form.language" label="Language" density="compact" variant="outlined"
         hide-details style="min-width:120px;max-width:155px"
-        :items="langItems" item-title="title" item-value="value" />
+        :items="form.run_on === 'server' ? [{ title: 'Python', value: 'python' }] : langItems"
+        item-title="title" item-value="value" />
+      <v-select v-model="form.target_os" label="Target OS" density="compact" variant="outlined"
+        hide-details style="min-width:120px;max-width:145px"
+        :items="[
+          { title: 'Any',     value: 'any' },
+          { title: 'Linux',   value: 'linux' },
+          { title: 'Windows', value: 'windows' },
+          { title: 'macOS',   value: 'macos' },
+        ]" item-title="title" item-value="value" />
       <v-text-field v-model="form.version" label="Version" density="compact" variant="outlined"
         hide-details style="max-width:85px" />
       <v-text-field v-model="form.description" label="Description" density="compact" variant="outlined"
@@ -63,33 +130,34 @@
       <div class="d-flex flex-column flex-grow-1" style="min-width:0;overflow:hidden">
 
         <!-- Run bar -->
-        <v-sheet
-          color="surface-variant"
-          class="d-flex flex-wrap align-center ga-2 pa-2 flex-shrink-0 border-b"
-        >
+        <v-sheet color="surface-variant" class="d-flex flex-wrap align-center ga-2 pa-2 flex-shrink-0 border-b">
+          <!-- Device picker — required for push-to-device scripts, optional for satellite scripts that connect to a device -->
           <v-autocomplete
-            v-if="form.run_on !== 'server'"
             v-model="test.deviceId"
             :items="test.devices"
             item-title="name"
             item-value="id"
-            label="Device"
+            :label="form.run_on === 'server' ? 'Device (optional)' : 'Device *'"
             density="compact"
             variant="outlined"
             hide-details
             clearable
             :loading="test.devicesLoading"
-            style="max-width:240px"
+            style="min-width:200px;max-width:260px"
+            no-filter
           />
-          <v-text-field
-            v-if="form.run_on !== 'client'"
+          <!-- Input — for server-side scripts that consume previous step output -->
+          <v-textarea
+            v-if="form.run_on === 'server'"
             v-model="test.stdin"
-            label="stdin (previous step output)"
+            label="Input (previous step output — leave blank if not needed)"
             density="compact"
             variant="outlined"
             hide-details
+            rows="1"
+            auto-grow
             clearable
-            style="max-width:280px"
+            style="min-width:260px;flex:1"
           />
           <v-btn
             color="primary"
@@ -97,18 +165,27 @@
             variant="tonal"
             prepend-icon="mdi-play"
             :loading="test.running"
-            :disabled="form.run_on === 'client' && !test.deviceId"
+            :disabled="form.run_on !== 'server' && !test.deviceId"
             @click="runTest"
           >Run</v-btn>
           <v-spacer />
           <span v-if="test.result !== null" class="text-caption text-medium-emphasis mr-1">{{ test.durationMs }}ms</span>
           <v-btn
-            v-if="test.result !== null || test.error"
+            v-if="test.result !== null || test.error || test.printOutput"
             size="small"
             variant="text"
-            :prepend-icon="test.copied ? 'mdi-check' : 'mdi-content-copy'"
+            prepend-icon="mdi-content-copy"
+            :color="test.copied ? 'success' : undefined"
             @click="copyOutput"
-          >{{ test.copied ? 'Copied!' : 'Copy' }}</v-btn>
+          >{{ test.copied ? 'Copied' : 'Copy' }}</v-btn>
+          <v-btn
+            v-if="test.result"
+            size="small"
+            variant="text"
+            prepend-icon="mdi-arrow-left-bold"
+            title="Use this output as input for the next test run"
+            @click="test.stdin = test.result"
+          >Use as input</v-btn>
         </v-sheet>
 
         <!-- Output body -->
@@ -122,6 +199,11 @@
           <v-alert v-if="test.error && !test.running" type="error" variant="tonal" class="mb-3">
             <pre style="white-space:pre-wrap;word-break:break-word;font-size:.82rem;margin:0">{{ test.error }}</pre>
           </v-alert>
+          <template v-if="test.printOutput && !test.running">
+            <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase mb-1">stdout (print output)</div>
+            <pre class="mb-3" style="white-space:pre-wrap;word-break:break-word;font-size:.82rem;line-height:1.55;margin:0;opacity:.8">{{ test.printOutput }}</pre>
+            <v-divider class="mb-3" />
+          </template>
           <pre v-if="test.result" style="white-space:pre-wrap;word-break:break-word;font-size:.82rem;line-height:1.55;margin:0">{{ test.result }}</pre>
         </div>
 
@@ -132,7 +214,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import CodeEditor from '../components/CodeEditor.vue'
@@ -143,6 +225,7 @@ const router = useRouter()
 const isNew     = !route.params.id
 const saving    = ref(false)
 const saveError = ref('')
+const showHelp  = ref(false)
 
 const langItems = [
   { title: 'Shell / Bash', value: 'shell' },
@@ -160,10 +243,16 @@ const form = reactive({
   content: '',
 })
 
+// When creating a new script, auto-switch language default to match execution context.
+watch(() => form.run_on, run_on => {
+  if (!isNew) return
+  form.language = run_on === 'server' ? 'python' : 'shell'
+})
+
 const test = reactive({
   deviceId: null, devices: [], devicesLoading: false,
   stdin: '', running: false,
-  result: null, error: null, durationMs: 0, copied: false,
+  result: null, printOutput: null, error: null, durationMs: 0, copied: false,
 })
 
 onMounted(async () => {
@@ -228,6 +317,7 @@ function goBack() { router.push('/scripts') }
 async function runTest() {
   test.running = true
   test.result  = null
+  test.printOutput = null
   test.error   = null
   test.copied  = false
   try {
@@ -239,9 +329,10 @@ async function runTest() {
     if (test.deviceId) body.device_id = test.deviceId
     if (test.stdin)    body.stdin      = test.stdin
     const res = await api.post('/scripts/test/', body)
-    test.result    = res.data.output    || ''
-    test.error     = res.data.error     || null
-    test.durationMs = res.data.duration_ms ?? 0
+    test.result      = res.data.output    || ''
+    test.printOutput = res.data.print_output || null
+    test.error       = res.data.error     || null
+    test.durationMs  = res.data.duration_ms ?? 0
   } catch (e) {
     test.error = e.response?.data?.error ?? JSON.stringify(e.response?.data) ?? 'Request failed.'
   } finally {
@@ -250,7 +341,10 @@ async function runTest() {
 }
 
 async function copyOutput() {
-  await navigator.clipboard.writeText(test.result || test.error || '')
+  const parts = []
+  if (test.printOutput) parts.push(test.printOutput)
+  if (test.result || test.error) parts.push(test.result || test.error || '')
+  await navigator.clipboard.writeText(parts.join('\n'))
   test.copied = true
   setTimeout(() => { test.copied = false }, 2000)
 }

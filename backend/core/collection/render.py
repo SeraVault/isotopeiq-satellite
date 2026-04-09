@@ -49,8 +49,6 @@ def _get_satellite_url() -> str:
     except Exception:
         return getattr(settings, 'SATELLITE_URL', '')
 
-_PLACEHOLDER_RE = re.compile(r'\{\{([A-Z0-9_]+)\}')
-
 
 def render_script(content: str, device) -> str:
     """Replace {{PLACEHOLDER}} tokens in *content* with values from *device*.
@@ -81,6 +79,7 @@ def render_script(content: str, device) -> str:
         'TOKEN':           token,
         'ELEVATE':         elevate,
         'ELEVATE_PASS':    password,
+        'ENABLE_PASS':     password,
         'HOSTNAME':        getattr(device, 'hostname', ''),
         'FQDN':            getattr(device, 'fqdn', ''),
         'PORT':            str(getattr(device, 'port', '')),

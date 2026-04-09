@@ -132,7 +132,7 @@
             <v-chip
               size="x-small" label
               :color="item.run_on === 'client' ? 'blue-darken-1' : item.run_on === 'server' ? 'purple-darken-1' : 'teal-darken-1'"
-            >{{ item.run_on }}</v-chip>
+            >{{ item.run_on === 'client' ? 'Push to device' : item.run_on === 'server' ? 'Run on Satellite' : 'Both' }}</v-chip>
           </template>
           <template #item.language="{ item }">
             <span class="text-caption text-medium-emphasis">{{ item.language || '—' }}</span>
@@ -182,9 +182,9 @@
                   :key="i"
                   size="x-small"
                   label
-                  :color="s.run_on === 'client' ? 'blue-darken-1' : 'purple-darken-1'"
+                  :color="s.script_run_on === 'client' ? 'blue-darken-1' : 'purple-darken-1'"
                 >
-                  {{ s.run_on === 'client' ? 'Client' : 'Server' }}
+                  {{ s.script_run_on === 'client' ? 'Push to device' : 'Run on Satellite' }}
                   <span class="ml-1 opacity-70">{{ s.script_name }}</span>
                   <v-icon v-if="s.enable_baseline" size="12" class="ml-1">mdi-database</v-icon>
                   <v-icon v-if="s.enable_drift" size="12" class="ml-1">mdi-chart-timeline-variant</v-icon>
@@ -264,14 +264,15 @@
                     />
                   </v-col>
                   <v-col cols="12" sm="5" class="d-flex align-center">
-                    <v-btn-toggle v-model="step.run_on" mandatory density="compact" rounded="lg" style="width:100%">
-                      <v-btn value="client" size="small" style="flex:1">
-                        <v-icon start size="14">mdi-laptop</v-icon>Client
-                      </v-btn>
-                      <v-btn value="server" size="small" style="flex:1">
-                        <v-icon start size="14">mdi-server</v-icon>Server
-                      </v-btn>
-                    </v-btn-toggle>
+                    <v-chip
+                      v-if="step.script"
+                      size="small" label
+                      :color="allScripts.find(s => s.id === step.script)?.run_on === 'client' ? 'blue-darken-1' : 'purple-darken-1'"
+                    >
+                      <v-icon start size="14">{{ allScripts.find(s => s.id === step.script)?.run_on === 'client' ? 'mdi-laptop' : 'mdi-satellite-variant' }}</v-icon>
+                      {{ allScripts.find(s => s.id === step.script)?.run_on === 'client' ? 'Push to device' : 'Run on Satellite' }}
+                    </v-chip>
+                    <span v-else class="text-caption text-medium-emphasis">Select a script</span>
                   </v-col>
                   <v-col cols="12">
                     <div class="d-flex flex-wrap align-center" style="gap:4px 20px">
@@ -404,8 +405,9 @@
               <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase mb-1">
                 Step {{ step.order + 1 }} — {{ step.script }}
                 <v-chip size="x-small" label :color="step.run_on === 'client' ? 'blue-darken-1' : 'purple-darken-1'" class="ml-1">
-                  {{ step.run_on }}
+                  {{ step.run_on === 'client' ? 'Push to device' : 'Run on Satellite' }}
                 </v-chip>
+
               </div>
               <v-sheet rounded="lg" color="grey-darken-4" class="pa-3" style="font-family:monospace;font-size:0.8rem;white-space:pre-wrap;max-height:280px;overflow-y:auto">{{ step.output }}</v-sheet>
             </div>
@@ -413,11 +415,11 @@
           <!-- Legacy fields for older results -->
           <template v-else>
             <template v-if="sjOutputDialog.result?.client_output">
-              <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase mb-1">Client Output</div>
+              <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase mb-1">Device Output</div>
               <v-sheet rounded="lg" color="grey-darken-4" class="pa-3 mb-4" style="font-family:monospace;font-size:0.8rem;white-space:pre-wrap;max-height:280px;overflow-y:auto">{{ sjOutputDialog.result.client_output }}</v-sheet>
             </template>
             <template v-if="sjOutputDialog.result?.server_output">
-              <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase mb-1">Server Output</div>
+              <div class="text-caption font-weight-bold text-medium-emphasis text-uppercase mb-1">Satellite Output</div>
               <v-sheet rounded="lg" color="grey-darken-4" class="pa-3 mb-4" style="font-family:monospace;font-size:0.8rem;white-space:pre-wrap;max-height:280px;overflow-y:auto">{{ sjOutputDialog.result.server_output }}</v-sheet>
             </template>
           </template>
@@ -477,7 +479,7 @@ const scrTableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
 const scrHeaders = [
   { title: 'Name',      key: 'name' },
   { title: 'Type',      key: 'script_type' },
-  { title: 'Runs On',   key: 'run_on',     sortable: false },
+  { title: 'Execution', key: 'run_on',     sortable: false },
   { title: 'Language',  key: 'language',   sortable: false },
   { title: 'Target OS', key: 'target_os' },
   { title: 'Version',   key: 'version' },
@@ -560,7 +562,6 @@ async function loadAllScripts() {
 // ── Script Job form ──────────────────────────────────────────────────────────
 const BLANK_STEP = () => ({
   script: null,
-  run_on: 'client',
   pipe_to_next: true,
   save_output: false,
   enable_baseline: false,
@@ -597,7 +598,7 @@ function showSnack(text, color = 'success') {
 }
 
 async function openRunNow(item) {
-  const needsDevice = (item.steps ?? []).some(s => s.run_on === 'client')
+  const needsDevice = (item.steps ?? []).some(s => s.script_run_on === 'client' || s.script_run_on === 'both')
   runNowDialog.value = { show: true, job: item, device_id: null, devices: [], deviceLoading: true, running: false, needsDevice }
   try {
     const res = await api.get('/devices/', { params: { page_size: 1000 } })
@@ -613,7 +614,7 @@ async function confirmRunNow() {
     const body = runNowDialog.value.device_id ? { device_id: runNowDialog.value.device_id } : {}
     await api.post(`/scripts/script-jobs/${runNowDialog.value.job.id}/run/`, body)
     runNowDialog.value.show = false
-    showSnack('Job queued successfully.')
+    router.push('/jobs?tab=script')
   } catch (e) {
     showSnack(e.response?.data?.detail ?? 'Failed to queue job.', 'error')
   } finally {
@@ -634,7 +635,6 @@ async function openEditScriptJob(item) {
     id: item.id, name: item.name, description: item.description,
     steps: (item.steps ?? []).map(s => ({
       script: s.script,
-      run_on: s.run_on,
       pipe_to_next: s.pipe_to_next,
       save_output: s.save_output,
       enable_baseline: s.enable_baseline,
@@ -663,7 +663,6 @@ async function saveScriptJob() {
       steps: sjForm.value.steps.map((s, i) => ({
         order: i * 10,
         script: s.script,
-        run_on: s.run_on,
         pipe_to_next: s.pipe_to_next,
         save_output: s.save_output,
         enable_baseline: s.enable_baseline,
