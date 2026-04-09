@@ -142,14 +142,23 @@
       <!-- Recent job results breakdown -->
       <v-col cols="12" md="4">
         <v-card rounded="lg" elevation="1" height="100%">
-          <v-card-title class="d-flex align-center pa-4 pb-2">
-            <v-icon icon="mdi-poll" color="primary" size="18" class="mr-2" />
-            <span class="text-body-1 font-weight-bold">Recent Job Results</span>
+          <v-card-title class="d-flex justify-space-between align-center pa-4 pb-2">
+            <div class="d-flex align-center">
+              <v-icon icon="mdi-poll" color="primary" size="18" class="mr-2" />
+              <span class="text-body-1 font-weight-bold">Recent Job Results</span>
+            </div>
+            <router-link to="/jobs" class="text-primary text-decoration-none text-caption">View all →</router-link>
           </v-card-title>
           <v-card-text v-if="store.loading" class="pa-4 text-medium-emphasis">Loading…</v-card-text>
           <v-card-text v-else-if="store.recentJobs.length === 0" class="pa-6 text-center text-medium-emphasis text-caption">No job data.</v-card-text>
           <v-card-text v-else class="px-4 pt-2 pb-4">
-            <div v-for="s in jobStatusBreakdown" :key="s.status" class="mb-3">
+            <div
+              v-for="s in jobStatusBreakdown"
+              :key="s.status"
+              class="mb-3"
+              style="cursor:pointer"
+              @click="$router.push({ path: '/jobs', query: { status: s.status } })"
+            >
               <div class="d-flex justify-space-between text-caption mb-1">
                 <span class="font-weight-medium text-capitalize">{{ s.status }}</span>
                 <span class="text-medium-emphasis">{{ s.count }} / {{ store.recentJobs.length }}</span>
@@ -162,6 +171,7 @@
                 bg-color="surface-variant"
               />
             </div>
+            <div class="text-caption text-medium-emphasis mt-2">Based on the last {{ store.recentJobs.length }} jobs</div>
           </v-card-text>
         </v-card>
       </v-col>
@@ -229,7 +239,7 @@ const jobPageEnd   = computed(() => Math.min(jobPage.value * jobsPerPage, store.
 
 // Derived: stalest baselines first (most overdue scan at the top), limited to 6
 const stalestBaselines = computed(() =>
-  [...store.baselines].sort((a, b) => new Date(a.established_at) - new Date(b.established_at)).slice(0, 6)
+  [...store.baselines].sort((a, b) => new Date(b.established_at) - new Date(a.established_at)).slice(0, 6)
 )
 
 // Derived: breakdown of recent job statuses

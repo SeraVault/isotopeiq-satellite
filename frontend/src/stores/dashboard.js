@@ -43,8 +43,8 @@ export const useDashboardStore = defineStore('dashboard', {
           api.get('/policies/',  { params: { page_size: 1 } }),
           api.get('/jobs/',      { params: { status: 'running', page_size: 1 } }),
           api.get('/drift/',     { params: { status: 'new', page_size: 50 } }),
-          api.get('/jobs/',      { params: { page_size: 20 } }),
-          api.get('/baselines/', { params: { page_size: 100, ordering: 'established_at' } }),
+          api.get('/jobs/',      { params: { page_size: 20, ordering: '-started_at' } }),
+          api.get('/baselines/', { params: { page_size: 100, ordering: '-established_at' } }),
         ])
         // Patch scalar stats in-place so stat card computeds don't needlessly re-run
         Object.assign(this.stats, {

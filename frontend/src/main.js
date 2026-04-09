@@ -40,6 +40,7 @@ const vuetify = createVuetify({
     VBtn: { variant: 'elevated', size: 'small' },
     VTextField: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
     VSelect: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
+    VAutocomplete: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
     VTextarea: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
     VDataTable: { density: 'compact' },
   },

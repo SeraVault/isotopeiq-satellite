@@ -104,8 +104,7 @@
       <template #top>
         <v-row dense align="end" class="pa-3 pb-0">
           <v-col cols="12" sm="6" md="3">
-            <v-select v-model="filters.device" label="Device" :items="deviceItems" item-title="title" item-value="value"
-              clearable density="compact" hide-details variant="outlined" @update:model-value="resetAndFetch" />
+            <DeviceAutocomplete v-model="filters.device" density="compact" hide-details variant="outlined" @update:model-value="resetAndFetch" />
           </v-col>
           <v-col cols="12" sm="6" md="3">
             <v-select v-model="filters.status" label="Status" :items="['new','acknowledged','resolved']"
@@ -196,15 +195,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { useDriftStore } from '../stores/drift'
 import api from '../api'
 import DriftDiffViewer from '../components/DriftDiffViewer.vue'
+import DeviceAutocomplete from '../components/DeviceAutocomplete.vue'
 
 const store = useDriftStore()
 const showHelp = ref(false)
-const devices = ref([])
-const deviceItems = computed(() => devices.value.map(d => ({ title: d.name, value: d.id })))
 const filters = reactive({ device: null, status: '' })
 
 const headers = [
@@ -335,11 +333,7 @@ async function submitAcknowledge() {
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-onMounted(async () => {
-  const { data } = await api.get('/devices/', { params: { page_size: 500 } })
-  devices.value = data.results ?? data
-  // Initial fetch — onTableOptions will also fire from v-data-table-server mount,
-  // but fetch here ensures devices are loaded first.
+onMounted(() => {
   store.startPolling()
 })
 

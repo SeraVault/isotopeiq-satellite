@@ -76,7 +76,7 @@
     <v-card rounded="lg" elevation="1" class="mb-5 pa-4">
       <v-row dense align="end">
         <v-col cols="12" sm="6" md="3">
-          <v-select v-model="filters.device" label="Device" :items="deviceItems" item-title="title" item-value="value" clearable @update:model-value="applyFilters" />
+          <DeviceAutocomplete v-model="filters.device" @update:model-value="applyFilters" />
         </v-col>
         <v-col cols="12" sm="auto">
           <v-btn color="primary" class="mr-2" @click="applyFilters">Refresh</v-btn>
@@ -161,9 +161,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import api from '../api'
 import CanonicalViewer from '../components/CanonicalViewer.vue'
+import DeviceAutocomplete from '../components/DeviceAutocomplete.vue'
 
 const showHelp = ref(false)
 
@@ -183,13 +184,10 @@ const baselines  = ref([])
 const loading    = ref(false)
 const viewing    = ref(null)
 const viewOpen   = ref(false)
-const devices    = ref([])
 const totalCount = ref(0)
 const filters    = reactive({ device: null })
 
 const tableOptions = ref({ page: 1, itemsPerPage: 50, sortBy: [{ key: 'established_at', order: 'desc' }] })
-
-const deviceItems = computed(() => devices.value.map(d => ({ title: d.name, value: d.id })))
 
 function fmt(iso) { return new Date(iso).toLocaleString() }
 
@@ -274,9 +272,7 @@ async function doSend() {
   }
 }
 
-onMounted(async () => {
-  const { data } = await api.get('/devices/', { params: { page_size: 500 } })
-  devices.value = data.results ?? data
+onMounted(() => {
   // initial load triggered by @update:options
 })
 </script>
