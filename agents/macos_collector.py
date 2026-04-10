@@ -1265,7 +1265,7 @@ def _run_script(script_content, language):
         os.write(fd, script_content.encode('utf-8'))
         os.close(fd)
         os.chmod(path, 0o700)
-        cmd = [sys.executable, path] if language == 'python' else ['/bin/sh', path]
+        cmd = [sys.executable, path] if language == 'python' else ['/bin/bash', path]
         with open(os.devnull, 'rb') as devnull:
             proc = subprocess.Popen(cmd, stdin=devnull, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = proc.communicate()

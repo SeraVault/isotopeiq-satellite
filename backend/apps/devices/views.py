@@ -3,6 +3,7 @@ import os
 import traceback
 from datetime import datetime
 
+from django_filters import rest_framework as filters
 from rest_framework import viewsets, status
 
 log = logging.getLogger(__name__)
@@ -13,6 +14,19 @@ from rest_framework.views import APIView
 from core.permissions import IsAdminOrReadOnly
 from .models import Credential, Device
 from .serializers import CredentialSerializer, DeviceSerializer
+
+
+class DeviceFilter(filters.FilterSet):
+    tags = filters.CharFilter(method='filter_tags')
+
+    def filter_tags(self, queryset, name, value):
+        for tag in [t.strip() for t in value.split(',') if t.strip()]:
+            queryset = queryset.filter(tags__contains=[tag])
+        return queryset
+
+    class Meta:
+        model = Device
+        fields = ['connection_type', 'is_active', 'tags']
 
 
 class CredentialViewSet(viewsets.ModelViewSet):
@@ -29,8 +43,17 @@ class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.select_related('credential').all()
     serializer_class = DeviceSerializer
     search_fields = ['name', 'hostname', 'fqdn']
-    filterset_fields = ['connection_type', 'is_active']
+    filterset_class = DeviceFilter
     ordering_fields = ['name', 'created_at']
+
+    @action(detail=False, methods=['get'], url_path='tags')
+    def tags(self, request):
+        """Return a sorted list of all unique tags across all devices."""
+        all_tags = set()
+        for tags in Device.objects.values_list('tags', flat=True):
+            if tags:
+                all_tags.update(tags)
+        return Response(sorted(all_tags))
 
     @action(detail=False, methods=['get'], url_path='agent-bundle')
     def agent_bundle_generic(self, request):

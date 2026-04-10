@@ -27,25 +27,36 @@
           <v-divider class="my-3" />
           <div class="text-subtitle-2 font-weight-bold mb-2">How collection works</div>
           <p class="mb-3">
-            When a Policy runs, Satellite connects to each assigned device, executes the
-            <strong>Collection Script</strong> remotely, captures the raw output, then pipes it through
-            the <strong>Parser Script</strong> to produce a normalised canonical JSON document.
-            That document is validated against the canonical schema and stored as the job result.
+            When a Policy runs, Satellite connects to each assigned device, executes the Script Job's
+            steps in order, then stores the parsed canonical JSON result. The result is compared
+            against the device's baseline to detect drift.
           </p>
           <p class="mb-3">
-            Three collection modes are supported:
+            Five connection types are supported:
           </p>
           <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
             <tbody>
               <tr>
-                <td class="font-weight-medium" style="width:30%">Pull (SSH / WinRM)</td>
-                <td>Satellite initiates the connection and runs the script. Requires credentials.</td>
+                <td class="font-weight-medium" style="width:30%">SSH</td>
+                <td>Satellite opens an SSH session and runs scripts remotely. Requires a username/password or private key credential.</td>
               </tr>
               <tr>
-                <td class="font-weight-medium">Agent Pull (port 9322)</td>
+                <td class="font-weight-medium">Telnet</td>
+                <td>For legacy devices that only support Telnet. Supports interactive command sequences defined in the collection script.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">WinRM</td>
+                <td>Windows Remote Management — remote script execution on Windows devices. Requires a username/password credential.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">HTTPS / API</td>
+                <td>Satellite sends HTTP requests to a REST API. Useful for network devices, hypervisors, or cloud endpoints. Typically uses an API token credential.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">Agent Pull</td>
                 <td>An IsotopeIQ agent runs persistently on the device and listens on TCP port 9322.
                   Satellite calls <code>GET /collect</code> on demand — no credentials or scripts needed.
-                  Use the installer scripts in <code>agents/installers/</code> to set up the agent as a service.</td>
+                  Download the agent installer from <router-link to="/agent-download">Download Agent</router-link>.</td>
               </tr>
             </tbody>
           </v-table>
@@ -53,15 +64,13 @@
           <v-divider class="my-3" />
           <div class="text-subtitle-2 font-weight-bold mb-2">Credentials</div>
           <p class="mb-3">
-            Credentials are stored separately from devices and encrypted at rest using Fernet symmetric
-            encryption. A single credential record can be shared across many devices (e.g. a domain
-            service account). Supported types:
+            Credentials are stored separately from devices and encrypted at rest. A single credential record
+            can be shared across many devices (e.g. a domain service account). Supported types:
           </p>
           <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
             <tbody>
-              <tr><td class="font-weight-medium" style="width:30%">SSH Password</td><td>Username + password for Linux/Unix devices.</td></tr>
-              <tr><td class="font-weight-medium">SSH Key</td><td>Username + private key (PEM). Recommended for Linux/Unix.</td></tr>
-              <tr><td class="font-weight-medium">Windows / WinRM</td><td>Username + password for Windows devices using WinRM.</td></tr>
+              <tr><td class="font-weight-medium" style="width:30%">Username / Password</td><td>Used for SSH (password auth), Telnet, and WinRM.</td></tr>
+              <tr><td class="font-weight-medium">Username / Private Key</td><td>PEM private key for SSH key-based authentication. Recommended for Linux/Unix.</td></tr>
               <tr><td class="font-weight-medium">API Token</td><td>Bearer token for HTTPS-based collection (network devices, REST APIs).</td></tr>
             </tbody>
           </v-table>
@@ -72,13 +81,13 @@
             <tbody>
               <tr><td class="font-weight-medium" style="width:30%">Name</td><td>Human-readable label used throughout the UI.</td></tr>
               <tr><td class="font-weight-medium">Hostname / FQDN</td><td>Used as the connection target. FQDN is preferred where DNS is available.</td></tr>
-              <tr><td class="font-weight-medium">OS Type</td><td>Informs script selection and canonical section expectations — set this accurately so parsers can behave correctly.</td></tr>
-              <tr><td class="font-weight-medium">Connection Type</td><td>SSH, WinRM, HTTPS, or Agent Pull. Determines which transport Satellite uses.</td></tr>
-              <tr><td class="font-weight-medium">Credential</td><td>Link to a Credential record. Leave blank for agent devices.</td></tr>
+              <tr><td class="font-weight-medium">Connection Type</td><td>SSH, Telnet, WinRM, HTTPS/API, or Agent Pull. Determines which transport Satellite uses.</td></tr>
+              <tr><td class="font-weight-medium">Port</td><td>Connection port. Defaults to the standard port for each connection type (22 for SSH, 5985 for WinRM, 9322 for Agent).</td></tr>
+              <tr><td class="font-weight-medium">Credential</td><td>Link to a Credential record. Leave blank for Agent Pull devices.</td></tr>
               <tr><td class="font-weight-medium">Agent Port</td><td>TCP port the IsotopeIQ agent is listening on (default: 9322). Only applies to Agent Pull devices.</td></tr>
-              <tr><td class="font-weight-medium">Agent Token</td><td>Per-device secret generated by IsotopeIQ. Copy it from the device form and pass it to the installer with <code>--token</code>. The agent uses it to authenticate incoming poll requests.</td></tr>
-              <tr><td class="font-weight-medium">SSH Host Key</td><td>Stored on first successful connection and pinned thereafter — Satellite will refuse connections if the key changes, alerting you to a potential MITM.</td></tr>
-              <tr><td class="font-weight-medium">Tags</td><td>Free-form JSON object for grouping, filtering, or passing context to scripts (e.g. <code>{"env":"prod","role":"db"}</code>).</td></tr>
+              <tr><td class="font-weight-medium">Tags</td><td>Comma-separated labels for grouping and filtering devices (e.g. <code>prod, linux, db</code>). Used to filter the device list and narrow selections in the policy editor.</td></tr>
+              <tr><td class="font-weight-medium">Notes</td><td>Free-text notes visible in the device detail panel.</td></tr>
+              <tr><td class="font-weight-medium">Active</td><td>Inactive devices are excluded from scheduled policy runs but can still be targeted manually.</td></tr>
             </tbody>
           </v-table>
 
@@ -86,9 +95,10 @@
           <div class="text-subtitle-2 font-weight-bold mb-2">Typical setup flow</div>
           <ol class="pl-4" style="line-height:2">
             <li>Create a <strong>Credential</strong> (Credentials tab) for the account Satellite will use.</li>
-            <li>Add one or more <strong>Devices</strong>, selecting the credential and correct OS type.</li>
-            <li>Use <strong>Test Connection</strong> to verify SSH/WinRM reachability and cache the host key.</li>
-            <li>Create a <strong>Policy</strong> that assigns these devices to collection and parser scripts on a schedule.</li>
+            <li>Add one or more <strong>Devices</strong>, selecting the connection type and credential.</li>
+            <li>Use <strong>Test Connection</strong> to verify reachability and cache the SSH host key.</li>
+            <li>Create a <strong>Script Job</strong> (Scripts page) with the collection and parser steps for your target OS.</li>
+            <li>Create a <strong>Policy</strong> that assigns the Script Job and target devices to a schedule.</li>
             <li>Run the policy — results appear in <strong>Job Monitor</strong> and baselines are captured on first run.</li>
             <li>Subsequent runs produce <strong>Drift</strong> reports comparing against the baseline.</li>
           </ol>
@@ -123,7 +133,10 @@
             <v-col cols="6" sm="2">
               <v-select v-model="deviceActive" label="Active" :items="activeItems" @update:modelValue="applyDeviceFilters" />
             </v-col>
-            <v-col cols="6" sm="4" class="d-flex ga-2 justify-end">
+            <v-col cols="6" sm="2">
+              <v-select v-model="deviceTag" label="Tag" :items="[{ title: 'All', value: '' }, ...allTags.map(t => ({ title: t, value: t }))]" @update:modelValue="applyDeviceFilters" />
+            </v-col>
+            <v-col cols="6" sm="2" class="d-flex ga-2 justify-end align-center">
               <v-btn @click="clearDeviceFilters" variant="outlined">Clear</v-btn>
               <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewDevice">Add Device</v-btn>
             </v-col>
@@ -152,10 +165,20 @@
             <template #item.is_active="{ item }">
               <v-chip :color="item.is_active ? 'success' : 'default'" size="x-small" label>{{ item.is_active ? 'Yes' : 'No' }}</v-chip>
             </template>
+            <template #item.tags="{ item }">
+              <v-chip
+                v-for="tag in item.tags"
+                :key="tag"
+                size="x-small"
+                label
+                class="mr-1"
+                @click.stop="deviceTag = tag; applyDeviceFilters()"
+              >{{ tag }}</v-chip>
+            </template>
             <template #item.credential="{ item }">{{ credName(item.credential) }}</template>
             <template #item.actions="{ item }">
               <div class="d-flex ga-1" @click.stop>
-                <v-btn size="x-small" variant="tonal" color="primary" :loading="collecting === item.id" @click="collect(item)">Collect</v-btn>
+                <v-btn size="x-small" variant="tonal" color="primary" :loading="collecting === item.id" @click="collect(item)">Run</v-btn>
                 <v-btn size="x-small" variant="tonal" color="secondary" @click="triggerImport(item)">Import</v-btn>
                 <v-btn size="x-small" variant="tonal" @click="openEditDevice(item)">Edit</v-btn>
                 <v-btn size="x-small" variant="tonal" color="error" @click="removeDevice(item.id)">Delete</v-btn>
@@ -219,39 +242,71 @@
           </v-card>
         </v-dialog>
 
-        <!-- Collect: policy picker dialog -->
-        <v-dialog v-model="collectDialog.show" max-width="420">
+        <!-- Run dialog: policy or script job picker -->
+        <v-dialog v-model="collectDialog.show" max-width="480">
           <v-card rounded="lg">
-            <v-card-title>Collect — {{ collectDialog.device?.name }}</v-card-title>
-            <v-card-subtitle v-if="collectDialog.policies.length">Select which policy to run</v-card-subtitle>
+            <v-card-title class="d-flex align-center pt-4 pb-2">
+              Run — {{ collectDialog.device?.name }}
+            </v-card-title>
+            <v-divider />
             <v-card-text>
-              <div v-if="collectDialog.loading" class="text-medium-emphasis py-2">Loading policies…</div>
-              <template v-else-if="collectDialog.policies.length === 0">
-                <v-alert type="warning" variant="tonal" density="compact" icon="mdi-alert-circle-outline">
-                  <div class="font-weight-medium mb-1">No policies assigned to this device.</div>
-                  <div class="text-body-2">
-                    To collect from this device, create or edit a Policy and add this device to it.
-                    Policies control the collection schedule, scripts, parser, and drift rules.
-                  </div>
-                </v-alert>
-                <v-btn variant="tonal" color="primary" class="mt-4" prepend-icon="mdi-shield-check-outline" to="/policies" @click="collectDialog.show = false">
-                  Go to Policies
-                </v-btn>
+              <div v-if="collectDialog.loading" class="text-medium-emphasis py-4 text-center">Loading…</div>
+              <template v-else>
+                <!-- Mode toggle -->
+                <v-btn-toggle v-model="collectDialog.mode" mandatory density="compact" class="mb-4 w-100" style="width:100%">
+                  <v-btn value="policy" style="flex:1">Policy</v-btn>
+                  <v-btn value="scriptjob" style="flex:1">Script Job</v-btn>
+                </v-btn-toggle>
+
+                <!-- Policy list -->
+                <template v-if="collectDialog.mode === 'policy'">
+                  <template v-if="collectDialog.policies.length === 0">
+                    <v-alert type="warning" variant="tonal" density="compact" icon="mdi-alert-circle-outline">
+                      <div class="font-weight-medium mb-1">No active policies assigned to this device.</div>
+                      <div class="text-body-2">Create or edit a Policy and add this device to it.</div>
+                    </v-alert>
+                    <v-btn variant="tonal" color="primary" class="mt-3" prepend-icon="mdi-shield-check-outline" to="/policies" @click="collectDialog.show = false">Go to Policies</v-btn>
+                  </template>
+                  <v-radio-group v-else v-model="collectDialog.policyId" hide-details>
+                    <v-radio v-for="p in collectDialog.policies" :key="p.id" :label="p.name" :value="p.id" />
+                  </v-radio-group>
+                </template>
+
+                <!-- Script Job list -->
+                <template v-else>
+                  <template v-if="collectDialog.scriptJobs.length === 0">
+                    <v-alert type="warning" variant="tonal" density="compact" icon="mdi-alert-circle-outline">
+                      <div class="font-weight-medium mb-1">No active script jobs found.</div>
+                      <div class="text-body-2">Create a Script Job on the Scripts page first.</div>
+                    </v-alert>
+                    <v-btn variant="tonal" color="primary" class="mt-3" prepend-icon="mdi-script-text-outline" to="/scripts" @click="collectDialog.show = false">Go to Scripts</v-btn>
+                  </template>
+                  <v-radio-group v-else v-model="collectDialog.scriptJobId" hide-details>
+                    <v-radio v-for="sj in collectDialog.scriptJobs" :key="sj.id" :value="sj.id">
+                      <template #label>
+                        <div>
+                          <div>{{ sj.name }}</div>
+                          <div class="text-caption text-medium-emphasis">{{ sj.description }}</div>
+                        </div>
+                      </template>
+                    </v-radio>
+                  </v-radio-group>
+                </template>
+
+                <v-alert v-if="collectDialog.error" type="error" variant="tonal" density="compact" class="mt-3">{{ collectDialog.error }}</v-alert>
               </template>
-              <v-radio-group v-else v-model="collectDialog.policyId" hide-details>
-                <v-radio
-                  v-for="p in collectDialog.policies"
-                  :key="p.id"
-                  :label="p.name"
-                  :value="p.id"
-                />
-              </v-radio-group>
-              <v-alert v-if="collectDialog.error" type="error" variant="tonal" density="compact" class="mt-3">{{ collectDialog.error }}</v-alert>
             </v-card-text>
-            <v-card-actions>
+            <v-divider />
+            <v-card-actions class="pa-3">
               <v-spacer />
               <v-btn @click="collectDialog.show = false">Cancel</v-btn>
-              <v-btn v-if="collectDialog.policies.length" color="primary" :disabled="!collectDialog.policyId" :loading="collectDialog.running" @click="submitCollect">Run</v-btn>
+              <v-btn
+                color="primary"
+                variant="tonal"
+                :loading="collectDialog.running"
+                :disabled="collectDialog.mode === 'policy' ? !collectDialog.policyId : !collectDialog.scriptJobId"
+                @click="submitCollect"
+              >Run</v-btn>
             </v-card-actions>
           </v-card>
         </v-dialog>
@@ -412,6 +467,8 @@ const showHelp = ref(false)
 const deviceSearch   = ref('')
 const deviceConnType = ref('')
 const deviceActive   = ref('')
+const deviceTag      = ref('')
+const allTags        = ref([])
 
 const connItems   = [{ title: 'All', value: '' }, { title: 'SSH', value: 'ssh' }, { title: 'WinRM', value: 'winrm' }, { title: 'Telnet', value: 'telnet' }, { title: 'Agent', value: 'agent' }]
 const activeItems = [{ title: 'All', value: '' }, { title: 'Yes', value: 'true' }, { title: 'No', value: 'false' }]
@@ -425,6 +482,7 @@ function buildDeviceParams(options = tableOptions.value) {
   if (deviceSearch.value)   params.search          = deviceSearch.value
   if (deviceConnType.value) params.connection_type  = deviceConnType.value
   if (deviceActive.value)   params.is_active        = deviceActive.value
+  if (deviceTag.value)      params.tags             = deviceTag.value
   if (options.sortBy?.length) {
     const { key, order } = options.sortBy[0]
     const field = SORT_FIELD[key] ?? key
@@ -446,7 +504,7 @@ function resetAndFetchDevices() {
 
 function applyDeviceFilters() { resetAndFetchDevices() }
 function clearDeviceFilters() {
-  deviceSearch.value = ''; deviceConnType.value = ''; deviceActive.value = ''
+  deviceSearch.value = ''; deviceConnType.value = ''; deviceActive.value = ''; deviceTag.value = ''
   resetAndFetchDevices()
 }
 
@@ -455,6 +513,7 @@ const deviceHeaders = [
   { title: 'Name',       key: 'name',            sortable: true  },
   { title: 'Hostname',   key: 'hostname' },
   { title: 'Connection', key: 'connection_type' },
+  { title: 'Tags',       key: 'tags',            sortable: false },
   { title: 'Credential', key: 'credential' },
   { title: 'Active',     key: 'is_active' },
   { title: '',           key: 'actions', sortable: false, align: 'end' },
@@ -649,6 +708,7 @@ async function saveDevice() {
       await devStore.createDevice(payload)
       deviceForm.value.show = false
     }
+    loadAllTags()
   } catch (e) {
     deviceForm.value.error = JSON.stringify(e.response?.data ?? 'Save failed.')
   }
@@ -658,39 +718,38 @@ async function removeDevice(id) {
   if (await askConfirm('Delete this device?')) await devStore.deleteDevice(id)
 }
 
-// ── collect dialog ─────────────────────────────────────────────────────────
-const collectDialog = ref({ show: false, device: null, policies: [], policyId: null, loading: false, running: false, error: '' })
+// ── run dialog (policy or script job) ─────────────────────────────────────
+const collectDialog = ref({
+  show: false, device: null, mode: 'policy',
+  policies: [], policyId: null,
+  scriptJobs: [], scriptJobId: null,
+  loading: false, running: false, error: '',
+})
 
 async function collect(device) {
   collecting.value = device.id
-  // Agent Pull devices: call trigger-agent-pull directly — no policy needed.
-  if (device.connection_type === 'agent') {
-    try {
-      const { data } = await api.post('/jobs/trigger-agent-pull/', { device_id: device.id })
-      showSnack(true, `✓ ${device.name}: ${data.detail}`)
-    } catch (e) {
-      showSnack(false, `✗ ${device.name}: ${e.response?.data?.detail ?? 'Failed to start agent pull.'}`)
-    } finally {
-      collecting.value = null
-    }
-    return
+  collectDialog.value = {
+    show: false, device, mode: 'policy',
+    policies: [], policyId: null,
+    scriptJobs: [], scriptJobId: null,
+    loading: true, running: false, error: '',
   }
-  collectDialog.value = { show: false, device, policies: [], policyId: null, loading: true, running: false, error: '' }
   try {
-    const { data } = await api.get('/policies/', { params: { devices: device.id, is_active: true, page_size: 500 } })
-    const policies = data.results ?? data
-    if (!policies.length) {
-      collectDialog.value.loading = false
-      collectDialog.value.show = true
-      return
-    }
-    collectDialog.value.policies = policies
-    collectDialog.value.policyId = policies[0].id
+    const [polRes, sjRes] = await Promise.all([
+      api.get('/policies/', { params: { devices: device.id, is_active: true, page_size: 500 } }),
+      api.get('/scripts/script-jobs/', { params: { is_active: true, page_size: 500 } }),
+    ])
+    const policies   = polRes.data.results ?? polRes.data
+    const scriptJobs = sjRes.data.results  ?? sjRes.data
+    collectDialog.value.policies    = policies
+    collectDialog.value.policyId    = policies[0]?.id ?? null
+    collectDialog.value.scriptJobs  = scriptJobs
+    collectDialog.value.scriptJobId = scriptJobs[0]?.id ?? null
     collectDialog.value.loading = false
     collectDialog.value.show = true
   } catch (e) {
     console.error('[collect] error:', e)
-    showSnack(false, `✗ ${device?.name ?? 'Device'}: Failed to load policies.`)
+    showSnack(false, `✗ ${device?.name ?? 'Device'}: Failed to load options.`)
   } finally {
     collecting.value = null
   }
@@ -699,25 +758,22 @@ async function collect(device) {
 async function submitCollect() {
   collectDialog.value.running = true
   collectDialog.value.error = ''
-  await runCollect(collectDialog.value.device, collectDialog.value.policyId)
-  collectDialog.value.show = false
-  collectDialog.value.running = false
-}
-
-async function runCollect(device, policyId) {
+  const { device, mode, policyId, scriptJobId } = collectDialog.value
   collecting.value = device.id
   try {
-    const { data } = await api.post(`/devices/${device.id}/collect/`, { policy_id: policyId })
-    showSnack(true, `✓ ${device.name}: ${data.detail}`)
-  } catch (e) {
-    const msg = e.response?.data?.detail ?? 'Failed to start collection.'
-    if (collectDialog.value.show) {
-      collectDialog.value.error = msg
+    if (mode === 'policy') {
+      const { data } = await api.post(`/devices/${device.id}/collect/`, { policy_id: policyId })
+      showSnack(true, `✓ ${device.name}: ${data.detail}`)
     } else {
-      showSnack(false, `✗ ${device.name}: ${msg}`)
+      await api.post(`/scripts/script-jobs/${scriptJobId}/run/`, { device_id: device.id })
+      showSnack(true, `✓ ${device.name}: Script job started.`)
     }
+    collectDialog.value.show = false
+  } catch (e) {
+    collectDialog.value.error = e.response?.data?.detail ?? 'Failed to start run.'
   } finally {
     collecting.value = null
+    collectDialog.value.running = false
   }
 }
 
@@ -802,9 +858,15 @@ async function submitImport() {
   }
 }
 
+async function loadAllTags() {
+  const { data } = await api.get('/devices/tags/')
+  allTags.value = data
+}
+
 onMounted(() => {
   // initial device fetch triggered by @update:options
   loadCredentials()
   loadAllCredentials()
+  loadAllTags()
 })
 </script>

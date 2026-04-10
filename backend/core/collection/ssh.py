@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT = 300  # seconds — Windows PS collection can be slow
 
+
 _KEY_TYPES = [
     paramiko.Ed25519Key,
     paramiko.ECDSAKey,

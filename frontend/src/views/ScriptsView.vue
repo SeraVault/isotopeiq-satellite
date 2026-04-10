@@ -11,7 +11,7 @@
       <v-card rounded="lg">
         <v-card-title class="d-flex align-center pt-4 pb-2">
           <v-icon icon="mdi-script-text-outline" class="mr-2" color="primary" />
-          Scripts
+          Scripts &amp; Script Jobs
           <v-spacer />
           <v-btn icon="mdi-close" variant="text" @click="showHelp = false" />
         </v-card-title>
@@ -19,10 +19,10 @@
         <v-card-text class="pa-5" style="font-size:0.92rem;line-height:1.7">
 
           <p class="mb-3">
-            Scripts are the executable units that Satellite uses to <strong>collect</strong>,
-            <strong>parse</strong>, and optionally <strong>deploy</strong> configuration data.
-            Assign scripts directly to Policies (for scheduled baseline runs) or wire them
-            together in Script Jobs (for ad-hoc and utility workflows).
+            <strong>Scripts</strong> are individual executable units — shell scripts, Python scripts,
+            PowerShell scripts, etc. <strong>Script Jobs</strong> chain scripts into ordered pipelines
+            and are what Policies actually execute. Build your scripts here, then compose them into
+            Script Jobs that Policies can reference.
           </p>
 
           <v-divider class="my-3" />
@@ -31,63 +31,74 @@
             <tbody>
               <tr>
                 <td class="font-weight-medium" style="width:28%">Collection</td>
-                <td>Runs <em>on the remote device</em> via SSH or WinRM. Its job is to gather raw configuration data and write it to stdout. Keep these scripts minimal and side-effect-free.</td>
+                <td>Gathers raw configuration data from a device and writes it to stdout. Typically runs <em>on the remote device</em> via SSH, Telnet, WinRM, HTTPS/API, or the agent.</td>
               </tr>
               <tr>
                 <td class="font-weight-medium">Parser</td>
-                <td>Runs <em>on the Satellite server</em>. Receives the raw collection output via stdin and must emit a single canonical JSON document to stdout. One parser per OS family is the recommended pattern.</td>
+                <td>Receives raw collection output and emits a canonical JSON document. Runs <em>on the Satellite server</em>. One parser per OS family is the recommended pattern.</td>
               </tr>
               <tr>
                 <td class="font-weight-medium">Deployment</td>
-                <td>Optional. Pushed to the device to apply a remediation, hardening change, or golden configuration. Referenced by a Policy but only executed when explicitly triggered or when auto-remediation is enabled.</td>
+                <td>Applies a configuration change, remediation, or hardening action on a remote device. Used as a step in a remediation Script Job.</td>
               </tr>
-
+              <tr>
+                <td class="font-weight-medium">Utility</td>
+                <td>General-purpose script that doesn't fit the above categories — data exports, integrations, maintenance tasks, etc.</td>
+              </tr>
             </tbody>
           </v-table>
 
+          <v-divider class="my-3" />
           <v-divider class="my-3" />
           <div class="text-subtitle-2 font-weight-bold mb-2">Script fields</div>
           <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
             <tbody>
-              <tr><td class="font-weight-medium" style="width:28%">Name</td><td>Unique identifier used when selecting scripts in a Policy.</td></tr>
-              <tr><td class="font-weight-medium">Type</td><td>Collection, Parser, or Deployment — determines when and where the script is executed.</td></tr>
-              <tr><td class="font-weight-medium">OS Family</td><td>Linux, Windows, macOS, or Network. Informational — used to filter the right script into a policy targeting a given OS type.</td></tr>
-              <tr><td class="font-weight-medium">Language</td><td>Shell, PowerShell, Python, etc. Satellite uses this to invoke the correct interpreter on the remote host.</td></tr>
-              <tr><td class="font-weight-medium">Content</td><td>The full script body. Stored encrypted at rest. Substitution placeholders like <code>{{SATELLITE_URL}}</code> are replaced at deployment time.</td></tr>
-              <tr><td class="font-weight-medium">Version</td><td>Free-form version string. Displayed in job records so you know exactly which script version produced a given result.</td></tr>
-              <tr><td class="font-weight-medium">Active</td><td>Inactive scripts cannot be selected in new policies but remain visible for reference and historical jobs.</td></tr>
+              <tr><td class="font-weight-medium" style="width:28%">Name</td><td>Unique identifier used when adding steps to a Script Job.</td></tr>
+              <tr><td class="font-weight-medium">Type</td><td>Collection, Parser, Deployment, or Utility — documents the script's role.</td></tr>
+              <tr><td class="font-weight-medium">Run On</td><td><strong>Client</strong> — executes on the remote device. <strong>Server</strong> — executes on the Satellite. <strong>Both</strong> — runs on the device first, then the server.</td></tr>
+              <tr><td class="font-weight-medium">Target OS</td><td>Linux, Windows, macOS, or Any. Informational — helps you select the right script when building a Script Job.</td></tr>
+              <tr><td class="font-weight-medium">Language</td><td>Shell, PowerShell, Python, etc. Satellite uses this to invoke the correct interpreter.</td></tr>
+              <tr><td class="font-weight-medium">Content</td><td>The full script body. Substitution placeholders like <code>{{USERNAME}}</code> are replaced at runtime. Click the placeholder reference in the script editor for a full list.</td></tr>
+              <tr><td class="font-weight-medium">Version</td><td>Free-form version string. Displayed in job results so you can trace which script version produced a given output.</td></tr>
+              <tr><td class="font-weight-medium">Active</td><td>Inactive scripts are hidden from the Script Job step picker but remain visible for reference.</td></tr>
             </tbody>
           </v-table>
 
           <v-divider class="my-3" />
-          <div class="text-subtitle-2 font-weight-bold mb-2">Collection Profiles</div>
+          <div class="text-subtitle-2 font-weight-bold mb-2">Script Jobs</div>
           <p class="mb-3">
-            A Collection Profile groups a collection script and a parser script into a named,
-            versioned bundle. Collection Profiles are what Windows pull agents download from
-            <code>GET /api/agents/&lt;filename&gt;</code> — the server serves the profile artefact
-            and exposes its SHA-256 via <code>/api/agents/&lt;filename&gt;/info</code> so agents
-            can self-update without polling unnecessarily. Deployment scripts are assigned
-            separately at the Policy level.
+            A Script Job groups one or more scripts into an ordered execution pipeline. Each step can:
+          </p>
+          <ul class="pl-4 mb-3" style="line-height:2">
+            <li><strong>Pipe to next</strong> — pass this step's output to the next step as its input</li>
+            <li><strong>Save output</strong> — persist the raw output in the job result record</li>
+            <li><strong>Enable Baseline</strong> — save this step's canonical JSON output as the device's baseline</li>
+            <li><strong>Enable Drift</strong> — compare this step's output against the baseline and create drift events</li>
+          </ul>
+          <p class="mb-3">
+            Script Jobs are the unit that Policies reference. A single Script Job can be reused across
+            multiple policies targeting the same OS family or workflow type.
           </p>
 
           <v-divider class="my-3" />
           <div class="text-subtitle-2 font-weight-bold mb-2">Canonical JSON output</div>
           <p class="mb-3">
             Parser scripts must produce a document that conforms to the IsotopeIQ canonical schema.
-            The schema covers 28 top-level sections including <code>hardware</code>, <code>os</code>,
+            The schema covers sections including <code>hardware</code>, <code>os</code>,
             <code>network</code>, <code>installed_software</code>, <code>firewall_rules</code>,
             <code>services</code>, and network-device sections such as <code>vlans</code>,
-            <code>acls</code>, and <code>routing_protocols</code>. All sections must be present —
-            populate inapplicable ones with empty arrays or objects.
+            <code>acls</code>, and <code>routing_protocols</code>. Populate inapplicable sections
+            with empty arrays or objects.
           </p>
 
           <v-divider class="my-3" />
           <div class="text-subtitle-2 font-weight-bold mb-2">Recommended workflow</div>
           <ol class="pl-4" style="line-height:2">
-            <li>Write and test your <strong>Collection Script</strong> manually on a target device.</li>
-            <li>Pipe its output into your <strong>Parser Script</strong> locally to validate the JSON structure.</li>
-            <li>Upload both scripts here, set the correct OS family and language.</li>
-            <li>Create a <strong>Policy</strong> that references both scripts and assign target devices.</li>
+            <li>Write and test your <strong>Collection script</strong> manually on a target device.</li>
+            <li>Pipe its output into your <strong>Parser script</strong> locally to validate the JSON structure.</li>
+            <li>Upload both scripts here with the correct Type, Run On, and Target OS.</li>
+            <li>Create a <strong>Script Job</strong> with the collection step (Run On: Client) followed by the parser step (Run On: Server). Enable Baseline and Drift on the parser step.</li>
+            <li>Create a <strong>Policy</strong> that references the Script Job and assign target devices.</li>
             <li>Run the policy once manually to confirm end-to-end operation before enabling the schedule.</li>
           </ol>
 

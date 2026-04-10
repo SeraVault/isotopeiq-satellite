@@ -36,23 +36,15 @@ def _apply_baseline_and_drift(device, result, enable_baseline=True, enable_drift
 
     baseline = Baseline.objects.filter(device=device).first()
 
-    if enable_baseline:
-        if baseline is None:
-            baseline = Baseline.objects.create(
-                device=device,
-                parsed_data=result.parsed_output,
-                source_result=result,
-            )
-            logger.info('Baseline established for device "%s".', device)
-            dispatch_actions('new_baseline', policy, device, baseline=baseline)
-            return
-        else:
-            baseline.parsed_data = result.parsed_output
-            baseline.source_result = result
-            baseline.save(update_fields=['parsed_data', 'source_result', 'established_at'])
-            logger.info('Baseline updated for device "%s".', device)
-            dispatch_actions('new_baseline', policy, device, baseline=baseline)
-            return
+    if enable_baseline and baseline is None:
+        baseline = Baseline.objects.create(
+            device=device,
+            parsed_data=result.parsed_output,
+            source_result=result,
+        )
+        logger.info('Baseline established for device "%s".', device)
+        dispatch_actions('new_baseline', policy, device, baseline=baseline)
+        return
 
     if not enable_drift or baseline is None:
         if baseline:

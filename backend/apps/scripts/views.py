@@ -20,71 +20,68 @@ class ScriptViewSet(viewsets.ModelViewSet):
         """
         Run a script ad-hoc and return its output.
 
+        Mirrors _execute_steps branching exactly:
+          run_on client/both  — send to device via collector (or agent)
+          run_on server       — exec as Python via _run_server_step
+
         Body:
           content   — script source (required)
-          run_on    — 'client' | 'server' (required)
-          language  — e.g. 'shell', 'python', 'powershell' (informational for client)
-          device_id — int, required when run_on == 'client'
+          run_on    — 'client' | 'server' | 'both' (required)
+          language  — e.g. 'shell', 'python', 'powershell'
+          device_id — int, required when run_on is 'client' or 'both'
           stdin     — string piped as previous_output for server scripts (optional)
         """
-        import json
+        import io
+        import contextlib
         import traceback
         from django.utils import timezone
+        from apps.scripts.tasks import _get_collector, _run_agent_script, _run_server_step
+        from core.collection.render import render_script
 
         content   = request.data.get('content', '')
         run_on    = request.data.get('run_on', 'server')
+        language  = request.data.get('language', 'shell')
         device_id = request.data.get('device_id')
         stdin     = request.data.get('stdin', '')
 
         if not content:
             return Response({'error': 'content is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        started = timezone.now()
-
-        if run_on == 'client':
-            if not device_id:
-                return Response(
-                    {'error': 'device_id is required for client scripts'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        device = None
+        if device_id:
+            from apps.devices.models import Device
             try:
-                from apps.devices.models import Device
-                from apps.jobs.tasks import _get_collector
-                from core.collection.render import render_script
-
                 device = Device.objects.get(pk=device_id, is_active=True)
-                rendered = render_script(content, device)
-                collector = _get_collector(device)
-                output = collector.run(rendered)
-                print_output = None
-                error = None
             except Device.DoesNotExist:
                 return Response({'error': 'Device not found'}, status=status.HTTP_404_NOT_FOUND)
-            except Exception as exc:
-                output = ''
+
+        if run_on in ('client', 'both') and not device:
+            return Response(
+                {'error': 'device_id is required for client scripts'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        started = timezone.now()
+        try:
+            if run_on in ('client', 'both'):
+                rendered = render_script(content, device)
+                if device.connection_type == 'agent':
+                    output = _run_agent_script(device, rendered, language)
+                else:
+                    collector = _get_collector(device)
+                    output = collector.run(rendered)
                 print_output = None
-                error = ''.join(traceback.format_exception(exc))
-        else:  # server
-            try:
-                import io
-                import contextlib
-                from apps.scripts.tasks import _run_server_step
-                device = None
-                if device_id:
-                    from apps.devices.models import Device
-                    try:
-                        device = Device.objects.get(pk=device_id, is_active=True)
-                    except Device.DoesNotExist:
-                        pass
+                error = None
+            else:  # server
                 stdout_cap = io.StringIO()
                 with contextlib.redirect_stdout(stdout_cap):
                     output = _run_server_step(content, stdin, device)
                 print_output = stdout_cap.getvalue() or None
                 error = None
-            except Exception as exc:
-                output = ''
-                print_output = None
-                error = ''.join(traceback.format_exception(exc))
+        except Exception as exc:
+            output = ''
+            print_output = None
+            error = ''.join(traceback.format_exception(exc))
 
         finished = timezone.now()
         duration_ms = int((finished - started).total_seconds() * 1000)

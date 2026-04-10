@@ -1909,7 +1909,7 @@ def _run_script(script_content, language):
             cmd = [sys.executable, path]
             use_shell = False
         else:
-            cmd = ['/bin/sh', path]
+            cmd = ['/bin/bash', path]
             use_shell = False
         with open(os.devnull, 'rb') as devnull:
             proc = subprocess.Popen(

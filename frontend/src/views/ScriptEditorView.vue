@@ -67,7 +67,6 @@
           <v-table density="compact" class="rounded-lg" style="border:1px solid rgba(0,0,0,.12)">
             <tbody v-pre>
               <tr><td style="width:170px"><code>{{SATELLITE_URL}}</code></td><td>Base URL of this Satellite server — useful in deployment scripts that need to call back home</td></tr>
-              <tr><td><code>{{PUSH_TOKEN}}</code></td><td>Per-device push token for agent-mode devices</td></tr>
             </tbody>
           </v-table>
         </v-card-text>

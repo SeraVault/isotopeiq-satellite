@@ -1,0 +1,48 @@
+flowchart TD
+    START(["Policy · Script Job trigger\n(scheduler / manual / Run button)"])
+    START --> CM{"Triggered\nhow?"}
+
+    CM -->|"Policy — agent pull"| AGENTCOL["Satellite calls\nGET device:port/collect"]
+    CM -->|"Policy / Script Job\n— script execution"| STEPS
+
+    AGENTCOL --> AGENTRAW["Raw JSON received\nfrom agent"]
+    AGENTRAW --> BL
+
+    STEPS["Execute Script Job steps in order\n─────────────────────────────\nClient step → run on device\n  SSH · Telnet · WinRM · HTTPS · Agent /run\nServer step → exec on Satellite\n  receives previous step output via stdin"]
+
+    STEPS --> PIPE{"Pipe to next?"}
+    PIPE -->|Yes| STEPS
+    PIPE -->|No / last step| FLAGS{"Any step flagged\nSave output /\nEnable Baseline /\nEnable Drift?"}
+
+    FLAGS -->|"None — arbitrary run\n(deployment, utility, etc.)"| ARBITRARY(["Job: success ✅\nOutput stored in job record"])
+
+    FLAGS -->|"Save output"| RAWSTORED["Raw output stored\nin job record"]
+    RAWSTORED --> BDFLAG{"Baseline or\nDrift enabled?"}
+
+    BDFLAG -->|No| DONE_SAVE(["Job: success ✅"])
+
+    BDFLAG -->|Yes| BL
+
+    FLAGS -->|"Baseline / Drift\nenabled"| BL
+
+    BL{"Baseline\nexists for device?"}
+
+    BL -->|"No — first run"| NEWBL["Create baseline\nfrom parsed output"]
+    NEWBL --> NEWBL_N["Notify: new_baseline"]
+    NEWBL_N --> DONE1(["Job: success ✅\nBaseline established"])
+
+    BL -->|Yes| DRIFT["Run drift detection\ndiff current vs baseline"]
+    DRIFT --> DIFFS{"Differences?"}
+
+    DIFFS -->|No| CLEAN["Notify: collection_success"]
+    CLEAN --> DONE2(["Job: success ✅\nNo drift"])
+
+    DIFFS -->|Yes| DEVENT["Create / update DriftEvent\nNotify: drift_detected"]
+    DEVENT --> DONE3(["Job: success ✅\nDrift pending review"])
+
+    DONE3 --> ACK["User reviews diff,\nacknowledges with reason"]
+    ACK --> UPDBL["Baseline updated\nto acknowledged snapshot"]
+    UPDBL --> RESOLVED(["DriftEvent: resolved ✅"])
+
+    STEPS -->|"Any step throws"| FAIL(["Job: failed ❌\nError stored"])
+    AGENTCOL -->|"Network error / bad JSON"| FAIL

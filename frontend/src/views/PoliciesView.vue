@@ -20,7 +20,7 @@
         <v-card-text class="pa-5" style="font-size:0.92rem;line-height:1.7">
 
           <p class="mb-3">
-            A <strong>Policy</strong> ties devices, scripts, and a schedule together into an automated
+            A <strong>Policy</strong> ties devices, a Script Job, and a schedule together into an automated
             collection workflow. Policies are the primary way to keep configuration data current and
             trigger drift detection on a recurring basis.
           </p>
@@ -34,20 +34,24 @@
                 <td>Human-readable identifier shown in the job monitor and notifications.</td>
               </tr>
               <tr>
-                <td class="font-weight-medium">Collection Script</td>
-                <td>Runs on the remote device (SSH/WinRM). Outputs raw configuration data. Not used for Agent Pull devices — those run their own embedded collector.</td>
+                <td class="font-weight-medium">Collection Method</td>
+                <td><strong>Script Execution</strong> — Satellite connects to each device and runs the Script Job's steps via SSH, Telnet, WinRM, or HTTPS. <strong>Agent Pull</strong> — Satellite calls <code>GET /collect</code> on the agent running on each device; only a parser step is needed.</td>
               </tr>
               <tr>
-                <td class="font-weight-medium">Parser Script</td>
-                <td>Runs on the Satellite server. Receives the raw output and produces a normalised canonical JSON document.</td>
+                <td class="font-weight-medium">Script Job</td>
+                <td>An ordered pipeline of script steps to execute. Each step's execution location (device or Satellite server) is determined by the step's script <em>Run On</em> setting. Required for Script Execution policies; for Agent Pull only a parser step is needed.</td>
               </tr>
               <tr>
                 <td class="font-weight-medium">Devices</td>
-                <td>The set of devices this policy targets. Collection runs independently against each device in the list.</td>
+                <td>The set of devices this policy targets. Collection runs independently against each device. Use the tag filter to quickly narrow the list.</td>
               </tr>
               <tr>
                 <td class="font-weight-medium">Schedule</td>
                 <td>A cron expression that controls when the policy fires. See scheduling options below.</td>
+              </tr>
+              <tr>
+                <td class="font-weight-medium">Delay between devices</td>
+                <td>Optional seconds to wait between each device execution — useful for rate-limiting against shared infrastructure.</td>
               </tr>
               <tr>
                 <td class="font-weight-medium">Active</td>
@@ -76,20 +80,18 @@
           <div class="text-subtitle-2 font-weight-bold mb-2">Execution flow</div>
           <ol class="pl-4" style="line-height:2">
             <li>At the scheduled time, CeleryBeat enqueues a job for every device in the policy.</li>
-            <li>A Celery worker picks up each job and connects to the device via its configured transport (SSH, WinRM). For <strong>Agent Pull</strong> devices, the satellite calls <code>GET /collect</code> on the agent directly — no script execution needed.</li>
-            <li>The <strong>Collection Script</strong> is executed and its stdout captured.</li>
-            <li>The <strong>Parser Script</strong> receives that output and returns canonical JSON.</li>
-            <li>The JSON is validated against the canonical schema. Validation failures are recorded and surfaced as warnings — they do not suppress storage of the result.</li>
-            <li>The result is stored as a <strong>Job</strong>. If a baseline already exists for the device, a <strong>Drift</strong> comparison is performed automatically.</li>
-            <li>Any configured <strong>Notification</strong> rules are evaluated and alerts sent if thresholds are met.</li>
+            <li>A Celery worker picks up each job and connects to the device via its configured transport (SSH, Telnet, WinRM, HTTPS). For <strong>Agent Pull</strong> devices, the satellite calls <code>GET /collect</code> directly — no remote script execution.</li>
+            <li>The Script Job's steps execute in order. Each step either runs on the remote device or on the Satellite server (determined by the script's <em>Run On</em> setting). Each step can pipe its output to the next.</li>
+            <li>A step with <em>Enable Baseline</em> saves the canonical JSON output as the device baseline; a step with <em>Enable Drift</em> compares it against the stored baseline and creates drift events.</li>
+            <li>The result is stored. Any configured <strong>Post-Collection Actions</strong> (notifications, exports) are evaluated and triggered.</li>
           </ol>
 
           <v-divider class="my-3" />
           <div class="text-subtitle-2 font-weight-bold mb-2">Tips</div>
           <ul class="pl-4" style="line-height:2">
             <li>Assign one policy per <em>purpose</em> rather than one policy per device — a policy can target hundreds of devices simultaneously.</li>
-            <li>Use separate collection + parser scripts per OS family (Linux, Windows, network) and assign the right combination per policy.</li>
-            <li>Tag your devices and use tags to keep policy device lists manageable and queryable.</li>
+            <li>Build Script Jobs with one collection step (runs on device) and one parser step (runs on server). Reuse the same Script Job across multiple policies that share the same OS family.</li>
+            <li>Tag your devices and use the tag filter in the device picker to scope a policy to e.g. all <code>prod</code> Linux servers.</li>
             <li>Set a policy inactive instead of deleting it — inactive policies retain all historical job data.</li>
           </ul>
 
@@ -324,17 +326,33 @@
               <v-row dense>
                 <!-- Search + paginated list -->
                 <v-col cols="12" sm="7">
-                  <v-text-field
-                    v-model="deviceSearch"
-                    placeholder="Search by name, hostname or FQDN…"
-                    prepend-inner-icon="mdi-magnify"
-                    clearable
-                    density="compact"
-                    hide-details
-                    class="mb-2"
-                    @update:modelValue="onDeviceSearch"
-                    @click:clear="onClearSearch"
-                  />
+                  <v-row dense class="mb-2">
+                    <v-col cols="8">
+                      <v-text-field
+                        v-model="deviceSearch"
+                        placeholder="Search by name, hostname or FQDN…"
+                        prepend-inner-icon="mdi-magnify"
+                        clearable
+                        density="compact"
+                        hide-details
+                        @update:modelValue="onDeviceSearch"
+                        @click:clear="onClearSearch"
+                      />
+                    </v-col>
+                    <v-col cols="4">
+                      <v-combobox
+                        v-model="deviceTagFilter"
+                        :items="allTags"
+                        placeholder="Tag"
+                        prepend-inner-icon="mdi-tag-outline"
+                        clearable
+                        density="compact"
+                        hide-details
+                        @update:modelValue="onDeviceSearch"
+                        @click:clear="onClearSearch"
+                      />
+                    </v-col>
+                  </v-row>
                   <v-card variant="outlined" rounded="lg" style="max-height:240px;overflow-y:auto">
                     <v-list density="compact" :lines="false">
                       <v-list-item
@@ -611,6 +629,8 @@ function parseCron(cron) {
 // ── Device picker state ───────────────────────────────────────────────────────
 
 const deviceSearch      = ref('')
+const deviceTagFilter   = ref('')
+const allTags           = ref([])
 const devicePage        = ref([])
 const devicePageNum     = ref(1)
 const deviceTotal       = ref(0)
@@ -656,6 +676,7 @@ async function fetchDevices() {
     const { data } = await api.get('/devices/', {
       params: {
         search: deviceSearch.value || undefined,
+        tags:   deviceTagFilter.value || undefined,
         page: 1,
       },
     })
@@ -673,6 +694,7 @@ async function loadMoreDevices() {
     const { data } = await api.get('/devices/', {
       params: {
         search: deviceSearch.value || undefined,
+        tags:   deviceTagFilter.value || undefined,
         page: devicePageNum.value + 1,
       },
     })
@@ -740,6 +762,7 @@ onMounted(async () => {
         scriptJobs.value = r.data.results ?? r.data ?? []
       }),
       fetchDevices(),
+      api.get('/devices/tags/').then(r => { allTags.value = r.data }),
     ])
   } finally {}
 })
@@ -748,6 +771,7 @@ function openNew() {
   form.value             = blank()
   selectedDevices.value  = []
   deviceSearch.value     = ''
+  deviceTagFilter.value  = ''
   policyActions.value    = []
   newAction.value        = { trigger: null, destination: null }
   actionError.value      = ''
@@ -765,6 +789,7 @@ function openEdit(p) {
     typeof d === 'object' ? d : { id: d, name: `#${d}`, hostname: '' }
   )
   deviceSearch.value     = ''
+  deviceTagFilter.value  = ''
   newAction.value        = { trigger: null, destination: null }
   actionError.value      = ''
   policyActions.value    = []

@@ -29,10 +29,10 @@
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Overview</v-list-subheader>
         <v-list-item to="/dashboard" prepend-icon="mdi-view-dashboard-outline" title="Dashboard" color="primary" />
 
-        <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Infrastructure</v-list-subheader>
+        <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Configuration</v-list-subheader>
         <v-list-item to="/devices" prepend-icon="mdi-server" title="Devices" color="primary" />
         <v-list-item to="/policies" prepend-icon="mdi-shield-check-outline" title="Policies" color="primary" />
-        <v-list-item to="/agent-download" prepend-icon="mdi-download-circle-outline" title="Download Agent" color="primary" />
+        <v-list-item to="/scripts" prepend-icon="mdi-code-braces" title="Scripts" color="primary" />
 
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Operations</v-list-subheader>
         <v-list-item to="/jobs" prepend-icon="mdi-play-circle-outline" color="primary">
@@ -49,13 +49,11 @@
         </v-list-item>
         <v-list-item to="/baselines" prepend-icon="mdi-database-check-outline" title="Baselines" color="primary" />
 
-        <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">System</v-list-subheader>
-        <v-list-item to="/scripts" prepend-icon="mdi-code-braces" title="Scripts" color="primary" />
-        <v-list-item to="/audit" prepend-icon="mdi-format-list-bulleted" title="Audit Log" color="primary" />
+        <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">Administration</v-list-subheader>
         <v-list-item to="/volatile-rules" prepend-icon="mdi-tune" title="Volatile Rules" color="primary" />
         <v-list-item to="/users" prepend-icon="mdi-account-group-outline" title="Users" color="primary" />
+        <v-list-item to="/audit" prepend-icon="mdi-format-list-bulleted" title="Audit Log" color="primary" />
         <v-list-item to="/system-settings" prepend-icon="mdi-cog-outline" title="System Settings" color="primary" />
-        <v-list-item v-if="isSuperuser" href="/admin/" target="_blank" prepend-icon="mdi-shield-crown-outline" title="Django Admin" color="primary" />
       </v-list>
 
       <!-- Footer -->
