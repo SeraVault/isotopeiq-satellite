@@ -15,19 +15,19 @@ setlocal EnableDelayedExpansion
 
 REM Load defaults from agent.conf if bundled alongside this script.
 set PORT=9322
-set SATELLITE=
+set SECRET=
 set "_CONF=%~dp0agent.conf"
 if exist "!_CONF!" (
     for /f "usebackq tokens=1,* delims==" %%A in ("!_CONF!") do (
-        if "%%A"=="PORT"      set PORT=%%B
-        if "%%A"=="SATELLITE" set SATELLITE=%%B
+        if "%%A"=="PORT"   set PORT=%%B
+        if "%%A"=="SECRET" set SECRET=%%B
     )
 )
 
 set /p PORT_INPUT="Port to listen on [%PORT%]: "
 if not "!PORT_INPUT!"=="" set PORT=!PORT_INPUT!
 echo Using port: %PORT%
-if not "!SATELLITE!"=="" echo Using satellite: !SATELLITE!
+if not "!SECRET!"=="" echo Agent secret authentication enabled.
 
 REM ---- Locate binary ----
 set BINARY=%~1
@@ -65,7 +65,7 @@ if not exist "%LOG_DIR%\" mkdir "%LOG_DIR%"
 
 REM ---- Build agent command line ----
 set _AGENT_CMD="!INSTALL_PATH!" --serve --port !PORT!
-if not "!SATELLITE!"=="" set _AGENT_CMD=!_AGENT_CMD! --satellite !SATELLITE!
+if not "!SECRET!"=="" set _AGENT_CMD=!_AGENT_CMD! --secret !SECRET!
 
 REM ---- Register the scheduled task ----
 REM   /sc ONSTART  : trigger at every system boot (before any user logs in)
@@ -103,7 +103,7 @@ schtasks /run /tn "%TASK_NAME%"
 
 echo.
 echo Done.  Agent listening on 0.0.0.0:!PORT!
-if not "!SATELLITE!"=="" echo        Accepting requests from satellite: !SATELLITE!
+if not "!SECRET!"=="" echo        Agent secret authentication enabled.
 echo Check status:  schtasks /query /tn "%TASK_NAME%" /fo LIST /v
 echo View logs:     type "%LOG_DIR%\isotopeiq-agent.log"
 endlocal

@@ -51,6 +51,12 @@ class SystemSettings(models.Model):
         default='http://localhost:8000',
         help_text='Public base URL of this satellite (used in agent download links, etc.)',
     )
+    agent_secret = EncryptedCharField(
+        max_length=255,
+        blank=True,
+        help_text='Shared secret for agent authentication. Agents must supply this value in '
+                  'the X-Agent-Secret request header. Leave blank to disable secret enforcement.',
+    )
 
     # LDAP authentication (optional)
     ldap_enabled = models.BooleanField(default=False)

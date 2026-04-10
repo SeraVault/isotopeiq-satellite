@@ -235,6 +235,13 @@ def run_agent_pull(self, device_id: int, triggered_by: str = 'manual'):
         port = device.agent_port or 9322
         url = 'http://{host}:{port}/collect'.format(host=device.hostname, port=port)
         req = Request(url)  # nosec — internal network call to a known agent endpoint
+        try:
+            from apps.notifications.models import SystemSettings
+            _secret = SystemSettings.get().agent_secret or ''
+        except Exception:
+            _secret = ''
+        if _secret:
+            req.add_header('X-Agent-Secret', _secret)
         with urlopen(req, timeout=300) as resp:  # noqa: S310
             raw = resp.read().decode('utf-8')
 

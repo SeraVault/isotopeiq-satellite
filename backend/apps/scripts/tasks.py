@@ -24,7 +24,15 @@ def _run_agent_script(device, script_content, language):
     port = device.agent_port or 9322
     url = 'http://{host}:{port}/run'.format(host=device.hostname, port=port)
     payload = json.dumps({'script': script_content, 'language': language}).encode('utf-8')
-    req = Request(url, data=payload, headers={'Content-Type': 'application/json'})
+    headers = {'Content-Type': 'application/json'}
+    try:
+        from apps.notifications.models import SystemSettings
+        _secret = SystemSettings.get().agent_secret or ''
+    except Exception:
+        _secret = ''
+    if _secret:
+        headers['X-Agent-Secret'] = _secret
+    req = Request(url, data=payload, headers=headers)
     try:
         with urlopen(req, timeout=300) as resp:  # noqa: S310
             result = json.loads(resp.read().decode('utf-8'))

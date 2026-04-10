@@ -259,22 +259,14 @@ def _winrm_configure_envelope(collector):
         pass
 
 
-def _satellite_ip():
-    """
-    Derive the satellite's IP/hostname from SystemSettings.satellite_url (or the
-    SATELLITE_URL env var fallback).  Returns an empty string if it cannot be
-    determined, in which case the agent will skip IP-allowlist enforcement.
-    """
-    import re
+def _agent_secret():
+    """Return the shared agent secret from SystemSettings (or empty string if unset)."""
     try:
         from apps.notifications.models import SystemSettings
-        url = SystemSettings.get().satellite_url
+        return SystemSettings.get().agent_secret or ''
     except Exception:
         from django.conf import settings as _s
-        url = getattr(_s, 'SATELLITE_URL', '')
-    # Strip scheme and any path/port — keep only the host part.
-    m = re.match(r'^https?://([^/:]+)', url.strip())
-    return m.group(1) if m else ''
+        return getattr(_s, 'AGENT_SECRET', '')
 
 
 def _build_agent_bundle(os_name, port):
@@ -299,12 +291,12 @@ def _build_agent_bundle(os_name, port):
     installer_file = installer_map.get(os_name, 'linux_install.sh')
     installer_path = agents_dir / 'installers' / installer_file
 
-    satellite_host = _satellite_ip()
+    secret = _agent_secret()
 
-    # agent.conf — read by every installer to pass --satellite to the binary.
+    # agent.conf — read by every installer to pass --secret to the binary.
     conf_lines = [f'PORT={port}']
-    if satellite_host:
-        conf_lines.append(f'SATELLITE={satellite_host}')
+    if secret:
+        conf_lines.append(f'SECRET={secret}')
     conf_content = '\n'.join(conf_lines) + '\n'
 
     now = datetime.now().timetuple()[:6]

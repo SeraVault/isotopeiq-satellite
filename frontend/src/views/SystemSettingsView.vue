@@ -10,16 +10,36 @@
       <v-alert v-if="saved" type="success" variant="tonal" density="compact" class="mb-4" style="max-width:660px">Settings saved.</v-alert>
       <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4" style="max-width:660px">{{ error }}</v-alert>
 
-      <!-- General -->
+      <!-- Agent Security -->
       <v-card rounded="lg" elevation="1" class="mb-5" style="max-width:660px">
-        <v-card-title class="text-body-1 font-weight-bold pt-4 px-4">General</v-card-title>
+        <v-card-title class="text-body-1 font-weight-bold pt-4 px-4">Agent Security</v-card-title>
         <v-card-text>
+          <div class="text-body-2 text-medium-emphasis mb-3">
+            Agents verify this shared secret on every request via the
+            <code>X-Agent-Secret</code> header. Leave blank to disable
+            secret enforcement. Re-download and reinstall the agent bundle
+            on all devices after changing this value.
+          </div>
           <v-text-field
-            v-model="form.satellite_url"
-            label="Satellite URL"
-            hint="Public base URL of this satellite (e.g. https://satellite.example.com)"
+            v-model="form.agent_secret"
+            label="Agent Secret"
+            :placeholder="serverData.agent_secret_set ? '(secret is set — enter new value to change)' : 'Enter shared secret'"
+            type="password"
+            autocomplete="new-password"
+            hint="Shared secret included in the agent bundle and checked on every /collect and /run request"
             persistent-hint
-          />
+            clearable
+          >
+            <template #append-inner>
+              <v-btn
+                size="small"
+                variant="text"
+                density="compact"
+                title="Generate a random secret"
+                @click="generateSecret"
+              >Generate</v-btn>
+            </template>
+          </v-text-field>
         </v-card-text>
       </v-card>
 
@@ -426,7 +446,7 @@ const ftpProtocolOptions = [
 ]
 
 const form = ref({
-  satellite_url: '',
+  agent_secret: '',
   syslog_enabled: false,
   syslog_host: 'localhost',
   syslog_port: 514,
@@ -467,7 +487,7 @@ const form = ref({
 })
 
 // Tracks server-side state (e.g. whether passwords are already set)
-const serverData = ref({ email_password_set: false, ftp_password_set: false, ldap_bind_password_set: false })
+const serverData = ref({ email_password_set: false, ftp_password_set: false, ldap_bind_password_set: false, agent_secret_set: false })
 
 const loading = ref(false)
 const saving  = ref(false)
@@ -484,11 +504,18 @@ onMounted(async () => {
       email_password:     '',
       ftp_password:       '',
       ldap_bind_password: '',
+      agent_secret:       '',
     })
   } finally {
     loading.value = false
   }
 })
+
+function generateSecret() {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  form.value.agent_secret = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
 
 async function save() {
   saving.value = true
@@ -500,6 +527,7 @@ async function save() {
     if (!payload.email_password)     delete payload.email_password
     if (!payload.ftp_password)       delete payload.ftp_password
     if (!payload.ldap_bind_password) delete payload.ldap_bind_password
+    if (!payload.agent_secret)       delete payload.agent_secret
     const { data } = await api.patch('/settings/', payload)
     serverData.value = data
     Object.assign(form.value, {
@@ -507,6 +535,7 @@ async function save() {
       email_password:     '',
       ftp_password:       '',
       ldap_bind_password: '',
+      agent_secret:       '',
     })
     saved.value = true
     setTimeout(() => { saved.value = false }, 3000)

@@ -1934,19 +1934,19 @@ def _run_script(script_content, language):
             pass
 
 
-def _make_handler(satellite_ip=None):
+def _make_handler(secret=None):
     """Return an HTTPRequestHandler class for the agent.
 
-    satellite_ip — if set, only requests from this IP are accepted on
-                   endpoints other than /health.  Derived from the
-                   --satellite argument passed at startup.
+    secret — if set, requests must supply this value in the X-Agent-Secret
+              header on endpoints other than /health.  Derived from the
+              --secret argument passed at startup.
     """
     class AgentHandler(BaseHTTPRequestHandler):
         def _allowed(self):
-            """Return True if the request origin is permitted."""
-            if not satellite_ip:
+            """Return True if the request carries a valid secret (or no secret is configured)."""
+            if not secret:
                 return True
-            return self.client_address[0] == satellite_ip
+            return self.headers.get('X-Agent-Secret') == secret
 
         def _send_json(self, code, obj):
             body = json.dumps(obj).encode('utf-8')
@@ -2028,32 +2028,30 @@ def main():
             help='Run as a persistent HTTP server instead of printing to stdout')
         parser.add_argument('--port', type=int, default=DEFAULT_AGENT_PORT,
             help='TCP port to listen on in serve mode (default: %(default)s)')
-        parser.add_argument('--satellite',
-            help='IP or hostname of the satellite server; only requests from '
-                 'this address are accepted (recommended)')
+        parser.add_argument('--secret',
+            help='Shared secret; requests must supply this value in the '
+                 'X-Agent-Secret header (recommended)')
         args = parser.parse_args()
     else:
         # Python 2.6 minimal fallback
         class args(object):
             serve = '--serve' in sys.argv
             port = DEFAULT_AGENT_PORT
-            satellite = None
+            secret = None
         for i, a in enumerate(sys.argv[1:], 1):
             if a == '--port' and i + 1 < len(sys.argv):
                 args.port = int(sys.argv[i + 1])
-            if a == '--satellite' and i + 1 < len(sys.argv):
-                args.satellite = sys.argv[i + 1]
+            if a == '--secret' and i + 1 < len(sys.argv):
+                args.secret = sys.argv[i + 1]
 
     if args.serve:
-        satellite_ip = getattr(args, 'satellite', None) or None
-        server = ThreadedHTTPServer(('0.0.0.0', args.port), _make_handler(satellite_ip))
+        agent_secret = getattr(args, 'secret', None) or None
+        server = ThreadedHTTPServer(('0.0.0.0', args.port), _make_handler(agent_secret))
         sys.stderr.write(
             'IsotopeIQ agent listening on 0.0.0.0:{0}\n'.format(args.port)
         )
-        if satellite_ip:
-            sys.stderr.write(
-                'Accepting requests from satellite: {0}\n'.format(satellite_ip)
-            )
+        if agent_secret:
+            sys.stderr.write('Agent secret authentication enabled.\n')
         try:
             server.serve_forever()
         except KeyboardInterrupt:

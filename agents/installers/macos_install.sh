@@ -11,13 +11,13 @@ set -euo pipefail
 
 # Load defaults from agent.conf if it was bundled alongside this script.
 PORT=9322
-SATELLITE=""
+SECRET=""
 _CONF="$(dirname "$0")/agent.conf"
 if [ -f "$_CONF" ]; then
     _port_line=$(grep -m1 '^PORT=' "$_CONF" 2>/dev/null || true)
     [ -n "$_port_line" ] && PORT="${_port_line#PORT=}"
-    _sat_line=$(grep -m1 '^SATELLITE=' "$_CONF" 2>/dev/null || true)
-    [ -n "$_sat_line" ] && SATELLITE="${_sat_line#SATELLITE=}"
+    _secret_line=$(grep -m1 '^SECRET=' "$_CONF" 2>/dev/null || true)
+    [ -n "$_secret_line" ] && SECRET="${_secret_line#SECRET=}"
 fi
 
 read -r -p "Port to listen on [${PORT}]: " _INPUT_PORT
@@ -53,11 +53,11 @@ cp -f "$BINARY" "$INSTALL_PATH"
 chmod 700 "$INSTALL_PATH"
 chown root:wheel "$INSTALL_PATH"
 
-_SAT_PLIST_ARGS=""
-if [ -n "$SATELLITE" ]; then
-    _SAT_PLIST_ARGS="
-        <string>--satellite</string>
-        <string>${SATELLITE}</string>"
+_SECRET_PLIST_ARGS=""
+if [ -n "$SECRET" ]; then
+    _SECRET_PLIST_ARGS="
+        <string>--secret</string>
+        <string>${SECRET}</string>"
 fi
 
 echo "Writing launchd plist → ${PLIST_PATH}"
@@ -75,7 +75,7 @@ cat > "$PLIST_PATH" <<PLIST
         <string>${INSTALL_PATH}</string>
         <string>--serve</string>
         <string>--port</string>
-        <string>${PORT}</string>${_SAT_PLIST_ARGS}
+        <string>${PORT}</string>${_SECRET_PLIST_ARGS}
     </array>
 
     <key>RunAtLoad</key>
@@ -115,6 +115,6 @@ true  # nothing to clean up — binary was bundled
 
 echo ""
 echo "Done.  Agent listening on 0.0.0.0:${PORT}"
-[ -n "$SATELLITE" ] && echo "       Accepting requests from satellite: ${SATELLITE}"
+[ -n "$SECRET" ] && echo "       Agent secret authentication enabled."
 echo "Check status:  sudo launchctl list com.isotopeiq.agent"
 echo "View logs:     tail -f ${LOG_PATH}"
