@@ -52,7 +52,6 @@
         <v-list-subheader v-if="!rail" class="text-uppercase text-caption" style="color:#5a6a8a">System</v-list-subheader>
         <v-list-item to="/scripts" prepend-icon="mdi-code-braces" title="Scripts" color="primary" />
         <v-list-item to="/audit" prepend-icon="mdi-format-list-bulleted" title="Audit Log" color="primary" />
-        <v-list-item to="/retention" prepend-icon="mdi-clock-outline" title="Retention" color="primary" />
         <v-list-item to="/volatile-rules" prepend-icon="mdi-tune" title="Volatile Rules" color="primary" />
         <v-list-item to="/users" prepend-icon="mdi-account-group-outline" title="Users" color="primary" />
         <v-list-item to="/system-settings" prepend-icon="mdi-cog-outline" title="System Settings" color="primary" />

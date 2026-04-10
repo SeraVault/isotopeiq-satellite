@@ -13,12 +13,21 @@ REM ============================================================
 
 setlocal EnableDelayedExpansion
 
-REM Port the agent will listen on.  Substituted automatically by the
-REM IsotopeIQ server when generating the installer bundle; you can override it here.
+REM Load defaults from agent.conf if bundled alongside this script.
 set PORT=9322
+set SATELLITE=
+set "_CONF=%~dp0agent.conf"
+if exist "!_CONF!" (
+    for /f "usebackq tokens=1,* delims==" %%A in ("!_CONF!") do (
+        if "%%A"=="PORT"      set PORT=%%B
+        if "%%A"=="SATELLITE" set SATELLITE=%%B
+    )
+)
+
 set /p PORT_INPUT="Port to listen on [%PORT%]: "
 if not "!PORT_INPUT!"=="" set PORT=!PORT_INPUT!
 echo Using port: %PORT%
+if not "!SATELLITE!"=="" echo Using satellite: !SATELLITE!
 
 REM ---- Locate binary ----
 set BINARY=%~1
@@ -54,6 +63,10 @@ copy /Y "!BINARY!" "%INSTALL_PATH%" >nul
 REM ---- Create log directory ----
 if not exist "%LOG_DIR%\" mkdir "%LOG_DIR%"
 
+REM ---- Build agent command line ----
+set _AGENT_CMD="!INSTALL_PATH!" --serve --port !PORT!
+if not "!SATELLITE!"=="" set _AGENT_CMD=!_AGENT_CMD! --satellite !SATELLITE!
+
 REM ---- Register the scheduled task ----
 REM   /sc ONSTART  : trigger at every system boot (before any user logs in)
 REM   /ru SYSTEM   : run as LocalSystem — no password needed, survives user logoff
@@ -62,7 +75,7 @@ REM   /f           : overwrite if task already exists (belt-and-suspenders)
 echo Registering scheduled task: %TASK_NAME%
 schtasks /create ^
     /tn "%TASK_NAME%" ^
-    /tr "\"!INSTALL_PATH!\" --serve --port !PORT!" ^
+    /tr "!_AGENT_CMD!" ^
     /sc ONSTART ^
     /ru SYSTEM ^
     /rl HIGHEST ^
@@ -90,6 +103,7 @@ schtasks /run /tn "%TASK_NAME%"
 
 echo.
 echo Done.  Agent listening on 0.0.0.0:!PORT!
+if not "!SATELLITE!"=="" echo        Accepting requests from satellite: !SATELLITE!
 echo Check status:  schtasks /query /tn "%TASK_NAME%" /fo LIST /v
 echo View logs:     type "%LOG_DIR%\isotopeiq-agent.log"
 endlocal

@@ -10,12 +10,15 @@
 
     <v-card rounded="lg" elevation="1">
       <v-card-text class="pa-0">
-        <v-data-table
+        <v-data-table-server
+          v-model:options="tableOptions"
           :headers="headers"
           :items="users"
+          :items-length="total"
           :loading="loading"
           item-value="id"
           density="comfortable"
+          @update:options="onTableOptions"
         >
           <template #item.auth_type="{ item }">
             <v-chip
@@ -60,7 +63,7 @@
               @click="confirmDelete(item)"
             />
           </template>
-        </v-data-table>
+        </v-data-table-server>
       </v-card-text>
     </v-card>
 
@@ -198,6 +201,8 @@ const headers = [
   { title: '', key: 'actions', sortable: false, align: 'end' },
 ]
 
+const tableOptions = ref({ page: 1, itemsPerPage: 20, sortBy: [] })
+const total = ref(0)
 const users = ref([])
 const loading = ref(false)
 const error = ref('')
@@ -231,17 +236,28 @@ function formatDate(iso) {
   return new Date(iso).toLocaleString()
 }
 
-async function load() {
+async function load(options = tableOptions.value) {
   loading.value = true
   error.value = ''
   try {
-    const { data } = await api.get('/users/')
+    const params = { page: options.page, page_size: options.itemsPerPage }
+    if (options.sortBy?.length) {
+      const { key, order } = options.sortBy[0]
+      params.ordering = order === 'desc' ? `-${key}` : key
+    }
+    const { data } = await api.get('/users/', { params })
     users.value = data.results ?? data
+    total.value = data.count ?? users.value.length
   } catch {
     error.value = 'Failed to load users.'
   } finally {
     loading.value = false
   }
+}
+
+function onTableOptions(options) {
+  tableOptions.value = options
+  load(options)
 }
 
 function openCreate() {
@@ -275,14 +291,12 @@ async function save() {
     if (!payload.password) delete payload.password
 
     if (editing.value) {
-      const { data } = await api.patch(`/users/${editing.value.id}/`, payload)
-      const idx = users.value.findIndex(u => u.id === editing.value.id)
-      if (idx !== -1) users.value[idx] = data
+      await api.patch(`/users/${editing.value.id}/`, payload)
     } else {
-      const { data } = await api.post('/users/', payload)
-      users.value.push(data)
+      await api.post('/users/', payload)
     }
     dialog.value = false
+    load()
   } catch (e) {
     const data = e.response?.data
     if (data && typeof data === 'object') {
@@ -306,8 +320,8 @@ async function deleteUser() {
   deleting.value = true
   try {
     await api.delete(`/users/${deletingUser.value.id}/`)
-    users.value = users.value.filter(u => u.id !== deletingUser.value.id)
     deleteDialog.value = false
+    load()
   } catch {
     error.value = 'Delete failed.'
     deleteDialog.value = false

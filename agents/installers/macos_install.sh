@@ -9,11 +9,19 @@
 
 set -euo pipefail
 
-# Port the agent will listen on.  Substituted automatically by the IsotopeIQ
-# server when generating the installer bundle; you can override it here.
-_DEFAULT_PORT=9322
-read -r -p "Port to listen on [${_DEFAULT_PORT}]: " _INPUT_PORT
-PORT="${_INPUT_PORT:-${_DEFAULT_PORT}}"
+# Load defaults from agent.conf if it was bundled alongside this script.
+PORT=9322
+SATELLITE=""
+_CONF="$(dirname "$0")/agent.conf"
+if [ -f "$_CONF" ]; then
+    _port_line=$(grep -m1 '^PORT=' "$_CONF" 2>/dev/null || true)
+    [ -n "$_port_line" ] && PORT="${_port_line#PORT=}"
+    _sat_line=$(grep -m1 '^SATELLITE=' "$_CONF" 2>/dev/null || true)
+    [ -n "$_sat_line" ] && SATELLITE="${_sat_line#SATELLITE=}"
+fi
+
+read -r -p "Port to listen on [${PORT}]: " _INPUT_PORT
+PORT="${_INPUT_PORT:-${PORT}}"
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
     echo "ERROR: Invalid port '${PORT}'." >&2
     exit 1
@@ -45,6 +53,13 @@ cp -f "$BINARY" "$INSTALL_PATH"
 chmod 700 "$INSTALL_PATH"
 chown root:wheel "$INSTALL_PATH"
 
+_SAT_PLIST_ARGS=""
+if [ -n "$SATELLITE" ]; then
+    _SAT_PLIST_ARGS="
+        <string>--satellite</string>
+        <string>${SATELLITE}</string>"
+fi
+
 echo "Writing launchd plist → ${PLIST_PATH}"
 cat > "$PLIST_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -60,7 +75,7 @@ cat > "$PLIST_PATH" <<PLIST
         <string>${INSTALL_PATH}</string>
         <string>--serve</string>
         <string>--port</string>
-        <string>${PORT}</string>
+        <string>${PORT}</string>${_SAT_PLIST_ARGS}
     </array>
 
     <key>RunAtLoad</key>
@@ -100,5 +115,6 @@ true  # nothing to clean up — binary was bundled
 
 echo ""
 echo "Done.  Agent listening on 0.0.0.0:${PORT}"
+[ -n "$SATELLITE" ] && echo "       Accepting requests from satellite: ${SATELLITE}"
 echo "Check status:  sudo launchctl list com.isotopeiq.agent"
 echo "View logs:     tail -f ${LOG_PATH}"

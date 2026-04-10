@@ -12,6 +12,34 @@ def _get_collector(device):
     return _base_get_collector(device)
 
 
+def _run_agent_script(device, script_content, language):
+    """
+    POST a script to the agent's /run endpoint and return its stdout.
+
+    Raises RuntimeError on HTTP error or non-zero exit code.
+    """
+    from urllib.request import Request, urlopen
+    from urllib.error import URLError
+
+    port = device.agent_port or 9322
+    url = 'http://{host}:{port}/run'.format(host=device.hostname, port=port)
+    payload = json.dumps({'script': script_content, 'language': language}).encode('utf-8')
+    req = Request(url, data=payload, headers={'Content-Type': 'application/json'})
+    try:
+        with urlopen(req, timeout=120) as resp:  # noqa: S310
+            result = json.loads(resp.read().decode('utf-8'))
+    except URLError as exc:
+        raise RuntimeError('Agent unreachable at {0}: {1}'.format(url, exc))
+
+    if result.get('exit_code', -1) != 0:
+        raise RuntimeError(
+            'Agent script exited {0}: {1}'.format(
+                result.get('exit_code'), result.get('stderr', '').strip()
+            )
+        )
+    return result.get('stdout', '')
+
+
 def _run_server_step(script_content, previous_output, device):
     """
     Execute a server-side script step in an isolated namespace.
@@ -78,7 +106,10 @@ def _execute_steps(steps, device, collector):
                     'but no device connection is available.'
                 )
             rendered = render_script(step.script.content, device)
-            step_out = collector.run(rendered)
+            if device.connection_type == 'agent':
+                step_out = _run_agent_script(device, rendered, step.script.language)
+            else:
+                step_out = collector.run(rendered)
             if not first_client_output:
                 first_client_output = step_out
         else:  # server

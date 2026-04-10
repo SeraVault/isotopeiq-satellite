@@ -219,6 +219,55 @@
         </v-card-text>
       </v-card>
 
+      <!-- Data Retention -->
+      <v-card rounded="lg" elevation="1" class="mb-5" style="max-width:660px">
+        <v-card-title class="text-body-1 font-weight-bold pt-4 px-4">Data Retention</v-card-title>
+        <v-card-text>
+          <div class="text-body-2 text-medium-emphasis mb-4">
+            Set to <strong>0</strong> to disable pruning for that category (keep forever).
+            The cleanup task runs nightly.
+          </div>
+          <v-row dense>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="form.raw_data_days"
+                label="Raw collection output (days)"
+                type="number" min="0"
+                hint="Raw stdout from collection scripts"
+                persistent-hint
+              />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="form.parsed_data_days"
+                label="Parsed / canonical JSON (days)"
+                type="number" min="0"
+                hint="Parsed baseline snapshots"
+                persistent-hint
+              />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="form.job_history_days"
+                label="Job history (days)"
+                type="number" min="0"
+                hint="Job run records"
+                persistent-hint
+              />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="form.log_days"
+                label="Job logs (days)"
+                type="number" min="0"
+                hint="Stdout / stderr captured during runs"
+                persistent-hint
+              />
+            </v-col>
+          </v-row>
+        </v-card-text>
+      </v-card>
+
       <!-- LDAP -->
       <v-card rounded="lg" elevation="1" class="mb-5" style="max-width:660px">
         <v-card-title class="text-body-1 font-weight-bold pt-4 px-4">
@@ -410,6 +459,11 @@ const form = ref({
   ldap_attr_email: 'mail',
   ldap_superuser_group: '',
   ldap_staff_group: '',
+  // retention
+  raw_data_days: 90,
+  parsed_data_days: 365,
+  job_history_days: 180,
+  log_days: 90,
 })
 
 // Tracks server-side state (e.g. whether passwords are already set)
@@ -425,12 +479,11 @@ onMounted(async () => {
   try {
     const { data } = await api.get('/settings/')
     serverData.value = data
-    // Populate form with all non-password fields; passwords are write-only on the server
     Object.assign(form.value, {
       ...data,
-      email_password:      '',
-      ftp_password:        '',
-      ldap_bind_password:  '',
+      email_password:     '',
+      ftp_password:       '',
+      ldap_bind_password: '',
     })
   } finally {
     loading.value = false
@@ -449,6 +502,12 @@ async function save() {
     if (!payload.ldap_bind_password) delete payload.ldap_bind_password
     const { data } = await api.patch('/settings/', payload)
     serverData.value = data
+    Object.assign(form.value, {
+      ...data,
+      email_password:     '',
+      ftp_password:       '',
+      ldap_bind_password: '',
+    })
     saved.value = true
     setTimeout(() => { saved.value = false }, 3000)
   } catch (e) {

@@ -236,6 +236,24 @@ def _winrm_configure_envelope(collector):
         pass
 
 
+def _satellite_ip():
+    """
+    Derive the satellite's IP/hostname from SystemSettings.satellite_url (or the
+    SATELLITE_URL env var fallback).  Returns an empty string if it cannot be
+    determined, in which case the agent will skip IP-allowlist enforcement.
+    """
+    import re
+    try:
+        from apps.notifications.models import SystemSettings
+        url = SystemSettings.get().satellite_url
+    except Exception:
+        from django.conf import settings as _s
+        url = getattr(_s, 'SATELLITE_URL', '')
+    # Strip scheme and any path/port — keep only the host part.
+    m = re.match(r'^https?://([^/:]+)', url.strip())
+    return m.group(1) if m else ''
+
+
 def _build_agent_bundle(os_name, port):
     """Build and return the raw bytes of an agent installer ZIP."""
     import io
@@ -258,9 +276,23 @@ def _build_agent_bundle(os_name, port):
     installer_file = installer_map.get(os_name, 'linux_install.sh')
     installer_path = agents_dir / 'installers' / installer_file
 
+    satellite_host = _satellite_ip()
+
+    # agent.conf — read by every installer to pass --satellite to the binary.
+    conf_lines = [f'PORT={port}']
+    if satellite_host:
+        conf_lines.append(f'SATELLITE={satellite_host}')
+    conf_content = '\n'.join(conf_lines) + '\n'
+
     now = datetime.now().timetuple()[:6]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # Write agent.conf
+        conf_info = zipfile.ZipInfo('agent.conf', now)
+        conf_info.compress_type = zipfile.ZIP_DEFLATED
+        conf_info.external_attr = 0o644 << 16
+        zf.writestr(conf_info, conf_content.encode('utf-8'))
+
         if installer_path.is_file():
             # Substitute the PORT value in the installer script
             installer_content = installer_path.read_text(encoding='utf-8')

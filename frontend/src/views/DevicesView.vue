@@ -335,11 +335,13 @@
         </div>
 
         <v-card elevation="1" rounded="lg">
-          <v-data-table
+          <v-data-table-server
+            v-model:options="credTableOptions"
             :headers="credHeaders"
             :items="credentials"
+            :items-length="totalCredentials"
             :loading="credLoading"
-            hide-default-footer
+            @update:options="onCredTableOptions"
           >
             <template #item.actions="{ item }">
               <div class="d-flex ga-1">
@@ -347,7 +349,7 @@
                 <v-btn size="x-small" color="error" variant="tonal" icon="mdi-delete" @click="removeCred(item.id)" />
               </div>
             </template>
-          </v-data-table>
+          </v-data-table-server>
         </v-card>
 
       </v-window-item>
@@ -510,12 +512,15 @@ async function loadBaseline() {
 }
 
 // ── credentials ───────────────────────────────────────────────────────────────
-const credentials = ref([])
-const credLoading = ref(false)
+const credentials    = ref([])
+const allCredentials = ref([])
+const credLoading    = ref(false)
+const totalCredentials = ref(0)
+const credTableOptions = ref({ page: 1, itemsPerPage: 20, sortBy: [] })
 
 const credentialItems = computed(() => [
-  { title: '— none (use inline fields) —', value: null },
-  ...credentials.value.map(c => ({ title: `${c.name} (${c.credential_type})`, value: c.id })),
+  { title: '— none —', value: null },
+  ...allCredentials.value.map(c => ({ title: `${c.name} (${c.credential_type})`, value: c.id })),
 ])
 
 const credTypeItems = [
@@ -524,19 +529,35 @@ const credTypeItems = [
   { title: 'API Token', value: 'api_token' },
 ]
 
-async function loadCredentials() {
+async function loadAllCredentials() {
+  const { data } = await api.get('/devices/credentials/', { params: { page_size: 500 } })
+  allCredentials.value = data.results ?? data
+}
+
+async function loadCredentials(options = credTableOptions.value) {
   credLoading.value = true
   try {
-    const { data } = await api.get('/devices/credentials/', { params: { page_size: 500 } })
+    const params = { page: options.page, page_size: options.itemsPerPage }
+    if (options.sortBy?.length) {
+      const { key, order } = options.sortBy[0]
+      params.ordering = order === 'desc' ? `-${key}` : key
+    }
+    const { data } = await api.get('/devices/credentials/', { params })
     credentials.value = data.results ?? data
+    totalCredentials.value = data.count ?? credentials.value.length
   } finally {
     credLoading.value = false
   }
 }
 
+function onCredTableOptions(options) {
+  credTableOptions.value = options
+  loadCredentials(options)
+}
+
 function credName(credId) {
   if (!credId) return '—'
-  const c = credentials.value.find(c => c.id === credId)
+  const c = allCredentials.value.find(c => c.id === credId)
   return c ? c.name : `#${credId}`
 }
 
@@ -563,15 +584,14 @@ async function saveCred() {
   if (credForm.value.token)       payload.token       = credForm.value.token
   try {
     if (credForm.value.id) {
-      const { data } = await api.patch(`/devices/credentials/${credForm.value.id}/`, payload)
-      const idx = credentials.value.findIndex(c => c.id === credForm.value.id)
-      if (idx !== -1) credentials.value[idx] = data
+      await api.patch(`/devices/credentials/${credForm.value.id}/`, payload)
     } else {
       const { data } = await api.post('/devices/credentials/', payload)
-      credentials.value.push(data)
       if (afterCredSave.value) { afterCredSave.value(data); afterCredSave.value = null }
     }
     credForm.value.show = false
+    loadCredentials()
+    loadAllCredentials()
   } catch (e) {
     credForm.value.error = JSON.stringify(e.response?.data ?? 'Save failed.')
   }
@@ -580,7 +600,8 @@ async function saveCred() {
 async function removeCred(id) {
   if (!await askConfirm('Delete this credential?')) return
   await api.delete(`/devices/credentials/${id}/`)
-  credentials.value = credentials.value.filter(c => c.id !== id)
+  loadCredentials()
+  loadAllCredentials()
 }
 
 // ── devices ───────────────────────────────────────────────────────────────────
@@ -784,5 +805,6 @@ async function submitImport() {
 onMounted(() => {
   // initial device fetch triggered by @update:options
   loadCredentials()
+  loadAllCredentials()
 })
 </script>

@@ -12,7 +12,8 @@ class ScriptJobViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
     queryset = ScriptJob.objects.prefetch_related('steps__script')
     serializer_class = ScriptJobSerializer
-    filterset_fields = ['is_active']
+    search_fields = ['name', 'description']
+    filterset_fields = ['is_active', 'job_type']
     ordering_fields = ['name', 'created_at']
 
     @action(detail=True, methods=['post'], url_path='run')

@@ -153,16 +153,18 @@
           <div class="text-caption text-medium-emphasis">Results from ad-hoc and policy-triggered script job executions.</div>
           <v-btn size="small" variant="tonal" prepend-icon="mdi-refresh" :loading="sjRuns.loading" @click="loadSjRuns">Refresh</v-btn>
         </div>
-        <v-data-table
+        <v-data-table-server
+          v-model:options="sjRunsTableOptions"
           :headers="sjRunHeaders"
           :items="sjRuns.items"
+          :items-length="sjRuns.total"
           :loading="sjRuns.loading"
           density="compact"
           rounded="lg"
           elevation="1"
-          :items-per-page="25"
           no-data-text="No script job runs yet."
           hover
+          @update:options="onSjRunsTableOptions"
         >
           <template #item.script_job_name="{ item }">
             <span class="font-weight-medium">{{ item.script_job_name }}</span>
@@ -180,7 +182,7 @@
           <template #item.actions="{ item }">
             <v-btn size="x-small" variant="tonal" @click="openSjDetail(item)">Details</v-btn>
           </template>
-        </v-data-table>
+        </v-data-table-server>
       </v-window-item>
     </v-window>
 
@@ -366,23 +368,37 @@ const sjRunHeaders = [
   { title: 'Device',       key: 'device_name',     sortable: false },
   { title: 'Triggered By', key: 'triggered_by',    sortable: false },
   { title: 'Status',       key: 'status',          sortable: false },
-  { title: 'Started',      key: 'started_at',      sortable: false },
+  { title: 'Started',      key: 'started_at',      sortable: true },
   { title: 'Duration',     key: 'duration',        sortable: false },
   { title: '',             key: 'actions',         sortable: false, align: 'end' },
 ]
 
-const sjRuns = ref({ items: [], loading: false })
+const sjRuns = ref({ items: [], total: 0, loading: false })
+const sjRunsTableOptions = ref({ page: 1, itemsPerPage: 20, sortBy: [{ key: 'started_at', order: 'desc' }] })
 const sjDetailOpen = ref(false)
 const sjSelected = ref(null)
 
-async function loadSjRuns() {
+async function loadSjRuns(options = sjRunsTableOptions.value) {
   sjRuns.value.loading = true
   try {
-    const res = await api.get('/scripts/script-jobs/results/', { params: { page_size: 100, ordering: '-started_at' } })
+    const params = { page: options.page, page_size: options.itemsPerPage }
+    if (options.sortBy?.length) {
+      const { key, order } = options.sortBy[0]
+      params.ordering = order === 'desc' ? `-${key}` : key
+    } else {
+      params.ordering = '-started_at'
+    }
+    const res = await api.get('/scripts/script-jobs/results/', { params })
     sjRuns.value.items = res.data?.results ?? res.data ?? []
+    sjRuns.value.total = res.data?.count ?? sjRuns.value.items.length
   } finally {
     sjRuns.value.loading = false
   }
+}
+
+function onSjRunsTableOptions(options) {
+  sjRunsTableOptions.value = options
+  loadSjRuns(options)
 }
 
 function openSjDetail(item) {
@@ -395,6 +411,7 @@ let sjPollTimer = null
 watch(activeTab, (tab) => {
   clearInterval(sjPollTimer)
   if (tab === 'script') {
+    sjRunsTableOptions.value = { ...sjRunsTableOptions.value, page: 1 }
     loadSjRuns()
     sjPollTimer = setInterval(loadSjRuns, 10_000)
   }

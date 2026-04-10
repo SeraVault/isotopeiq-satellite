@@ -110,10 +110,76 @@
 
       <!-- ── SCRIPTS TAB ────────────────────────────────────────────────────── -->
       <v-window-item value="Scripts">
-        <div class="d-flex justify-space-between align-center mb-4">
+        <div class="d-flex justify-space-between align-center mb-3">
           <span class="text-body-2 text-medium-emphasis">{{ totalScripts }} script(s)</span>
           <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewScriptInEditor">New Script</v-btn>
         </div>
+
+        <!-- Filters -->
+        <v-row dense class="mb-3">
+          <v-col cols="12" sm="4" md="3">
+            <v-text-field
+              v-model="scrFilters.search"
+              label="Search"
+              prepend-inner-icon="mdi-magnify"
+              clearable
+              @update:model-value="resetAndFetchScripts"
+            />
+          </v-col>
+          <v-col cols="6" sm="3" md="2">
+            <v-select
+              v-model="scrFilters.script_type"
+              label="Type"
+              :items="[
+                { title: 'All Types', value: '' },
+                { title: 'Collection', value: 'collection' },
+                { title: 'Parser', value: 'parser' },
+                { title: 'Deployment', value: 'deployment' },
+                { title: 'Utility', value: 'utility' },
+              ]"
+              @update:model-value="resetAndFetchScripts"
+            />
+          </v-col>
+          <v-col cols="6" sm="3" md="2">
+            <v-select
+              v-model="scrFilters.run_on"
+              label="Execution"
+              :items="[
+                { title: 'All', value: '' },
+                { title: 'Push to device', value: 'client' },
+                { title: 'Run on Satellite', value: 'server' },
+                { title: 'Both', value: 'both' },
+              ]"
+              @update:model-value="resetAndFetchScripts"
+            />
+          </v-col>
+          <v-col cols="6" sm="3" md="2">
+            <v-select
+              v-model="scrFilters.target_os"
+              label="OS"
+              :items="[
+                { title: 'All OS', value: '' },
+                { title: 'Linux', value: 'linux' },
+                { title: 'Windows', value: 'windows' },
+                { title: 'macOS', value: 'macos' },
+                { title: 'Any', value: 'any' },
+              ]"
+              @update:model-value="resetAndFetchScripts"
+            />
+          </v-col>
+          <v-col cols="6" sm="3" md="2">
+            <v-select
+              v-model="scrFilters.is_active"
+              label="Status"
+              :items="[
+                { title: 'All', value: '' },
+                { title: 'Active', value: 'true' },
+                { title: 'Inactive', value: 'false' },
+              ]"
+              @update:model-value="resetAndFetchScripts"
+            />
+          </v-col>
+        </v-row>
 
         <v-data-table-server
           v-model:options="scrTableOptions"
@@ -160,20 +226,60 @@
           step, saving results, and enabling baseline storage or drift detection.
         </v-alert>
 
-        <div class="d-flex justify-space-between align-center mb-4">
+        <div class="d-flex justify-space-between align-center mb-3">
           <span class="text-body-2 text-medium-emphasis">{{ totalScriptJobs }} job definition(s)</span>
           <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewScriptJob">New Script Job</v-btn>
         </div>
 
-        <v-data-table
+        <!-- Filters -->
+        <v-row dense class="mb-3">
+          <v-col cols="12" sm="4" md="3">
+            <v-text-field
+              v-model="sjFilters.search"
+              label="Search"
+              prepend-inner-icon="mdi-magnify"
+              clearable
+              @update:model-value="resetAndFetchSJs"
+            />
+          </v-col>
+          <v-col cols="6" sm="3" md="2">
+            <v-select
+              v-model="sjFilters.job_type"
+              label="Type"
+              :items="[{ title: 'All Types', value: '' }, ...JOB_TYPE_ITEMS]"
+              @update:model-value="resetAndFetchSJs"
+            />
+          </v-col>
+          <v-col cols="6" sm="3" md="2">
+            <v-select
+              v-model="sjFilters.is_active"
+              label="Status"
+              :items="[
+                { title: 'All', value: '' },
+                { title: 'Active', value: 'true' },
+                { title: 'Inactive', value: 'false' },
+              ]"
+              @update:model-value="resetAndFetchSJs"
+            />
+          </v-col>
+        </v-row>
+
+        <v-data-table-server
+          v-model:options="sjTableOptions"
           :headers="sjHeaders"
           :items="scriptJobs"
+          :items-length="totalScriptJobs"
           :loading="sjLoading"
+          :items-per-page-options="[25, 50, 100]"
           density="compact"
           rounded="lg"
           elevation="1"
           hover
+          @update:options="onSjTableOptions"
         >
+          <template #item.job_type="{ item }">
+            <v-chip size="x-small" label color="secondary" variant="tonal">{{ JOB_TYPE_LABELS[item.job_type] ?? item.job_type }}</v-chip>
+          </template>
           <template #item.steps="{ item }">
             <div class="d-flex ga-1 flex-wrap">
               <template v-if="item.steps?.length">
@@ -206,7 +312,7 @@
               <v-btn size="x-small" color="error" variant="tonal" @click="removeScriptJob(item.id)">Delete</v-btn>
             </div>
           </template>
-        </v-data-table>
+        </v-data-table-server>
       </v-window-item>
     </v-window>
 
@@ -220,8 +326,16 @@
             <v-col cols="12" sm="6">
               <v-text-field v-model="sjForm.name" label="Name *" density="compact" />
             </v-col>
-            <v-col cols="12" sm="6">
+            <v-col cols="12" sm="3">
               <v-text-field v-model="sjForm.description" label="Description" density="compact" />
+            </v-col>
+            <v-col cols="12" sm="3">
+              <v-select
+                v-model="sjForm.job_type"
+                label="Type"
+                :items="JOB_TYPE_ITEMS"
+                density="compact"
+              />
             </v-col>
 
             <!-- ── Steps ────────────────────────────────────────────────── -->
@@ -357,13 +471,15 @@
         </v-card-title>
         <v-divider />
         <v-card-text class="pa-0">
-          <v-data-table
+          <v-data-table-server
+            v-model:options="sjResultsTableOptions"
             :headers="sjResultHeaders"
             :items="sjResultsDialog.results"
+            :items-length="sjResultsTotal"
             :loading="sjResultsDialog.loading"
             density="compact"
-            :items-per-page="25"
             hover
+            @update:options="onSjResultsTableOptions"
           >
             <template #item.device="{ item }">{{ item.device_name || '(server)' }}</template>
             <template #item.status="{ item }">
@@ -377,7 +493,7 @@
             <template #item.actions="{ item }">
               <v-btn size="x-small" variant="tonal" @click="viewScriptJobOutput(item)">Output</v-btn>
             </template>
-          </v-data-table>
+          </v-data-table-server>
         </v-card-text>
       </v-card>
     </v-dialog>
@@ -476,6 +592,7 @@ const scripts = ref([])
 const scrLoading = ref(false)
 const totalScripts = ref(0)
 const scrTableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
+const scrFilters = ref({ search: '', script_type: '', run_on: '', target_os: '', is_active: '' })
 const scrHeaders = [
   { title: 'Name',      key: 'name' },
   { title: 'Type',      key: 'script_type' },
@@ -487,17 +604,35 @@ const scrHeaders = [
   { title: '',          key: 'actions',    sortable: false, align: 'end' },
 ]
 
+function buildScrParams(options = scrTableOptions.value) {
+  const params = { page: options.page, page_size: options.itemsPerPage }
+  if (scrFilters.value.search)      params.search      = scrFilters.value.search
+  if (scrFilters.value.script_type) params.script_type = scrFilters.value.script_type
+  if (scrFilters.value.run_on)      params.run_on      = scrFilters.value.run_on
+  if (scrFilters.value.target_os)   params.target_os   = scrFilters.value.target_os
+  if (scrFilters.value.is_active)   params.is_active   = scrFilters.value.is_active
+  if (options.sortBy?.length) {
+    const { key, order } = options.sortBy[0]
+    params.ordering = order === 'desc' ? `-${key}` : key
+  }
+  return params
+}
+
 function onScrTableOptions(options) {
   scrTableOptions.value = options
   loadScripts(options)
 }
 
+function resetAndFetchScripts() {
+  const opts = { ...scrTableOptions.value, page: 1 }
+  scrTableOptions.value = opts
+  loadScripts(opts)
+}
+
 async function loadScripts(options = scrTableOptions.value) {
   scrLoading.value = true
   try {
-    const { data } = await api.get('/scripts/', {
-      params: { page: options.page, page_size: options.itemsPerPage },
-    })
+    const { data } = await api.get('/scripts/', { params: buildScrParams(options) })
     scripts.value      = data.results ?? data
     totalScripts.value = data.count   ?? scripts.value.length
   } finally {
@@ -520,13 +655,27 @@ function openScriptInEditor(s) {
 }
 
 // ── script jobs ───────────────────────────────────────────────────────────────
+const JOB_TYPE_ITEMS = [
+  { title: 'Baseline Collection', value: 'baseline_collection' },
+  { title: 'Compliance Audit',    value: 'compliance_audit' },
+  { title: 'Remediation',         value: 'remediation' },
+  { title: 'Discovery',           value: 'discovery' },
+  { title: 'Data Export',         value: 'data_export' },
+  { title: 'Maintenance',         value: 'maintenance' },
+  { title: 'Notification',        value: 'notification' },
+  { title: 'Custom',              value: 'custom' },
+]
+const JOB_TYPE_LABELS = Object.fromEntries(JOB_TYPE_ITEMS.map(i => [i.value, i.title]))
 const scriptJobs = ref([])
 const sjLoading = ref(false)
 const totalScriptJobs = ref(0)
 const allScripts = ref([])
 
+const sjTableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
+const sjFilters = ref({ search: '', job_type: '', is_active: '' })
 const sjHeaders = [
   { title: 'Name',   key: 'name',      sortable: true },
+  { title: 'Type',   key: 'job_type',  sortable: false },
   { title: 'Steps',  key: 'steps',     sortable: false },
   { title: 'Active', key: 'is_active', sortable: false },
   { title: '',       key: 'actions',   sortable: false, align: 'end' },
@@ -540,12 +689,35 @@ const sjResultHeaders = [
   { title: '',             key: 'actions',      sortable: false, align: 'end' },
 ]
 
-async function loadScriptJobs() {
+function buildSjParams(options = sjTableOptions.value) {
+  const params = { page: options.page, page_size: options.itemsPerPage }
+  if (sjFilters.value.search)    params.search    = sjFilters.value.search
+  if (sjFilters.value.job_type)  params.job_type  = sjFilters.value.job_type
+  if (sjFilters.value.is_active) params.is_active = sjFilters.value.is_active
+  if (options.sortBy?.length) {
+    const { key, order } = options.sortBy[0]
+    params.ordering = order === 'desc' ? `-${key}` : key
+  }
+  return params
+}
+
+function onSjTableOptions(options) {
+  sjTableOptions.value = options
+  loadScriptJobs(options)
+}
+
+function resetAndFetchSJs() {
+  const opts = { ...sjTableOptions.value, page: 1 }
+  sjTableOptions.value = opts
+  loadScriptJobs(opts)
+}
+
+async function loadScriptJobs(options = sjTableOptions.value) {
   sjLoading.value = true
   try {
-    const res = await api.get('/scripts/script-jobs/')
+    const res = await api.get('/scripts/script-jobs/', { params: buildSjParams(options) })
     scriptJobs.value = res.data?.results ?? res.data ?? []
-    totalScriptJobs.value = scriptJobs.value.length
+    totalScriptJobs.value = res.data?.count ?? scriptJobs.value.length
   } finally {
     sjLoading.value = false
   }
@@ -569,7 +741,7 @@ const BLANK_STEP = () => ({
 })
 const BLANK_SJ_FORM = () => ({
   show: false, id: null, saving: false,
-  name: '', description: '',
+  name: '', description: '', job_type: 'custom',
   steps: [],
   is_active: true,
 })
@@ -633,6 +805,7 @@ async function openEditScriptJob(item) {
   sjForm.value = {
     ...BLANK_SJ_FORM(),
     id: item.id, name: item.name, description: item.description,
+    job_type: item.job_type ?? 'custom',
     steps: (item.steps ?? []).map(s => ({
       script: s.script,
       pipe_to_next: s.pipe_to_next,
@@ -660,6 +833,7 @@ async function saveScriptJob() {
     const payload = {
       name: sjForm.value.name,
       description: sjForm.value.description,
+      job_type: sjForm.value.job_type,
       steps: sjForm.value.steps.map((s, i) => ({
         order: i * 10,
         script: s.script,
@@ -689,21 +863,37 @@ async function removeScriptJob(id) {
 
 // Results + output
 const sjResultsDialog = ref({ show: false, job: null, loading: false, results: [] })
+const sjResultsTableOptions = ref({ page: 1, itemsPerPage: 20, sortBy: [{ key: 'started_at', order: 'desc' }] })
+const sjResultsTotal = ref(0)
 const sjOutputDialog  = ref({ show: false, result: null })
 
 async function openScriptJobResults(item) {
   sjResultsDialog.value = { show: true, job: item, loading: false, results: [] }
+  sjResultsTableOptions.value = { page: 1, itemsPerPage: 20, sortBy: [{ key: 'started_at', order: 'desc' }] }
+  sjResultsTotal.value = 0
   await loadScriptJobResults()
 }
-async function loadScriptJobResults() {
+async function loadScriptJobResults(options = sjResultsTableOptions.value) {
   if (!sjResultsDialog.value.job) return
   sjResultsDialog.value.loading = true
   try {
-    const res = await api.get(`/scripts/script-jobs/${sjResultsDialog.value.job.id}/results/`)
+    const params = { script_job: sjResultsDialog.value.job.id, page: options.page, page_size: options.itemsPerPage }
+    if (options.sortBy?.length) {
+      const { key, order } = options.sortBy[0]
+      params.ordering = order === 'desc' ? `-${key}` : key
+    } else {
+      params.ordering = '-started_at'
+    }
+    const res = await api.get('/scripts/script-jobs/results/', { params })
     sjResultsDialog.value.results = res.data?.results ?? res.data ?? []
+    sjResultsTotal.value = res.data?.count ?? sjResultsDialog.value.results.length
   } finally {
     sjResultsDialog.value.loading = false
   }
+}
+function onSjResultsTableOptions(options) {
+  sjResultsTableOptions.value = options
+  loadScriptJobResults(options)
 }
 function viewScriptJobOutput(item) { sjOutputDialog.value = { show: true, result: item } }
 

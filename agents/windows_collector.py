@@ -1340,17 +1340,84 @@ def collect():
     return output
 
 
-def _make_handler():
-    """Return an HTTPRequestHandler class for the agent."""
+def _run_script(script_content, language):
+    """
+    Write script_content to a temp file and execute it.
+
+    language — 'shell'/'bat' (cmd.exe), 'powershell', or 'python'.
+
+    Returns a dict: {exit_code, stdout, stderr}.
+    """
+    import tempfile
+    lang = language.lower()
+    if lang == 'python':
+        ext, cmd_fn = '.py', lambda p: [sys.executable, p]
+    elif lang in ('powershell', 'ps1'):
+        ext = '.ps1'
+        cmd_fn = lambda p: [  # noqa: E731
+            'powershell.exe',
+            '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-File', p,
+        ]
+    else:
+        # shell / bat / cmd — default
+        ext, cmd_fn = '.bat', lambda p: ['cmd.exe', '/c', p]
+
+    fd, path = tempfile.mkstemp(suffix=ext, prefix='isotopeiq_')
+    try:
+        os.write(fd, script_content.encode('utf-8'))
+        os.close(fd)
+        proc = subprocess.Popen(
+            cmd_fn(path),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
+        )
+        stdout, stderr = proc.communicate()
+        return {
+            'exit_code': proc.returncode,
+            'stdout': stdout.decode('utf-8', errors='replace'),
+            'stderr': stderr.decode('utf-8', errors='replace'),
+        }
+    except Exception as exc:
+        return {'exit_code': -1, 'stdout': '', 'stderr': str(exc)}
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def _make_handler(satellite_ip=None):
+    """Return an HTTPRequestHandler class for the agent.
+
+    satellite_ip — if set, only requests from this IP are accepted on
+                   endpoints other than /health.
+    """
     class AgentHandler(BaseHTTPRequestHandler):
+        def _allowed(self):
+            if not satellite_ip:
+                return True
+            return self.client_address[0] == satellite_ip
+
+        def _send_json(self, code, obj):
+            body = json.dumps(obj).encode('utf-8')
+            self.send_response(code)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_GET(self):
             if self.path == '/health':
-                body = b'{"status": "ok"}'
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Content-Length', str(len(body)))
+                self._send_json(200, {'status': 'ok'})
+                return
+
+            if not self._allowed():
+                self.send_response(403)
+                self.send_header('Content-Type', 'text/plain')
                 self.end_headers()
-                self.wfile.write(body)
+                self.wfile.write(b'Forbidden')
                 return
 
             if self.path != '/collect':
@@ -1367,6 +1434,37 @@ def _make_handler():
             self.end_headers()
             self.wfile.write(data)
 
+        def do_POST(self):
+            if not self._allowed():
+                self.send_response(403)
+                self.send_header('Content-Type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'Forbidden')
+                return
+
+            if self.path != '/run':
+                self.send_response(404)
+                self.send_header('Content-Type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'Not Found')
+                return
+
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length)
+                payload = json.loads(body.decode('utf-8'))
+            except Exception as exc:
+                self._send_json(400, {'error': 'Invalid JSON: {0}'.format(exc)})
+                return
+
+            script = payload.get('script', '')
+            language = payload.get('language', 'shell').lower()
+            if not script:
+                self._send_json(400, {'error': 'script is required'})
+                return
+
+            self._send_json(200, _run_script(script, language))
+
         def log_message(self, fmt, *args):
             pass  # suppress per-request noise to stderr
 
@@ -1381,17 +1479,28 @@ def main():
             help='Run as a persistent HTTP server instead of printing to stdout')
         parser.add_argument('--port', type=int, default=DEFAULT_AGENT_PORT,
             help='TCP port to listen on in serve mode (default: %(default)s)')
+        parser.add_argument('--satellite',
+            help='IP or hostname of the satellite server; only requests from '
+                 'this address are accepted (recommended)')
         args = parser.parse_args()
     else:
         class args(object):
             serve = '--serve' in sys.argv
             port = DEFAULT_AGENT_PORT
+            satellite = None
         for i, a in enumerate(sys.argv[1:], 1):
-            if a == '--port' and i + 1 < len(sys.argv): args.port = int(sys.argv[i + 1])
+            if a == '--port' and i + 1 < len(sys.argv):
+                args.port = int(sys.argv[i + 1])
+            if a == '--satellite' and i + 1 < len(sys.argv):
+                args.satellite = sys.argv[i + 1]
 
     if args.serve:
-        server = HTTPServer(('0.0.0.0', args.port), _make_handler())
+        satellite_ip = getattr(args, 'satellite', None) or None
+        server = HTTPServer(('0.0.0.0', args.port), _make_handler(satellite_ip))
         sys.stderr.write('IsotopeIQ agent listening on 0.0.0.0:{0}\n'.format(args.port))
+        if satellite_ip:
+            sys.stderr.write(
+                'Accepting requests from satellite: {0}\n'.format(satellite_ip))
         try:
             server.serve_forever()
         except KeyboardInterrupt:

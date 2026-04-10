@@ -8,7 +8,6 @@ import PoliciesView from '../views/PoliciesView.vue'
 import JobMonitorView from '../views/JobMonitorView.vue'
 import DriftView from '../views/DriftView.vue'
 import BaselinesView from '../views/BaselinesView.vue'
-import RetentionView from '../views/RetentionView.vue'
 import AuditLogView from '../views/AuditLogView.vue'
 import VolatileRulesView from '../views/VolatileRulesView.vue'
 import SystemSettingsView from '../views/SystemSettingsView.vue'
@@ -30,7 +29,6 @@ const routes = [
   { path: '/volatile-rules', component: VolatileRulesView },
   { path: '/baselines', component: BaselinesView },
   { path: '/audit', component: AuditLogView },
-  { path: '/retention', component: RetentionView },
   { path: '/system-settings', component: SystemSettingsView },
   { path: '/users', component: UsersView },
 ]

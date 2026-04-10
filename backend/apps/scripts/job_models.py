@@ -8,8 +8,24 @@ class ScriptJob(models.Model):
     determined by the script's own run_on field — not set per-step.
     """
 
+    JOB_TYPE_CHOICES = [
+        ('baseline_collection', 'Baseline Collection'),
+        ('compliance_audit',    'Compliance Audit'),
+        ('remediation',         'Remediation'),
+        ('discovery',           'Discovery'),
+        ('data_export',         'Data Export'),
+        ('maintenance',         'Maintenance'),
+        ('notification',        'Notification'),
+        ('custom',              'Custom'),
+    ]
+
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
+    job_type = models.CharField(
+        max_length=64,
+        choices=JOB_TYPE_CHOICES,
+        default='custom',
+    )
 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

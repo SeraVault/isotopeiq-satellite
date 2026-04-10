@@ -42,7 +42,8 @@ const vuetify = createVuetify({
     VSelect: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
     VAutocomplete: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
     VTextarea: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
-    VDataTable: { density: 'compact' },
+    VDataTable:       { density: 'compact', itemsPerPage: 20 },
+    VDataTableServer: { density: 'compact', itemsPerPage: 20, itemsPerPageOptions: [20, 50, 100] },
   },
 })
 
