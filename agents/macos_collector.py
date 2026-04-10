@@ -27,6 +27,16 @@ except ImportError:
     from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer  # Python 2
 
 try:
+    from socketserver import ThreadingMixIn  # Python 3
+except ImportError:
+    from SocketServer import ThreadingMixIn  # Python 2
+
+
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    """Handle each HTTP request in its own daemon thread."""
+    daemon_threads = True
+
+try:
     import argparse
     HAS_ARGPARSE = True
 except ImportError:
@@ -1256,7 +1266,8 @@ def _run_script(script_content, language):
         os.close(fd)
         os.chmod(path, 0o700)
         cmd = [sys.executable, path] if language == 'python' else ['/bin/sh', path]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        with open(os.devnull, 'rb') as devnull:
+            proc = subprocess.Popen(cmd, stdin=devnull, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = proc.communicate()
         return {
             'exit_code': proc.returncode,
@@ -1384,7 +1395,7 @@ def main():
 
     if args.serve:
         satellite_ip = getattr(args, 'satellite', None) or None
-        server = HTTPServer(('0.0.0.0', args.port), _make_handler(satellite_ip))
+        server = ThreadedHTTPServer(('0.0.0.0', args.port), _make_handler(satellite_ip))
         sys.stderr.write(
             'IsotopeIQ agent listening on 0.0.0.0:{0}\n'.format(args.port))
         if satellite_ip:

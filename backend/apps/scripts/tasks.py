@@ -26,7 +26,7 @@ def _run_agent_script(device, script_content, language):
     payload = json.dumps({'script': script_content, 'language': language}).encode('utf-8')
     req = Request(url, data=payload, headers={'Content-Type': 'application/json'})
     try:
-        with urlopen(req, timeout=120) as resp:  # noqa: S310
+        with urlopen(req, timeout=300) as resp:  # noqa: S310
             result = json.loads(resp.read().decode('utf-8'))
     except URLError as exc:
         raise RuntimeError('Agent unreachable at {0}: {1}'.format(url, exc))
