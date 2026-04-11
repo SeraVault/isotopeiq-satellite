@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IsotopeIQ Satellite</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- NAV -->
+  <header class="nav">
+    <div class="container nav-inner">
+      <a href="#" class="logo">
+        <span class="logo-mark">&#9632;</span>
+        IsotopeIQ <span class="logo-accent">Satellite</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#overview">Overview</a>
+        <a href="#how-it-works">How It Works</a>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#deployment">Deployment</a>
+        <a href="https://github.com/SeraVault/isotopeiq-satellite" class="btn btn-nav" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- HEADER -->
+  <section class="page-header" id="overview">
+    <div class="container page-header-inner">
+      <div class="page-header-text">
+        <h1>IsotopeIQ Satellite</h1>
+        <p>
+          Satellite is an open source platform for configuration baseline collection, drift detection,
+          and scripted remediation across heterogeneous device environments. It connects to managed
+          devices over SSH, WinRM, Telnet, or a lightweight agent, runs user-defined scripts to collect
+          configuration state, normalises that output into a canonical JSON structure, and compares
+          subsequent runs against the stored baseline to surface any changes.
+        </p>
+        <p>
+          Deployment scripts can be pushed to devices on a schedule or on demand, providing
+          Ansible-like remediation capability from the same interface.
+        </p>
+        <div class="header-links">
+          <a href="https://github.com/SeraVault/isotopeiq-satellite" class="btn btn-primary" target="_blank" rel="noopener">View Source on GitHub</a>
+          <a href="#how-it-works" class="btn btn-ghost">How It Works</a>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="terminal">
+          <div class="terminal-bar">
+            <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+            <span class="terminal-title">drift-event · policy: prod-linux-weekly</span>
+          </div>
+          <div class="terminal-body">
+            <div class="line"><span class="dim">2026-04-10 03:14:21</span> <span class="green">BASELINE</span> web-01.prod</div>
+            <div class="line"><span class="dim">2026-04-10 03:14:22</span> <span class="green">BASELINE</span> web-02.prod</div>
+            <div class="line"><span class="dim">2026-04-11 03:14:09</span> <span class="yellow">DRIFT</span>    web-01.prod</div>
+            <div class="line indent"><span class="dim">users.root.shell</span></div>
+            <div class="line indent2"><span class="red">- /usr/sbin/nologin</span></div>
+            <div class="line indent2"><span class="green">+ /bin/bash</span></div>
+            <div class="line indent"><span class="dim">services.sshd.permit_root_login</span></div>
+            <div class="line indent2"><span class="red">- no</span></div>
+            <div class="line indent2"><span class="green">+ yes</span></div>
+            <div class="line"><span class="dim">2026-04-11 03:14:09</span> <span class="cyan">NOTIFY</span>   syslog &rarr; SIEM</div>
+            <div class="line blink">&#9646;</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section section-dark" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">How It Works</h2>
+      <p class="section-intro">
+        Satellite organises its work around <strong>policies</strong>. A policy binds one or more devices
+        to a script job and a collection schedule. When the policy runs, Satellite connects to each
+        device, executes the collection script, passes the output through a parser script to produce
+        a canonical JSON snapshot, compares that snapshot to the stored baseline, and fires any
+        configured notifications if differences are found.
+      </p>
+
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="step-num">1</div>
+          <h3>Connect</h3>
+          <p>Satellite connects to the device using the protocol configured for that device: SSH, WinRM, Telnet, HTTPS/API, or by polling a lightweight agent running on the device on port 9322.</p>
+        </div>
+        <div class="pipeline-arrow">&rarr;</div>
+        <div class="pipeline-step">
+          <div class="step-num">2</div>
+          <h3>Collect</h3>
+          <p>A <em>collection script</em> runs on the remote device (or on the Satellite server for API-based devices) and returns raw text output — command output, config file contents, registry values, etc.</p>
+        </div>
+        <div class="pipeline-arrow">&rarr;</div>
+        <div class="pipeline-step">
+          <div class="step-num">3</div>
+          <h3>Parse</h3>
+          <p>A <em>parser script</em> runs on the server, receives the raw output on stdin, and writes a populated canonical JSON object to stdout. The output is validated against the canonical schema before being stored.</p>
+        </div>
+        <div class="pipeline-arrow">&rarr;</div>
+        <div class="pipeline-step">
+          <div class="step-num">4</div>
+          <h3>Baseline &amp; Diff</h3>
+          <p>The canonical snapshot is stored as the device's baseline on first run. On subsequent runs, a deep structural diff is computed against the stored baseline. Any differences become drift events.</p>
+        </div>
+        <div class="pipeline-arrow">&rarr;</div>
+        <div class="pipeline-step">
+          <div class="step-num">5</div>
+          <h3>Notify &amp; Remediate</h3>
+          <p>Drift events trigger configured notifications (syslog, email, FTP/SFTP). Separately, <em>deployment scripts</em> can be pushed to any device on demand or on schedule to correct configuration or enforce standards.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CANONICAL SCHEMA -->
+  <section class="section" id="schema">
+    <div class="container schema-section">
+      <div class="schema-text">
+        <h2>Canonical Schema</h2>
+        <p>
+          All parser output — regardless of device type or collection method — is normalised into
+          the same 12-section JSON structure. This means drift comparisons, audit queries, and
+          SIEM exports have a consistent shape whether you're looking at a Linux server, a Windows
+          host, a Cisco router, or a legacy system.
+        </p>
+        <p>
+          The schema is enforced by JSON Schema validation on every collection run. If a parser
+          produces output that doesn't conform, the run fails cleanly and the existing baseline
+          is preserved.
+        </p>
+        <p>
+          The <code>custom</code> section is unconstrained and is available for device-specific
+          or application-level data that doesn't fit the standard sections.
+        </p>
+        <p>
+          A <strong>volatile rules</strong> engine allows specific fields to be excluded from
+          drift comparison — useful for counters, uptime values, or any field that changes on
+          every run by design.
+        </p>
+      </div>
+      <div class="schema-code">
+        <div class="code-block">
+          <div class="code-header">canonical JSON structure</div>
+          <pre><code>{
+  <span class="key">"device"</span>:             { <span class="dim">/* hostname, type, location */</span> },
+  <span class="key">"hardware"</span>:           { <span class="dim">/* CPU, RAM, serial */</span> },
+  <span class="key">"os"</span>:                { <span class="dim">/* name, version, kernel */</span> },
+  <span class="key">"network"</span>:            { <span class="dim">/* interfaces, routes, DNS */</span> },
+  <span class="key">"users"</span>:              [ <span class="dim">/* local accounts */</span> ],
+  <span class="key">"groups"</span>:             [ <span class="dim">/* local groups and members */</span> ],
+  <span class="key">"installed_software"</span>: [ <span class="dim">/* installed packages/apps */</span> ],
+  <span class="key">"services"</span>:           [ <span class="dim">/* running/configured services */</span> ],
+  <span class="key">"packages"</span>:           [ <span class="dim">/* package manager state */</span> ],
+  <span class="key">"filesystem"</span>:         [ <span class="dim">/* mounts, permissions */</span> ],
+  <span class="key">"security"</span>:           { <span class="dim">/* firewall, audit, policy */</span> },
+  <span class="key">"custom"</span>:             { <span class="dim">/* device-specific data */</span> }
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CAPABILITIES -->
+  <section class="section section-dark" id="capabilities">
+    <div class="container">
+      <h2 class="section-title">Capabilities</h2>
+
+      <div class="caps-grid">
+
+        <div class="cap-section">
+          <h3>Device &amp; Credential Management</h3>
+          <ul>
+            <li>Register any reachable host — Linux, Windows, macOS, network appliances, SNMP systems, legacy platforms</li>
+            <li>Connection types: SSH, WinRM/NTLM, Telnet, HTTPS/REST API, Agent Pull (port 9322)</li>
+            <li>SSH host key pinning per device (MITM protection)</li>
+            <li>Credentials stored encrypted at rest (Fernet). Passwords and private keys are write-only — they cannot be retrieved from the UI after saving</li>
+            <li>Credential types: SSH password, SSH key (Ed25519 / ECDSA / RSA), WinRM, API token</li>
+            <li>Credentials are shared across devices and injected at runtime via <code>&#123;&#123;PLACEHOLDER&#125;&#125;</code> substitution — never embedded in script text</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Scripts &amp; Script Jobs</h3>
+          <ul>
+            <li>Three script types: <strong>Collection</strong> (runs on the remote device), <strong>Parser</strong> (runs on the server, stdin → canonical JSON), <strong>Deployment</strong> (pushed to the device for remediation or hardening)</li>
+            <li>Script languages: Shell, Python, PowerShell, VBScript, SQL</li>
+            <li>Scripts can run <em>on the client</em> (uploaded and executed on the device) or <em>on the server</em> (useful for API-based collection — Cisco IOS, SNMP, etc.)</li>
+            <li>A <strong>Script Job</strong> chains multiple scripts into an ordered pipeline, with output piped between steps</li>
+            <li>In-browser script editor with syntax highlighting (CodeMirror)</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Policies &amp; Scheduling</h3>
+          <ul>
+            <li>A policy binds a set of devices to a script job and a collection schedule</li>
+            <li>Schedule options: hourly, daily, weekly, monthly, or raw cron expression</li>
+            <li>Collection methods: script execution (SSH/WinRM/Telnet) or agent pull (HTTP GET to agent on port 9322)</li>
+            <li>Configurable delay between devices to throttle job pacing</li>
+            <li>"Run Now" and "Deploy Now" manual triggers available per policy</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Baselines</h3>
+          <ul>
+            <li>One canonical JSON snapshot stored per device, updated on every successful collection run</li>
+            <li>Viewable in the UI with expandable sections per schema category</li>
+            <li>On first successful run, the snapshot is stored as the initial baseline with no drift event raised</li>
+            <li>Acknowledging a drift event promotes the current state as the new baseline and records the reason and username</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Drift Detection</h3>
+          <ul>
+            <li>Deep structural diff computed by <code>deepdiff</code> between the current canonical snapshot and the stored baseline</li>
+            <li>Drift event lifecycle: <strong>new → acknowledged → resolved</strong></li>
+            <li>If a subsequent run shows the device has returned to baseline, the event is auto-resolved</li>
+            <li><strong>Volatile rules</strong> suppress specified fields from comparison — five rule types: <code>section_field</code>, <code>item_field</code>, <code>nested_field</code>, <code>exclude_key</code>, <code>exclude_section</code></li>
+            <li>Rules take effect within 60 seconds, no restart required</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Remediation</h3>
+          <ul>
+            <li>Deployment scripts can be pushed to any device or group of devices, either on a schedule via a policy or triggered manually</li>
+            <li>Scripts run in the same execution context as collection scripts (SSH, WinRM, etc.) using the same credential system</li>
+            <li>Use cases: enforce hardening standards, revert unauthorised changes, install or remove packages, update configuration files</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Job Monitor</h3>
+          <ul>
+            <li>Real-time view of running, pending, and historical jobs with per-device status</li>
+            <li>Per-device job results show raw collected output, parsed canonical JSON, any error messages, and an inline drift diff</li>
+            <li>Jobs can be cancelled mid-flight</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Notifications</h3>
+          <ul>
+            <li>Per-policy <strong>Post-Collection Actions</strong> define trigger (new baseline / drift detected / always) × destination (syslog / email / FTP/SFTP)</li>
+            <li>Syslog messages include device name, policy name, and a summary of changed fields — suitable for SIEM ingestion</li>
+            <li>A global fallback action handles agent-push jobs not associated with a policy</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Authentication &amp; Access</h3>
+          <ul>
+            <li>Local username/password with JWT access and refresh tokens</li>
+            <li>LDAP / Active Directory: group-to-role mapping, configurable via UI or environment variables</li>
+            <li>SAML 2.0 SP-initiated SSO: standard metadata endpoint at <code>/saml2/metadata/</code>, compatible with any standards-compliant IdP</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Audit Log</h3>
+          <ul>
+            <li>All significant actions are recorded automatically via middleware — no per-view instrumentation needed</li>
+            <li>Each record includes: timestamp, username, action type, resource type/ID/name, HTTP method, request path, response status, source IP</li>
+            <li>Actions covered: create, update, delete, login, logout, manual triggers</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Agent</h3>
+          <ul>
+            <li>Pre-compiled single-binary agents for Linux x86-64, Linux x86, macOS, and Windows</li>
+            <li>Agent exposes <code>GET /collect</code> returning canonical JSON. Satellite polls it on schedule</li>
+            <li>Authenticated via <code>X-Agent-Secret</code> shared header</li>
+            <li>Python source equivalents available for environments blocking compiled binaries or for air-gapped installation</li>
+            <li>Installer scripts provided for Linux (systemd), macOS (launchd), and Windows (scheduled task + firewall rule)</li>
+          </ul>
+        </div>
+
+        <div class="cap-section">
+          <h3>Data Retention</h3>
+          <ul>
+            <li>Configurable retention windows per category: raw collected data, parsed canonical data, job history, logs</li>
+            <li>Defaults: raw 90 days / parsed 365 days / job history 180 days / logs 90 days</li>
+            <li>Daily pruning task runs at 03:00 UTC. Set any value to 0 for indefinite retention</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- DEPLOYMENT -->
+  <section class="section" id="deployment">
+    <div class="container">
+      <h2 class="section-title">Deployment</h2>
+      <p class="section-intro">
+        Satellite runs as a Docker Compose stack (6 containers: PostgreSQL, Redis, Celery worker,
+        Celery Beat scheduler, Django/Gunicorn backend, Vue/Vite frontend). A bare-metal deployment
+        path is also included for Ubuntu 24.04 LTS hosts using systemd and nginx.
+      </p>
+
+      <div class="deploy-grid">
+
+        <div class="deploy-block">
+          <h3>Docker Compose</h3>
+          <p>Requires Docker and Docker Compose on any Linux host.</p>
+          <div class="code-block">
+            <div class="code-header">terminal</div>
+            <pre><code><span class="dim">$</span> git clone https://github.com/SeraVault/isotopeiq-satellite
+<span class="dim">$</span> cd isotopeiq-satellite
+<span class="dim">$</span> cp .env.example .env
+<span class="dim"># edit .env — set SECRET_KEY, FERNET_KEY, etc.</span>
+<span class="dim">$</span> ./deploy.sh up</code></pre>
+          </div>
+        </div>
+
+        <div class="deploy-block">
+          <h3>Bare Metal</h3>
+          <p>
+            The included <code>deploy/push.sh</code> script rsyncs the project to a remote Ubuntu 24.04
+            host and configures systemd services and nginx. TLS options: self-signed, Let's Encrypt,
+            or bring your own certificate.
+          </p>
+        </div>
+
+        <div class="deploy-block">
+          <h3>Stack Components</h3>
+          <ul>
+            <li><strong>Backend:</strong> Python / Django 4.2 + Django REST Framework</li>
+            <li><strong>Task queue:</strong> Celery 5 with Redis broker and result backend</li>
+            <li><strong>Scheduler:</strong> Celery Beat with django-celery-beat (DB-backed schedules)</li>
+            <li><strong>Database:</strong> PostgreSQL 16</li>
+            <li><strong>Frontend:</strong> Vue 3, Vuetify 3, Pinia, Vue Router, Axios, Vite</li>
+          </ul>
+        </div>
+
+        <div class="deploy-block">
+          <h3>Air-Gapped Environments</h3>
+          <p>
+            All agent binaries are pre-compiled and included in the repository. Python source agents
+            are provided as a fallback. No external network access is required at runtime — there
+            are no cloud dependencies or telemetry calls.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <a href="#" class="logo">
+          <span class="logo-mark">&#9632;</span>
+          IsotopeIQ <span class="logo-accent">Satellite</span>
+        </a>
+        <p>Open source configuration baseline,<br/>drift detection, and remediation.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <h5>On This Page</h5>
+          <a href="#overview">Overview</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="#schema">Canonical Schema</a>
+          <a href="#capabilities">Capabilities</a>
+          <a href="#deployment">Deployment</a>
+        </div>
+        <div class="footer-col">
+          <h5>Project</h5>
+          <a href="https://github.com/SeraVault/isotopeiq-satellite" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/SeraVault/isotopeiq-satellite/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://github.com/SeraVault/isotopeiq-satellite/blob/main/ADMIN_GUIDE.md" target="_blank" rel="noopener">Admin Guide</a>
+          <a href="https://github.com/SeraVault/isotopeiq-satellite/blob/main/USER_GUIDE.md" target="_blank" rel="noopener">User Guide</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="container">
+        <p>IsotopeIQ Satellite is open source software. <a href="https://github.com/SeraVault/isotopeiq-satellite" target="_blank" rel="noopener">github.com/SeraVault/isotopeiq-satellite</a></p>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

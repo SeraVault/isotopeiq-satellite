@@ -8,16 +8,19 @@
 4. [Dashboard](#dashboard)
 5. [Devices](#devices)
 6. [Credentials](#credentials)
-7. [Scripts](#scripts)
+7. [Scripts & Script Jobs](#scripts--script-jobs)
 8. [Policies](#policies)
 9. [Job Monitor](#job-monitor)
 10. [Drift](#drift)
-11. [Volatile Rules](#volatile-rules)
+11. [Drift Exclusions](#drift-exclusions)
 12. [Baselines](#baselines)
-13. [Audit Log](#audit-log)
-14. [Retention](#retention)
-15. [Concepts & Glossary](#concepts--glossary)
-16. [WinRM Setup for Windows Devices](#winrm-setup-for-windows-devices)
+13. [Users](#users)
+14. [Audit Log](#audit-log)
+15. [System Settings](#system-settings)
+16. [Agent Download](#agent-download)
+17. [Runtime Flow Diagram](#runtime-flow-diagram)
+18. [Concepts & Glossary](#concepts--glossary)
+19. [WinRM Setup for Windows Devices](#winrm-setup-for-windows-devices)
 
 ---
 
@@ -28,15 +31,16 @@ IsotopeIQ Satellite is a configuration collection and drift detection platform. 
 **Core workflow:**
 
 ```
-Devices → Scripts → Policies → Jobs → Baselines → Drift Detection
+Devices → Scripts → Script Jobs → Policies → Jobs → Baselines → Drift Detection
 ```
 
 1. Add your **devices** and **credentials**
 2. Write or import **collection and parser scripts**
-3. Create a **policy** that ties devices, scripts, and a schedule together
-4. Policies run as **jobs** — raw output is collected, parsed, and stored
-5. Each successful parse updates the device **baseline**
-6. If the new baseline differs from the previous one, a **drift event** is raised
+3. Compose scripts into a **Script Job** — an ordered execution pipeline
+4. Create a **policy** that ties devices, a Script Job, and a schedule together
+5. Policies run as **jobs** — raw output is collected, parsed, and stored
+6. Each successful parse updates the device **baseline**
+7. If the new baseline differs from the previous one, a **drift event** is raised
 
 ---
 
@@ -51,8 +55,9 @@ Navigate to the Satellite URL and log in with your username and password. Tokens
 1. **Credentials** — Create SSH keys or passwords before adding devices
 2. **Devices** — Register the hosts you want to monitor
 3. **Scripts** — Upload or write your collection and parser scripts
-4. **Policies** — Create a policy that combines devices + scripts + a schedule
-5. **Run** — Trigger a manual run to validate everything, then let the schedule take over
+4. **Script Jobs** — Compose scripts into an ordered pipeline with baseline and drift steps enabled
+5. **Policies** — Create a policy that combines devices + Script Job + a schedule
+6. **Run** — Trigger a manual run to validate everything, then let the schedule take over
 
 ---
 
@@ -63,9 +68,9 @@ The left sidebar organises the application into sections:
 | Section | Views |
 |---|---|
 | Overview | Dashboard |
-| Infrastructure | Devices, Policies, Scripts |
-| Operations | Job Monitor, Drift, Volatile Rules, Baselines |
-| System | Audit Log, Retention |
+| Configuration | Devices, Policies, Scripts, Agent Download |
+| Operations | Job Monitor, Drift, Baselines |
+| Administration | Drift Exclusions, Users, Audit Log, System Settings |
 
 **Job Monitor** and **Drift** show live badge counts — the number of running jobs and unresolved drift events respectively.
 
@@ -88,7 +93,7 @@ The Dashboard gives a real-time snapshot of the system.
 
 ### Panels
 
-**Drift Alerts** — The 10 most recent unresolved drift events, with device name, status, detection time, and a link to review the diff. Click *View all* to go to the full Drift view.
+**Drift Alerts** — The 10 most recent unresolved drift events, with device name, status, detection time, and the list of diff keys. Click *View all* to go to the full Drift view.
 
 **Recent Jobs** — The last 20 jobs, paginated 5 at a time. Shows device, policy, status, and start time. Click *View all* to go to the Job Monitor.
 
@@ -106,19 +111,29 @@ The Dashboard gives a real-time snapshot of the system.
 
 ## Devices
 
-*Infrastructure → Devices*
+*Configuration → Devices*
 
 Devices represent any host, appliance, or network node that Satellite will collect configuration data from.
 
 ### Viewing Devices
 
-The devices table shows name, hostname, device type, OS type, connection method, and active status. Use the filter bar to narrow by:
+The devices table shows name, hostname, connection type, tags, credential, and active status. Use the filter bar to narrow by:
 - Free-text search (name, hostname, FQDN)
-- OS type (Linux, Windows, macOS, Network)
-- Connection type (SSH, WinRM, HTTPS, Push)
+- Connection type (SSH, Telnet, WinRM, HTTPS/API, Agent Pull)
 - Active status
+- Tag
 
 Click any row to open the **Device Viewer**, which shows device details and its most recent baseline data.
+
+### Connection Types
+
+| Type | Notes |
+|---|---|
+| SSH | Satellite opens an SSH session and executes scripts remotely. Requires a username/password or private key credential. |
+| Telnet | For legacy devices that support only Telnet. Supports interactive command sequences defined in the collection script. |
+| WinRM | Windows Remote Management — remote script execution on Windows. Requires a username/password credential. See [WinRM Setup](#winrm-setup-for-windows-devices). |
+| HTTPS / API | Satellite sends HTTP requests to a REST API. Useful for network devices, hypervisors, or cloud endpoints. Typically uses an API token credential. |
+| Agent Pull | An IsotopeIQ agent runs persistently on the device on TCP port 9322. Satellite calls `GET /collect` on demand — no credentials or scripts required. Download the agent from [Agent Download](#agent-download). |
 
 ### Adding a Device
 
@@ -128,18 +143,13 @@ Click **Add Device** and fill in:
 |---|---|
 | Name | Human-readable label |
 | Hostname / IP | Used for the connection |
-| FQDN | Optional; used if hostname is a short name |
-| Port | Defaults based on connection type |
-| Device Type | Linux, Windows, macOS, Network Device, Other |
-| OS Type | Used to match compatible scripts |
-| Connection Type | SSH, WinRM, HTTPS/API, or Push |
-| Credential | Select a saved credential (recommended) |
-| SSH Host Key | Paste to pin the host key and prevent MITM on first connect |
-| Tags | Comma-separated; used for grouping and filtering |
+| Connection Type | SSH, Telnet, WinRM, HTTPS/API, or Agent Pull |
+| Port | Defaults based on connection type (22 for SSH, 5985 for WinRM, 9322 for Agent Pull) |
+| Credential | Select a saved credential (not required for Agent Pull) |
+| Agent Port | TCP port the agent is listening on; defaults to 9322. Agent Pull only. |
+| Tags | Comma-separated; used for grouping and filtering in the device list and policy editor |
 | Notes | Free text for documentation |
-| Active | Uncheck to exclude this device from policy runs |
-
-**Inline credentials** — If you haven't created a credential yet, you can enter a username and password directly on the device form as a one-off.
+| Active | Uncheck to exclude this device from scheduled policy runs |
 
 #### Testing the Connection
 
@@ -147,21 +157,17 @@ Before saving, click **Test Connection** to verify Satellite can reach the devic
 
 ### Editing and Deleting Devices
 
-Use the **pencil** icon to edit or the **bin** icon to delete. Deleting a device will remove it from all policies. A confirmation dialog is shown before deletion.
+Use the **Edit** button to modify a device or the **Delete** button to remove it. Deleting a device removes it from all policies. A confirmation dialog is shown before deletion.
 
 ### Collecting From a Device
 
 Click the **Collect** button on a device row to trigger an immediate collection. If multiple policies are assigned to the device, a picker will appear to choose which policy to run.
 
-### Push Devices
-
-Devices configured with the **Push** connection type do not get polled. Instead they call `POST /api/push/` with a push token and pre-collected JSON. The push token is displayed on the device detail.
-
 ---
 
 ## Credentials
 
-*Infrastructure → Devices → Credentials tab*
+*Configuration → Devices → Credentials tab*
 
 Credentials are stored encrypted and reused across multiple devices.
 
@@ -169,10 +175,9 @@ Credentials are stored encrypted and reused across multiple devices.
 
 | Type | Fields |
 |---|---|
-| SSH Password | Username, Password |
-| SSH Key | Username, PEM private key |
-| Windows / WinRM | Username, Password |
-| API Token | Bearer token (for HTTPS devices) |
+| Username / Password | Username, Password — used for SSH (password auth), Telnet, and WinRM |
+| Username / Private Key | Username, PEM private key — recommended for SSH key-based auth on Linux/Unix |
+| API Token | Bearer token — for HTTPS/API devices |
 
 ### Adding a Credential
 
@@ -180,104 +185,116 @@ Click **Add Credential**, select the type, and fill in the required fields. Pass
 
 ---
 
-## Scripts
+## Scripts & Script Jobs
 
-*Infrastructure → Scripts*
+*Configuration → Scripts*
 
-Scripts are the executable units that perform collection and parsing. There are three types:
+### Scripts
+
+Scripts are the individual executable units. There are four types:
 
 | Type | Runs on | Purpose |
 |---|---|---|
-| Collection | Remote device (via SSH/WinRM) | Gather raw configuration data and write it to stdout |
-| Parser | Satellite server | Receive raw output via stdin, emit canonical JSON to stdout |
-| Deployment | Remote device | Push remediation or hardening changes after collection |
+| Collection | Remote device (client) | Gather raw configuration data from a device and write it to stdout |
+| Parser | Satellite server | Receive raw output via stdin, transform it, and emit canonical JSON to stdout |
+| Deployment | Remote device (client) | Apply a configuration change, remediation, or hardening action |
+| Utility | Either | General-purpose scripts — data exports, integrations, maintenance tasks |
 
-### Collection Profiles
+#### Script Fields
 
-A **Collection Profile** bundles a collection script and a parser script into a versioned, distributable unit. This is the recommended way to manage scripts — one profile per OS family or device type.
+| Field | Notes |
+|---|---|
+| Name | Unique identifier; shown in the Script Job step picker |
+| Type | Collection, Parser, Deployment, or Utility |
+| Run On | **Push to device** — executes on the remote device; **Run on Satellite** — executes on the Satellite server; **Both** — runs on the device first, then the server |
+| Language | Shell, PowerShell, Python, etc. Used to invoke the correct interpreter |
+| Version | Free-form version string; visible in job results |
+| Active | Inactive scripts are hidden from the Script Job step picker but remain visible for reference |
 
-Profiles are listed in the **Collection Profiles** tab. Columns: Name, Target OS, Version, scripts assigned, and active status.
+#### Script Editor
 
-#### Creating a Profile
+Click **New Script** to open the full-screen script editor, or click **Edit** on any existing script. The editor includes:
 
-1. Click **New Collection Profile**
-2. Fill in the metadata: Name, Target OS, Version, Description
-3. Write or paste your **Collection** script in the Collection tab
-4. Write or paste your **Parser** script in the Parser tab
-5. Optionally add a **Deployment** script
-6. Click **Save**
+- Syntax highlighting and code folding
+- Device picker — select a real device and click **Run** to test the script live
+- **Input section** — paste stdin for server-side scripts to simulate piped input
+- **Output section** — shows stdout, parsed result, and any errors, with copy and *Use as input* buttons for chaining tests
+- **Substitution placeholder reference** — click Help in the toolbar for the full list of runtime placeholders (`{{USERNAME}}`, `{{PRIVATE_KEY}}`, `{{ELEVATE}}`, `{{SATELLITE_URL}}`, etc.)
 
-#### Testing a Profile
+### Script Jobs
 
-In the profile editor:
+*Scripts → Script Jobs tab*
 
-1. Set **Test Device** to a real device in your inventory
-2. Click **Run Collector** — Satellite connects to the device and captures raw output
-3. Switch to the **Parser** tab
-4. Click **Run Parser** — Satellite runs the parser against the captured raw output
-5. Inspect the results in the output panels on the right
+A **Script Job** is an ordered pipeline of one or more script steps. Script Jobs are what Policies actually execute — scripts themselves are not assigned to policies directly.
 
-The parsed output must be valid canonical JSON. Errors are shown inline.
+#### Step Options
 
-### Script Editor
+Each step in a Script Job has four optional flags:
 
-The editor includes:
-- Syntax highlighting (Python, Shell, PowerShell, VBScript, SQL)
-- Line numbers and code folding
-- Bracket matching and auto-indent
-- Undo history
+| Flag | Effect |
+|---|---|
+| Pipe to next | Passes this step's stdout to the next step as its stdin |
+| Save output | Persists the raw output in the job result record |
+| Enable Baseline | Saves this step's canonical JSON output as the device's baseline |
+| Enable Drift | Compares this step's output against the stored baseline and creates drift events if differences are found |
 
-#### Substitution Placeholders
+A typical collection Script Job has two steps:
+1. A **Collection** script with *Run on: Push to device* — gathers raw data
+2. A **Parser** script with *Run on: Run on Satellite*, *Pipe to next* enabled on step 1, *Enable Baseline* and *Enable Drift* enabled on step 2 — transforms to canonical JSON and stores it
 
-Scripts can reference `{{SATELLITE_URL}}` to receive the Satellite server address at runtime.
+#### Running a Script Job Ad-Hoc
 
-### Individual Scripts
-
-The **Scripts** tab lists scripts outside of profiles. You can create standalone scripts and assign them to policies independently. Useful for deployment scripts that are shared across multiple profiles.
+Click **Run Now** on a Script Job row to execute it immediately. A dialog prompts you to select a target device (for client steps) or confirms server-only execution. Results appear in the **Script Job Runs** tab of the Job Monitor.
 
 ---
 
 ## Policies
 
-*Infrastructure → Policies*
+*Configuration → Policies*
 
-A Policy ties together devices, scripts, and a schedule to create an automated collection workflow.
+A Policy ties together devices, a Script Job, and a schedule to create an automated collection workflow.
 
 ### Policy Components
 
 | Component | Required | Description |
 |---|---|---|
 | Name | Yes | Shown in job monitor and notifications |
-| Collection Script | Yes | What to run on the device |
-| Parser Script | Yes | How to turn raw output into canonical JSON |
-| Deployment Script | No | Optional remediation/hardening script |
+| Collection Method | Yes | **Script Execution** — Satellite connects to devices and runs the Script Job; **Agent Pull** — Satellite calls `GET /collect` on the agent, then passes the result to any server-side parser steps |
+| Script Job | Yes | The ordered pipeline of steps to execute |
 | Devices | Yes | One or more devices to target |
-| Schedule | Yes | When to run |
+| Schedule | Yes | When to run (cron expression) |
+| Delay between devices | No | Seconds to wait between each device execution — useful for rate-limiting against shared infrastructure |
+| Post-Collection Actions | No | Automatic notifications or exports triggered after collection; each action is a pair of trigger event + destination |
 | Active | — | Uncheck to pause without deleting |
 
 ### Schedule Options
 
 | Frequency | Options |
 |---|---|
-| Hourly | Minute (0–59) |
-| Daily | Hour (0–23) and minute |
+| Hourly | Minute offset (0–59) |
+| Daily | Hour (UTC, 0–23) and minute |
 | Weekly | Day(s) of week + hour + minute |
 | Monthly | Day of month (1–28) + hour + minute |
-| Custom | Raw cron expression |
+| Custom | Raw 5-field cron expression |
 
 A human-readable summary of the schedule is shown as you build it (e.g., *"Every Monday and Wednesday at 09:30 UTC"*).
 
 ### Device Picker
 
-The device picker within the policy form is searchable. Type to filter by name, hostname, or FQDN. Check boxes to select devices. All selected devices are listed below with the option to remove individuals.
+The device picker within the policy form is searchable by name, hostname, and FQDN. Use the **Tag** filter to scope the list to a device group. Check boxes to select devices. All selected devices are listed as chips with individual remove buttons.
+
+### Post-Collection Actions
+
+Post-collection actions define what Satellite does automatically after a job completes. Each action is a pair:
+
+- **Trigger** — when to fire: `new_baseline`, `drift_detected`, or `always`
+- **Destination** — where to send: `syslog`, `email`, or `ftp`
+
+Multiple actions can be added. Destinations must be configured and enabled in [System Settings](#system-settings) for actions using them to succeed.
 
 ### Running a Policy Manually
 
-Click **Run Now** on the policy row to trigger an immediate execution. Each device in the policy will get its own job. Watch progress in the [Job Monitor](#job-monitor).
-
-### Deployment Scripts
-
-Click **Deploy Now** on a policy row to push the policy's deployment script to all assigned devices. A confirmation dialog prevents accidental deployment. The deployment runs as a separate job.
+Click **Run Now** on the policy row to trigger an immediate execution. Each device in the policy gets its own job. Watch progress in the [Job Monitor](#job-monitor).
 
 ---
 
@@ -285,34 +302,38 @@ Click **Deploy Now** on a policy row to push the policy's deployment script to a
 
 *Operations → Job Monitor*
 
-The Job Monitor shows all collection job executions — historical and in-flight.
+The Job Monitor shows all job executions — historical and in-flight — across two tabs.
 
-### Filtering
+### Policy Jobs Tab
 
-Filter by device, policy, status, and/or date range. Click **Refresh** to reload with the current filters.
+Shows jobs spawned by scheduled or manually triggered policies.
+
+Filter by device, policy, status, and/or date range. Click **Refresh** to reload.
 
 | Status | Meaning |
 |---|---|
 | pending | Queued, not yet started |
 | running | Currently executing |
-| success | Completed without errors, no drift |
+| success | Completed without errors |
 | partial | Some devices succeeded, some failed |
 | failed | Execution error or parse failure |
 | cancelled | Manually cancelled |
 
-### Job Detail
+Click **Details** on any job row to expand the full result view:
 
-Click **Details** on any job row to open the full detail view:
-
-- **Status and timestamps** for each device result
-- **Error message** if the job failed
-- **Raw Output** — the literal stdout from the collection script
-- **Parsed Output** — the canonical JSON produced by the parser
+- Status and timestamps
+- Error message if the job failed
+- **Raw Output** — literal stdout from the collection script
+- **Parsed Output** — canonical JSON produced by the parser
 - **Drift Detected** — if drift was found, the diff is shown inline
 
-### Cancelling a Job
+Running or pending jobs show a **Cancel** button. Cancellation is best-effort — if the job is mid-execution on a remote device, the remote script may already have completed.
 
-Running or pending jobs show a **Cancel** button. A confirmation dialog is shown. Cancellation is best-effort — if the job is mid-execution on a remote device, the remote script may have already completed.
+### Script Job Runs Tab
+
+Shows ad-hoc and policy-triggered executions of Script Jobs. Columns: Script Job name, device, triggered by, status, started time, and duration.
+
+Click a row to expand the per-step output viewer — each step's stdout and any error text is shown separately.
 
 ---
 
@@ -320,20 +341,19 @@ Running or pending jobs show a **Cancel** button. A confirmation dialog is shown
 
 *Operations → Drift*
 
-Drift events are raised when a job's parsed output differs from the established baseline for that device. The view polls for new events every few seconds — badge counts in the sidebar update in real time via WebSocket.
+Drift events are raised when a job's parsed output differs from the established baseline for a device. The view polls for new events every few seconds — badge counts in the sidebar update in real time.
 
 ### Drift Statuses
 
 | Status | Meaning |
 |---|---|
-| new | Unreviewed drift, requires attention |
-| resolved | Acknowledged by a user, or device configuration returned to baseline |
-
-A drift event in **new** status is an open issue. Once you take action — either by acknowledging the change or by letting the device return to its previous configuration — the event moves to **resolved**.
+| new | Unreviewed drift; requires attention |
+| acknowledged | Reviewed and accepted by a user; baseline has been updated |
+| resolved | Device configuration returned to baseline automatically on a subsequent collection |
 
 ### Filtering
 
-Filter by device or status using the dropdowns at the top of the table. Click **Clear** to reset all filters.
+Filter by device or status using the dropdowns at the top. Click **Clear** to reset.
 
 ### Reviewing Drift
 
@@ -347,45 +367,45 @@ The diff viewer shows a structured, section-by-section comparison of the baselin
 - **Summary cards** — side-by-side key fields for device metadata, hardware, OS, and security
 - **Section panels** — one expandable panel per canonical schema section that contains changes; sections with no differences are collapsed
   - Added items highlighted green, removed items red, changed items orange
-  - A **Changed only** toggle hides unchanged rows within a section to reduce visual noise
+  - A **Changed only** toggle hides unchanged rows within a section
 
 #### Hide Volatile Fields
 
-The **Hide volatile fields** toggle (enabled by default) strips fields governed by your [Volatile Rules](#volatile-rules) before rendering the diff. This suppresses expected transient changes — uptime counters, DHCP lease counts, process IDs, sysctl runtime values — so only meaningful drift is shown.
+The **Hide volatile fields** toggle (enabled by default) strips fields governed by your [Drift Exclusions](#drift-exclusions) before rendering the diff. This suppresses expected transient changes — uptime counters, DHCP lease counts, process IDs — so only meaningful drift is shown.
 
-Disabling this toggle shows the raw unfiltered diff, which is useful for diagnosing why a rule is or isn't matching.
+Disabling this toggle shows the raw unfiltered diff, which is useful for diagnosing why an exclusion rule is or isn't matching.
 
-#### Creating a Volatile Rule from the Diff
+#### Creating a Drift Exclusion from the Diff
 
 If you see a field changing that you want to permanently suppress, click the **eye icon** next to that field in the diff viewer. A prefilled rule creation dialog opens. Confirm the details and save — the rule takes effect within 60 seconds.
 
 ### Acknowledging Drift
 
-Click **Acknowledge** on a **new** drift event (or from the diff viewer). You must enter a reason before submitting.
+Click **Acknowledge** on a **new** drift event (or from inside the diff viewer). You must enter a reason before submitting.
 
 When you acknowledge a drift event:
 
-1. The event is marked **resolved** and your username and reason are recorded.
+1. The event is marked **acknowledged** and your username and reason are recorded.
 2. The current collection output (the "after" state) is **promoted as the new baseline** for the device.
-3. Future collections compare against this new configuration, not the previous one.
+3. Future collections compare against this new configuration.
 
 Use acknowledgement when a change was intentional (planned upgrade, authorised configuration change). The reason is stored in the audit trail.
 
 ### Resolving Without Acknowledging
 
-If the device configuration corrects itself on a subsequent collection run — e.g., a misconfiguration was fixed — the drift event is automatically marked **resolved** with no user action required.
+If the device configuration corrects itself on a subsequent collection run, the drift event is automatically marked **resolved** with no user action required.
 
 ---
 
-## Volatile Rules
+## Drift Exclusions
 
-*Operations → Volatile Rules*
+*Administration → Drift Exclusions*
 
-Volatile Rules tell the drift detector which configuration fields to ignore during comparison. Without them, fast-changing values like uptime counters, DHCP lease counts, and sysctl entropy pools would generate constant false-positive drift events.
+Drift Exclusions tell the drift detector which configuration fields to ignore during comparison. Without them, fast-changing values like uptime counters, DHCP lease counts, and sysctl entropy pools generate constant false-positive drift events.
 
-Rules are evaluated server-side on every collection run. Changes take effect within 60 seconds (one cache TTL cycle) without requiring a restart.
+Rules are evaluated server-side on every collection run. Changes take effect within 60 seconds without requiring a restart.
 
-> **Who can manage rules:** Only administrators can create, edit, or delete rules. All users can view the rules table.
+> **Who can manage rules:** Only administrators can create, edit, or delete rules. All users can view the table.
 
 ### Rule Types
 
@@ -394,7 +414,7 @@ Rules are evaluated server-side on every collection run. Changes take effect wit
 | `section_field` | Drops a scalar field from the top-level section | Ignore `os.uptime` |
 | `item_field` | Drops a field from every item in an array section | Ignore `filesystem[*].free_gb` |
 | `nested_field` | Drops a field from items inside a nested array | Ignore `routing_protocols[*].neighbors[*].state` |
-| `exclude_key` | Removes entire array items whose key field matches a value | Remove sysctl entry `fs.dentry-state` entirely |
+| `exclude_key` | Removes entire array items whose key field matches a value | Remove sysctl entry `fs.dentry-state` |
 | `exclude_section` | Excludes an entire canonical section from comparison | Ignore everything in `custom` |
 
 ### Creating a Rule
@@ -424,16 +444,16 @@ Click **Add Rule** and fill in:
 **Suppress a specific noisy sysctl entry:**
 - Section: `sysctl`, Type: `exclude_key`, Field: `fs.dentry-state`, Key Field: `key`
 
-**Ignore BGP neighbour session state (expected flap during maintenance):**
+**Ignore BGP neighbour session state during maintenance:**
 - Section: `routing_protocols`, Type: `nested_field`, Field: `state`, Nested Key: `neighbors`
 
 ### Enabling and Disabling Rules
 
-Toggle the **Active** switch on any rule row to enable or disable it without deleting. This is useful for temporarily re-enabling a rule to investigate a suspected issue, then suppressing it again.
+Toggle the **Active** switch on any rule row to enable or disable it without deleting.
 
 ### Deleting Rules
 
-Click the **bin** icon on a rule row. Deletion is permanent. If a rule was suppressing drift that is now present again, a new drift event will be raised on the next collection run.
+Click the **Delete** icon on a rule row. Deletion is permanent. If a rule was suppressing drift that then reappears, a new drift event will be raised on the next collection run.
 
 ---
 
@@ -445,7 +465,7 @@ A Baseline is a point-in-time snapshot of a device's configuration in canonical 
 
 ### Viewing Baselines
 
-The baselines table shows device name, when the baseline was established, and which user or process established it. Filter by device using the dropdown.
+The baselines table shows device name, when the baseline was established, and which user or process established it. Filter by device using the autocomplete field.
 
 ### Baseline Viewer
 
@@ -471,11 +491,45 @@ Click **View Data** to open the full baseline viewer for a device. The viewer is
 | System Parameters | sysctl / kernel parameters |
 | Certificates | Installed certificates and expiry |
 
+### Exporting a Baseline
+
+Click **Send** on a baseline row to export the canonical JSON snapshot to a configured destination — syslog, email, or FTP/SFTP. Destinations must be enabled under [System Settings](#system-settings).
+
+---
+
+## Users
+
+*Administration → Users*
+
+The Users view manages local user accounts. SSO/LDAP-provisioned accounts are listed here as read-only after first login.
+
+### User Table
+
+Columns: Username, First Name, Last Name, Email, Type (Local/SSO), Active, Staff (admin), Superuser, Last Login.
+
+### Adding a User
+
+Click **Add User** and fill in:
+
+| Field | Notes |
+|---|---|
+| Username | Unique login name; cannot be changed after creation |
+| First Name / Last Name | Display name |
+| Email | Used for email notifications |
+| Password | Required for local accounts; not shown for SSO accounts |
+| Active | Inactive users cannot log in |
+| Staff (Admin) | Grants access to administrative features such as Drift Exclusions and User management |
+| Superuser | Full unrestricted access |
+
+### Editing and Deleting Users
+
+Click **Edit** on a row to update name, email, password, or permission flags. Click **Delete** to remove a user; a confirmation dialog is shown. You cannot delete your own account.
+
 ---
 
 ## Audit Log
 
-*System → Audit Log*
+*Administration → Audit Log*
 
 The Audit Log records every significant action taken through the API.
 
@@ -497,9 +551,43 @@ Filter by username, action type, resource type, and/or date range. Click **Searc
 
 ---
 
-## Retention
+## System Settings
 
-*System → Retention*
+*Administration → System Settings*
+
+Centralised runtime configuration. Changes take effect immediately — no service restart required.
+
+### Syslog Notifications
+
+| Field | Notes |
+|---|---|
+| Enable syslog notifications | Master switch |
+| Syslog Host | IP or hostname of the syslog server |
+| Port | UDP/TCP port (default 514) |
+| Facility | Syslog facility code (e.g. LOCAL0–LOCAL7) |
+
+### Email Notifications
+
+| Field | Notes |
+|---|---|
+| Enable email notifications | Master switch |
+| SMTP Host | Relay host address |
+| Port | SMTP port (typically 25, 465, or 587) |
+| Use STARTTLS | Enable STARTTLS encryption |
+| SMTP Username / Password | Leave password blank to keep the existing value |
+| From Address | Sender address (e.g. `isotopeiq@example.com`) |
+| Recipients | Comma-separated list of recipient addresses |
+
+### FTP / SFTP Export
+
+| Field | Notes |
+|---|---|
+| Enable FTP/SFTP export | Master switch |
+| Protocol | `sftp` or `ftp` |
+| Host / Port / Username / Password | Connection details; leave password blank to keep existing |
+| Remote Path | Directory on the server where files are written |
+
+### Data Retention
 
 Configure how long different categories of data are kept. Pruning runs automatically at **03:00 UTC daily**.
 
@@ -510,25 +598,145 @@ Configure how long different categories of data are kept. Pruning runs automatic
 | Job History | 180 days | Job metadata and status records |
 | Log / Error Messages | 90 days | Error output and diagnostics |
 
-Set any value to **0** to retain data indefinitely. Click **Save** to apply changes.
+Set any value to **0** to retain data indefinitely.
+
+### LDAP Authentication
+
+Configure Satellite to authenticate users against an LDAP or Active Directory server.
+
+| Field | Notes |
+|---|---|
+| Enable LDAP | Master switch — local accounts continue to work when LDAP is enabled |
+| Server URI | e.g. `ldap://dc.example.com:389` or `ldaps://dc.example.com:636` |
+| Start TLS | Upgrade the connection with STARTTLS after connecting |
+| Bind DN | Service account DN used to search the directory |
+| Bind Password | Password for the bind account |
+| User Search Base | DN under which user objects are searched |
+| User Search Filter | LDAP filter to locate user objects; `(uid=%(user)s)` is typical for OpenLDAP, `(sAMAccountName=%(user)s)` for AD |
+| Group Search Base | Optional; required only if mapping LDAP groups to Satellite roles |
+| Superuser Group DN | Members of this group receive superuser access |
+| Staff Group DN | Members of this group receive staff (admin) access |
+| Attribute Mappings | Map LDAP attributes to first name, last name, and email fields |
+
+LDAP-provisioned accounts appear in the Users table with Type **SSO**. Their permissions are managed via LDAP group membership; editing permissions directly for SSO users has no effect while LDAP is active.
+
+### Agent Security
+
+| Field | Notes |
+|---|---|
+| Agent Secret | Shared secret used to authenticate agent-collected data. Click **Generate** to rotate it. |
+
+> **Warning** — rotating the Agent Secret invalidates all currently deployed agents. You must reinstall or reconfigure agents on every device using the new secret. A confirmation dialog is shown before the secret is changed.
+
+Click **Save** at the bottom of the page to apply all settings.
+
+---
+
+## Agent Download
+
+*Administration → Agent Download*
+
+The IsotopeIQ agent is a lightweight daemon that runs persistently on a device and serves configuration data over HTTP on port 9322. Using an agent eliminates the need to configure SSH, WinRM, or Telnet on the managed device.
+
+### Platform Tabs
+
+Select the target OS tab (Windows, Linux, macOS) for the download link and installation instructions for that platform.
+
+| Platform | Starting the agent |
+|---|---|
+| Windows | Installed as a Windows Scheduled Task (`windows_install.bat`) |
+| Linux | Installed as a `systemd` service (`linux_install.sh`) |
+| macOS | Installed as a `launchd` daemon (`macos_install.sh`) |
+
+After installation, add the device in Satellite with connection type **Agent Pull** and point it at the device's hostname/IP. No credential is required.
+
+### Air-Gapped Devices
+
+For devices with no network path to Satellite:
+
+1. Run the **collector binary** directly on the device to capture a snapshot to stdout
+2. Copy the output to a file and manually import it from the Baselines view
+
+The agent download page shows the exact commands for each platform.
+
+---
+
+## Runtime Flow Diagram
+
+The following diagram shows how a policy or script job execution flows from trigger through to drift resolution.
+
+```mermaid
+flowchart TD
+    START(["Policy · Script Job trigger\n(scheduler / manual / Run button)"])
+    START --> CM{"Triggered\nhow?"}
+
+    CM -->|"Policy — agent pull"| AGENTCOL["Satellite calls\nGET device:port/collect"]
+    CM -->|"Policy / Script Job\n— script execution"| STEPS
+
+    AGENTCOL --> AGENTRAW["Raw JSON received\nfrom agent"]
+    AGENTRAW --> BL
+
+    STEPS["Execute Script Job steps in order\n─────────────────────────────\nClient step → run on device\n  SSH · Telnet · WinRM · HTTPS · Agent /run\nServer step → exec on Satellite\n  receives previous step output via stdin"]
+
+    STEPS --> PIPE{"Pipe to next?"}
+    PIPE -->|Yes| STEPS
+    PIPE -->|No / last step| FLAGS{"Any step flagged\nSave output /\nEnable Baseline /\nEnable Drift?"}
+
+    FLAGS -->|"None — arbitrary run\n(deployment, utility, etc.)"| ARBITRARY(["Job: success ✅\nOutput stored in job record"])
+
+    FLAGS -->|"Save output"| RAWSTORED["Raw output stored\nin job record"]
+    RAWSTORED --> BDFLAG{"Baseline or\nDrift enabled?"}
+
+    BDFLAG -->|No| DONE_SAVE(["Job: success ✅"])
+
+    BDFLAG -->|Yes| BL
+
+    FLAGS -->|"Baseline / Drift\nenabled"| BL
+
+    BL{"Baseline\nexists for device?"}
+
+    BL -->|"No — first run"| NEWBL["Create baseline\nfrom parsed output"]
+    NEWBL --> NEWBL_N["Notify: new_baseline"]
+    NEWBL_N --> DONE1(["Job: success ✅\nBaseline established"])
+
+    BL -->|Yes| DRIFT["Run drift detection\ndiff current vs baseline"]
+    DRIFT --> DIFFS{"Differences?"}
+
+    DIFFS -->|No| CLEAN["Notify: collection_success"]
+    CLEAN --> DONE2(["Job: success ✅\nNo drift"])
+
+    DIFFS -->|Yes| DEVENT["Create / update DriftEvent\nNotify: drift_detected"]
+    DEVENT --> DONE3(["Job: success ✅\nDrift pending review"])
+
+    DONE3 --> ACK["User reviews diff,\nacknowledges with reason"]
+    ACK --> UPDBL["Baseline updated\nto acknowledged snapshot"]
+    UPDBL --> RESOLVED(["DriftEvent: resolved ✅"])
+
+    STEPS -->|"Any step throws"| FAIL(["Job: failed ❌\nError stored"])
+    AGENTCOL -->|"Network error / bad JSON"| FAIL
+```
 
 ---
 
 ## Concepts & Glossary
 
+**Agent** — A lightweight daemon deployed on a managed device that listens on TCP port 9322 and responds to `GET /collect` with a canonical JSON snapshot of the device's configuration. Used with the **Agent Pull** connection type.
+
 **Canonical JSON** — A normalised, schema-validated JSON document produced by a parser script. All canonical documents share the same top-level sections regardless of device OS, making cross-device and cross-time comparison possible.
 
-**Collection Profile** — A versioned bundle of a collection script and a parser script, targeted at a specific OS family.
+**Collection Script** — A script that runs on the remote device and gathers raw configuration data, writing it to stdout.
 
 **Credential** — Stored authentication material (SSH key, password, API token) used to connect to devices. Encrypted at rest.
 
-**Deployment Script** — An optional script pushed to a device to apply remediation or a golden configuration. Assigned to a policy and triggered explicitly via *Deploy Now* or automatically when auto-remediation is enabled.
+**Deployment Script** — A script pushed to a device to apply remediation or a golden configuration. Used as a step in a Script Job.
 
-**Device** — A managed host, appliance, or network node. Devices are collected from using either a pull model (Satellite connects) or a push model (device calls Satellite).
+**Device** — A managed host, appliance, or network node. Devices are collected from using a pull model (Satellite connects) or the agent model (agent installed on device).
 
 **Drift** — A detected difference between a device's current configuration and its established baseline.
 
-**Drift Event** — A record created when drift is detected. Has a lifecycle: *new → resolved*. Resolution occurs when a user acknowledges the drift (promoting the current state as the new baseline) or when the device configuration returns to the previous baseline on a subsequent collection.
+**Drift Event** — A record created when drift is detected. Lifecycle: *new → acknowledged / resolved*.
+
+**Drift Exclusion** — A database-managed rule that instructs the drift detector to ignore specific fields, array items, or entire sections during comparison. Rules are cached for 60 seconds and evaluated server-side.
 
 **Baseline** — The most recent successful canonical configuration snapshot for a device. Updated on each successful job.
 
@@ -536,13 +744,13 @@ Set any value to **0** to retain data indefinitely. Click **Save** to apply chan
 
 **Parser Script** — A server-side script that receives raw collection output via stdin and must write valid canonical JSON to stdout.
 
-**Policy** — The main scheduling unit. Binds one or more devices to a collection profile (or individual scripts) and defines when collection should run.
+**Policy** — The main scheduling unit. Binds one or more devices to a Script Job and defines when collection should run.
 
-**Push Token** — A per-device secret used by push-mode devices to authenticate when calling `POST /api/push/`.
+**Post-Collection Action** — A configured trigger/destination pair on a policy that sends a notification or export automatically when a certain event occurs (new baseline, drift detected, or always).
 
-**Volatile Fields** — Configuration fields that change frequently and legitimately without indicating a real configuration problem (e.g., uptime counters, DHCP lease counts, sysctl runtime values). Volatile Rules tell the drift engine which fields to strip before comparison.
+**Script Job** — An ordered pipeline of script steps. Each step can run on the remote device or on the Satellite server. Steps can pipe output to subsequent steps, save output, enable baseline storage, and enable drift detection. Script Jobs are what Policies reference.
 
-**Volatile Rule** — A database-managed rule that instructs the drift detector to ignore specific fields, array items, or entire sections during comparison. Rules are cached for 60 seconds and evaluated server-side. See [Volatile Rules](#volatile-rules).
+**Volatile Fields / Drift Exclusions** — Configuration fields that change frequently and legitimately without indicating a real configuration problem. Managed as Drift Exclusion rules.
 
 ---
 

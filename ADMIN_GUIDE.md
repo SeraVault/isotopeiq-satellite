@@ -11,7 +11,7 @@
    - [Local Authentication](#61-local-authentication)
    - [LDAP](#62-ldap)
    - [SAML 2.0](#63-saml-20)
-7. [Notification Configuration (Syslog)](#7-notification-configuration-syslog)
+7. [Notification Configuration](#7-notification-configuration)
 8. [Service Management Reference](#8-service-management-reference)
 9. [Data Retention](#9-data-retention)
 10. [Upgrading](#10-upgrading)
@@ -38,7 +38,7 @@ IsotopeIQ Satellite is a configuration collection, baseline, and drift-detection
 **Core workflow:**
 
 ```
-Devices → Credentials → Scripts → Policies → Jobs → Baselines → Drift Alerts
+Devices → Credentials → Scripts → Script Jobs → Policies → Jobs → Baselines → Drift Alerts
 ```
 
 **Service stack:**
@@ -178,7 +178,7 @@ SYSLOG_PORT=514
 SYSLOG_FACILITY=local0
 ```
 
-See [Section 8](#8-notification-configuration-syslog) for details.
+These env-var defaults are applied on first start. Syslog, email, and FTP/SFTP notification settings can also be configured at runtime via **Administration → System Settings** in the UI — UI changes take effect immediately without a restart. See [Section 7](#7-notification-configuration) for details.
 
 ### 4.6 LDAP (Optional)
 
@@ -240,7 +240,7 @@ JWT tokens are issued at `/api/v1/auth/token/` and refreshed at `/api/v1/auth/to
 
 ### 6.2 LDAP
 
-LDAP authentication is configured entirely through `.env`. No code changes are required.
+LDAP authentication can be configured either through `.env` (applied at startup) or at runtime via **Administration → System Settings → LDAP Authentication** in the UI. UI changes take effect immediately without a restart. The `.env` values serve as bootstrap defaults.
 
 ```ini
 # LDAP server
@@ -313,25 +313,51 @@ After updating `.env`, restart the backend:
 
 ---
 
-## 7. Notification Configuration (Syslog)
+## 7. Notification Configuration
 
-IsotopeIQ Satellite sends drift detection alerts via syslog. Configure the target in `.env`:
+IsotopeIQ Satellite supports three notification/export destinations: **syslog**, **email (SMTP)**, and **FTP/SFTP**. All three can be configured via **Administration → System Settings** in the UI — changes take effect immediately without a restart.
+
+For `.env` bootstrap defaults (applied on first start only):
 
 ```ini
+# Syslog
 SYSLOG_HOST=siem.corp.example.com
 SYSLOG_PORT=514
 SYSLOG_FACILITY=local0
 ```
 
-Drift events are sent when a collection run produces output that differs from the stored baseline. The syslog message includes the device name, policy, and a summary of changed fields.
+Email and FTP/SFTP do not have `.env` defaults — configure them via the UI.
 
-To verify notifications are reaching your SIEM, trigger a manual collection on a device and modify a monitored value (e.g., add a test user) before re-running. The resulting drift event will generate a syslog message.
+### Syslog
 
-After changing syslog settings, restart the backend and workers:
+Drift events, new baselines, and collection results are sent as syslog messages when the corresponding **Post-Collection Action** on a policy is triggered. The message includes the device name, policy, and a summary of changed fields.
+
+To verify syslog notifications are reaching your SIEM, trigger a manual collection on a device, modify a monitored value (e.g., add a test user), and re-run. The resulting drift event will generate a syslog message.
+
+### Email
+
+Email notifications use a standard SMTP relay. Configure SMTP host, port, STARTTLS, credentials, from address, and recipients in the UI. A post-collection action on the policy must reference the `email` destination for messages to be sent.
+
+### FTP / SFTP Export
+
+Baseline snapshots (canonical JSON) can be exported to an FTP or SFTP server automatically after each successful collection. Configure the protocol, host, port, credentials, and remote path in the UI. A post-collection action on the policy must reference the `ftp` destination.
+
+### Post-Collection Actions
+
+Notification and export destinations are activated per-policy via **Post-Collection Actions** (set when creating or editing a policy). Each action is a trigger/destination pair:
+
+| Trigger | When it fires |
+|---|---|
+| `new_baseline` | First successful collection for a device |
+| `drift_detected` | Collection differs from the stored baseline |
+| `always` | Every successful collection |
+
+If no post-collection actions are configured on a policy, no notifications are sent regardless of the destination settings.
+
+After changing `.env` syslog settings (bootstrap only), restart the backend:
 
 ```bash
 ./deploy.sh restart backend
-./deploy.sh restart worker
 ```
 
 ---
@@ -396,14 +422,16 @@ The Celery worker defaults to 4 concurrent job slots. To change this, edit `dock
 
 ## 9. Data Retention
 
-Retention settings control how long raw collection output, parsed JSON, job history, and logs are kept. They are stored in the database and configurable via the REST API at `/api/v1/retention/`.
+Retention settings control how long raw collection output, parsed JSON, job history, and logs are kept. They are stored in the database and configurable via **Administration → System Settings → Data Retention** in the UI, or via the REST API at `/api/v1/retention/`. Changes take effect on the next pruning run.
 
 | Setting | Default | Description |
 |---|---|---|
 | Raw data retention | 90 days | Raw text output from collection scripts |
 | Parsed data retention | 365 days | Normalized canonical JSON |
-| Job history retention | 90 days | Job execution records |
-| Log retention | 30 days | System and audit logs |
+| Job history retention | 180 days | Job execution records |
+| Log retention | 90 days | System and audit logs |
+
+Set any value to **0** to retain data indefinitely.
 
 The retention pruning job runs automatically each day at **03:00 UTC**. No manual action is required after setting the values.
 
@@ -519,11 +547,12 @@ python manage.py showmigrations
    - Collection script syntax error — test the script manually against a device via the API or a direct SSH session
    - Parser raised an exception — the full traceback appears in the worker logs
 
-### Push mode devices not registering
+### Agent Pull devices not responding
 
-- Confirm `SATELLITE_URL` in `.env` is reachable from the device
-- Verify the device's push token matches the token configured on the Device record
-- Check backend logs for incoming POST requests to `/api/push/`
+- Confirm the agent is running on the device (`systemctl status isotopeiq-agent` / Task Scheduler / launchctl)
+- Verify Satellite can reach the device on TCP port 9322 (or the configured agent port)
+- Confirm the Agent Secret in **Administration → System Settings** matches the secret embedded in the agent config on the device — if the secret was rotated, agents must be reinstalled
+- Check backend logs for errors on `GET /collect` requests to the device
 
 ### LDAP login fails
 
@@ -602,18 +631,18 @@ backend (Django / DRF)   :8000
 ### Collection Data Flow
 
 ```
-Policy schedule fires
-  → celery_beat enqueues task
-    → celery_worker picks up task
-      → connects to device (SSH / WinRM / HTTPS / Push)
-        → runs collection script on device
-          → raw output returned to worker
-            → parser script runs on worker (stdin → stdout)
-              → canonical JSON validated against schema
-                → stored in Job record
-                  → compared against stored Baseline
-                    → DriftEvent created if diff detected
-                      → syslog alert sent
+Policy schedule fires (or manual Run Now)
+  → celery_beat enqueues a job per device
+    → celery_worker picks up each job
+      → executes Script Job steps in order:
+          Client step → runs on device (SSH / Telnet / WinRM / HTTPS)
+          Server step → runs on Satellite, receives previous step output via stdin
+          Agent Pull  → Satellite calls GET device:9322/collect; no script step needed
+        → each step can pipe output to the next
+          → step with Enable Baseline: canonical JSON saved as device Baseline
+          → step with Enable Drift: output diffed against stored Baseline
+            → DriftEvent created and notification sent if differences found
+              → Post-Collection Actions evaluated (syslog / email / FTP)
 ```
 
 ### Key Directories
@@ -687,20 +716,21 @@ Copy the following files from the Satellite host to the target device using what
 
 The config file (`isotopeiq-agent.conf`) ties the agent to a specific device record and contains the device token and Satellite address. Generate it from the UI before transferring files:
 
-1. Go to **Infrastructure → Devices** and open the device record.
-2. Set **Connection Type** to **Push**.
-3. Save the device — a **Push Token** is generated and displayed.
-4. Click **Download Agent Config** to download `isotopeiq-agent.conf`.
+1. Go to **Configuration → Devices** and open the device record.
+2. Set **Connection Type** to **Agent Pull**.
+3. Save the device.
+4. Retrieve the **Agent Secret** from **Administration → System Settings → Agent Security**.
+5. Use the secret and the Satellite address to build the `isotopeiq-agent.conf` file (see format below).
 
-The file looks like this:
+The config file looks like this:
 
 ```ini
-token=<push-token>
+secret=<agent-secret>
 server=http://<satellite-ip>:8000
 port=9322
 ```
 
-> **Note:** The `server` value must be reachable from the managed device. On an isolated network, use the Satellite's LAN IP rather than `localhost`.
+> **Note:** The `server` value must be reachable from the managed device. On an isolated network, use the Satellite's LAN IP rather than `localhost`. If the Agent Secret is rotated in System Settings, all agent config files must be updated and the agent service restarted.
 
 ### 15.3 Installing on Linux (Offline)
 

@@ -84,22 +84,23 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
         .get(pk=policy_id)
     )
 
-    config_error = None
-    if not policy.script_job:
-        config_error = 'Policy misconfigured: no Script Job assigned.'
-    elif not policy.script_job.steps.exists():
-        config_error = 'Policy misconfigured: Script Job has no steps.'
-    if config_error:
-        job = Job.objects.create(
-            policy=policy,
-            triggered_by=triggered_by,
-            status='failed',
-            started_at=timezone.now(),
-            finished_at=timezone.now(),
-            celery_task_id=self.request.id or '',
-        )
-        logger.error('run_policy: %s (policy_id=%s, job_id=%s)', config_error, policy_id, job.id)
-        return
+    if policy.collection_method == 'script':
+        config_error = None
+        if not policy.script_job:
+            config_error = 'Policy misconfigured: no Script Job assigned.'
+        elif not policy.script_job.steps.exists():
+            config_error = 'Policy misconfigured: Script Job has no steps.'
+        if config_error:
+            job = Job.objects.create(
+                policy=policy,
+                triggered_by=triggered_by,
+                status='failed',
+                started_at=timezone.now(),
+                finished_at=timezone.now(),
+                celery_task_id=self.request.id or '',
+            )
+            logger.error('run_policy: %s (policy_id=%s, job_id=%s)', config_error, policy_id, job.id)
+            return
 
     _eligible = _SUPPORTED_CONNECTION_TYPES + ('agent',)
     all_active = list(policy.devices.filter(is_active=True))
@@ -152,57 +153,118 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
         )
         return
 
-    # ── All devices — SSH / WinRM / Telnet / Agent ────────────────────────────
-    # _execute_steps routes each step to the right transport based on
-    # device.connection_type and script.run_on, so a single loop handles all.
-    from apps.scripts.tasks import _execute_steps
-    sj_steps = list(policy.script_job.steps.select_related('script').order_by('order'))
-
-    for idx, device in enumerate(eligible):
-        job = Job.objects.create(
-            policy=policy,
-            device=device,
-            triggered_by=triggered_by,
-            status='running',
-            started_at=timezone.now(),
-            celery_task_id=self.request.id or '',
-        )
-        result = DeviceJobResult.objects.create(
-            job=job,
-            device=device,
-            status='running',
-            started_at=timezone.now(),
-        )
-
-        any_baseline = any_drift = False
-        try:
-            collector = _get_collector(device) if device.connection_type != 'agent' else None
-            step_outputs, raw_output, parsed_output, any_baseline, any_drift = _execute_steps(
-                sj_steps, device, collector
+    if policy.collection_method == 'agent':
+        # Agent pull: call GET /collect on each eligible agent device.
+        for idx, device in enumerate(eligible):
+            job = Job.objects.create(
+                policy=policy,
+                device=device,
+                triggered_by=triggered_by,
+                status='running',
+                started_at=timezone.now(),
+                celery_task_id=self.request.id or '',
             )
-            result.raw_output = raw_output
-            result.parsed_output = parsed_output
-            result.status = 'success'
-        except Exception as exc:
-            logger.exception('Error processing device "%s" in job %s.', device, job.id)
-            result.status = 'failed'
-            result.error_message = str(exc)
-        finally:
-            result.finished_at = timezone.now()
-            result.save()
-
-        job.status = result.status
-        job.finished_at = timezone.now()
-        job.save()
-
-        if result.status == 'success' and result.parsed_output and (any_baseline or any_drift):
+            result = DeviceJobResult.objects.create(
+                job=job,
+                device=device,
+                status='running',
+                started_at=timezone.now(),
+            )
             try:
-                _apply_baseline_and_drift(device, result, enable_baseline=any_baseline, enable_drift=any_drift)
-            except Exception:
-                logger.exception('Baseline/drift error for device "%s".', device)
+                port = device.agent_port or 9322
+                url = 'http://{host}:{port}/collect'.format(host=device.hostname, port=port)
+                req = Request(url)  # nosec — internal network call to a known agent endpoint
+                try:
+                    from apps.notifications.models import SystemSettings
+                    _secret = SystemSettings.get().agent_secret or ''
+                except Exception:
+                    _secret = ''
+                if _secret:
+                    req.add_header('X-Agent-Secret', _secret)
+                with urlopen(req, timeout=300) as resp:  # noqa: S310
+                    raw = resp.read().decode('utf-8')
+                result.raw_output = raw
+                parsed = json.loads(raw)
+                validate_canonical(parsed)
+                result.parsed_output = parsed
+                result.status = 'success'
+            except (URLError, OSError) as exc:
+                logger.error('Agent pull network error for device "%s" in job %s: %s', device, job.id, exc)
+                result.status = 'failed'
+                result.error_message = str(exc)
+            except Exception as exc:
+                logger.exception('Agent pull failed for device "%s" in job %s.', device, job.id)
+                result.status = 'failed'
+                result.error_message = str(exc)
+            finally:
+                result.finished_at = timezone.now()
+                result.save()
 
-        if policy.delay_between_devices and idx < len(eligible) - 1:
-            time.sleep(policy.delay_between_devices)
+            job.status = result.status
+            job.finished_at = timezone.now()
+            job.save()
+
+            if result.status == 'success' and result.parsed_output:
+                try:
+                    _apply_baseline_and_drift(device, result)
+                except Exception:
+                    logger.exception('Baseline/drift error for device "%s".', device)
+
+            if policy.delay_between_devices and idx < len(eligible) - 1:
+                time.sleep(policy.delay_between_devices)
+
+    else:
+        # ── Script policies — SSH / WinRM / Telnet / Agent-with-scripts ───────
+        # _execute_steps routes each step to the right transport based on
+        # device.connection_type and script.run_on, so a single loop handles all.
+        from apps.scripts.tasks import _execute_steps
+        sj_steps = list(policy.script_job.steps.select_related('script').order_by('order'))
+
+        for idx, device in enumerate(eligible):
+            job = Job.objects.create(
+                policy=policy,
+                device=device,
+                triggered_by=triggered_by,
+                status='running',
+                started_at=timezone.now(),
+                celery_task_id=self.request.id or '',
+            )
+            result = DeviceJobResult.objects.create(
+                job=job,
+                device=device,
+                status='running',
+                started_at=timezone.now(),
+            )
+
+            any_baseline = any_drift = False
+            try:
+                collector = _get_collector(device) if device.connection_type != 'agent' else None
+                step_outputs, raw_output, parsed_output, any_baseline, any_drift = _execute_steps(
+                    sj_steps, device, collector
+                )
+                result.raw_output = raw_output
+                result.parsed_output = parsed_output
+                result.status = 'success'
+            except Exception as exc:
+                logger.exception('Error processing device "%s" in job %s.', device, job.id)
+                result.status = 'failed'
+                result.error_message = str(exc)
+            finally:
+                result.finished_at = timezone.now()
+                result.save()
+
+            job.status = result.status
+            job.finished_at = timezone.now()
+            job.save()
+
+            if result.status == 'success' and result.parsed_output and (any_baseline or any_drift):
+                try:
+                    _apply_baseline_and_drift(device, result, enable_baseline=any_baseline, enable_drift=any_drift)
+                except Exception:
+                    logger.exception('Baseline/drift error for device "%s".', device)
+
+            if policy.delay_between_devices and idx < len(eligible) - 1:
+                time.sleep(policy.delay_between_devices)
 
 
 @shared_task(bind=True)
