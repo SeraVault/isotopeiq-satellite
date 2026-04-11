@@ -10,39 +10,6 @@
       <v-alert v-if="saved" type="success" variant="tonal" density="compact" class="mb-4" style="max-width:660px">Settings saved.</v-alert>
       <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4" style="max-width:660px">{{ error }}</v-alert>
 
-      <!-- Agent Security -->
-      <v-card rounded="lg" elevation="1" class="mb-5" style="max-width:660px">
-        <v-card-title class="text-body-1 font-weight-bold pt-4 px-4">Agent Security</v-card-title>
-        <v-card-text>
-          <div class="text-body-2 text-medium-emphasis mb-3">
-            Agents verify this shared secret on every request via the
-            <code>X-Agent-Secret</code> header. Leave blank to disable
-            secret enforcement. Re-download and reinstall the agent bundle
-            on all devices after changing this value.
-          </div>
-          <v-text-field
-            v-model="form.agent_secret"
-            label="Agent Secret"
-            :placeholder="serverData.agent_secret_set ? '(secret is set — enter new value to change)' : 'Enter shared secret'"
-            type="password"
-            autocomplete="new-password"
-            hint="Shared secret included in the agent bundle and checked on every /collect and /run request"
-            persistent-hint
-            clearable
-          >
-            <template #append-inner>
-              <v-btn
-                size="small"
-                variant="text"
-                density="compact"
-                title="Generate a random secret"
-                @click="generateSecret"
-              >Generate</v-btn>
-            </template>
-          </v-text-field>
-        </v-card-text>
-      </v-card>
-
       <!-- Syslog -->
       <v-card rounded="lg" elevation="1" class="mb-5" style="max-width:660px">
         <v-card-title class="text-body-1 font-weight-bold pt-4 px-4">
@@ -426,6 +393,79 @@
         </v-card-text>
       </v-card>
 
+      <!-- Agent Security -->
+      <v-card rounded="lg" elevation="1" class="mb-5" style="max-width:660px">
+        <v-card-title class="text-body-1 font-weight-bold pt-4 px-4">Agent Security</v-card-title>
+        <v-card-text>
+          <div class="d-flex align-center ga-2 mb-3">
+            <v-chip
+              v-if="serverData.agent_secret_set"
+              color="success"
+              variant="tonal"
+              size="small"
+              prepend-icon="mdi-shield-check"
+            >Secret configured</v-chip>
+            <v-chip
+              v-else
+              color="warning"
+              variant="tonal"
+              size="small"
+              prepend-icon="mdi-shield-off-outline"
+            >No secret — all requests accepted</v-chip>
+          </div>
+          <div class="text-body-2 text-medium-emphasis mb-3">
+            Agents verify this shared secret on every request via the
+            <code>X-Agent-Secret</code> header. Re-download and reinstall
+            the agent bundle on all devices after changing this value.
+          </div>
+          <v-text-field
+            v-model="form.agent_secret"
+            label="Agent Secret"
+            :placeholder="serverData.agent_secret_set ? '(enter new value to rotate secret)' : 'Enter shared secret'"
+            type="password"
+            autocomplete="new-password"
+            hint="Shared secret included in the agent bundle and checked on every /collect and /run request"
+            persistent-hint
+          >
+            <template #append-inner>
+              <v-btn
+                size="small"
+                variant="text"
+                density="compact"
+                title="Generate a random secret"
+                @click="generateSecret"
+              >Generate</v-btn>
+            </template>
+          </v-text-field>
+        </v-card-text>
+      </v-card>
+
+      <!-- Agent secret changed warning dialog -->
+      <v-dialog v-model="secretChangedDialog" max-width="480" persistent>
+        <v-card rounded="lg">
+          <v-card-title class="d-flex align-center ga-2 pt-4 px-4">
+            <v-icon color="warning" size="24">mdi-alert</v-icon>
+            Agent Secret Changed
+          </v-card-title>
+          <v-card-text>
+            <p class="mb-3">
+              The agent secret has been updated. <strong>Every deployed agent must be
+              reinstalled with a new bundle before it will be able to communicate
+              with this satellite.</strong>
+            </p>
+            <p class="text-body-2 text-medium-emphasis">
+              To update an agent: go to the device, download a new agent bundle,
+              and re-run the installer on the target device.
+              Until reinstalled, existing agents will be rejected with HTTP 403.
+            </p>
+          </v-card-text>
+          <v-card-actions class="px-4 pb-4">
+            <v-spacer />
+            <v-btn color="warning" variant="flat" @click="secretChangedDialog = false">I understand</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
       <v-btn color="primary" :loading="saving" @click="save">Save</v-btn>
     </template>
   </div>
@@ -493,6 +533,7 @@ const loading = ref(false)
 const saving  = ref(false)
 const saved   = ref(false)
 const error   = ref('')
+const secretChangedDialog = ref(false)
 
 onMounted(async () => {
   loading.value = true
@@ -521,6 +562,7 @@ async function save() {
   saving.value = true
   saved.value  = false
   error.value  = ''
+  const secretIsChanging = !!form.value.agent_secret
   try {
     const payload = { ...form.value }
     // Don't send blank passwords — server will keep the existing value
@@ -538,6 +580,7 @@ async function save() {
       agent_secret:       '',
     })
     saved.value = true
+    if (secretIsChanging) secretChangedDialog.value = true
     setTimeout(() => { saved.value = false }, 3000)
   } catch (e) {
     error.value = e.response?.data?.detail ?? 'Save failed.'
