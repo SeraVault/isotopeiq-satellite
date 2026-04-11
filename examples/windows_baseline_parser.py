@@ -100,8 +100,8 @@ output["os"]["ntp_synced"] = True if ntp_sync == "true" else (False if ntp_sync 
 # ── network — interfaces ─────────────────────────────────────────────────────
 
 # Collector emits lines: ifAlias|IPAddress|PrefixLength|AddressFamily
-# followed by ---MAC--- sentinel then: ifAlias|MACAddress
-# Fallback lines from ipconfig are also handled.
+# followed by ---MAC--- sentinel then: ifAlias|MACAddress[|InterfaceType[|Status]]
+# Modern collectors (Windows 8+) emit the 4-field form with NDIS InterfaceType.
 
 def _classify_iface_windows(name):
     nl = name.lower()
@@ -114,6 +114,17 @@ def _classify_iface_windows(name):
     if 'wan miniport' in nl or 'kernel debug' in nl:
         return 'skip'
     return 'physical'
+
+# NDIS InterfaceType enum  (NET_IF_TYPE from ifdef.h)
+_WIN_IF_TYPE_MAP = {
+    '6':   'physical',   # Ethernet
+    '71':  'physical',   # IEEE 802.11 WiFi
+    '24':  'loopback',   # Software Loopback
+    '131': 'tunnel',     # Tunnel
+    '53':  'tunnel',     # PPP
+    '23':  'tunnel',     # PPP (alt)
+    '157': 'virtual',    # NDIS virtual (802.3ad LAG)
+}
 
 _WIN_SKIP_TYPES = {'loopback', 'skip'}
 
@@ -151,18 +162,30 @@ for line in lines("network"):
     else:
         if len(parts) < 2:
             continue
-        alias = parts[0].strip()
-        mac   = parts[1].strip()
+        alias      = parts[0].strip()
+        mac        = parts[1].strip()
+        # parts[2] = InterfaceType (numeric), parts[3] = Status — emitted by modern PS collector
+        if_type_s  = parts[2].strip() if len(parts) > 2 else ''
+        status_s   = parts[3].strip().lower() if len(parts) > 3 else ''
+
+        # Resolve interface_type — NDIS enum beats name heuristic
+        iface_type = _WIN_IF_TYPE_MAP.get(if_type_s) or _classify_iface_windows(alias)
+        oper = 'up' if status_s in ('up', 'connected') else ('down' if status_s else 'unknown')
+
         if alias in iface_map:
             iface_map[alias]["mac"] = mac
+            iface_map[alias]["interface_type"] = iface_type
+            if oper != 'unknown':
+                iface_map[alias]["admin_status"] = oper
+                iface_map[alias]["oper_status"]  = oper
         else:
             iface_map[alias] = {
                 "name": alias, "mac": mac, "description": "",
                 "ipv4": [], "ipv6": [],
-                "admin_status": "unknown", "oper_status": "unknown",
+                "admin_status": oper, "oper_status": oper,
                 "speed": "", "duplex": "unknown", "mtu": None,
                 "port_mode": "routed", "access_vlan": None, "trunk_vlans": "",
-                "interface_type": _classify_iface_windows(alias),
+                "interface_type": iface_type,
             }
 
 output["network"]["interfaces"] = [

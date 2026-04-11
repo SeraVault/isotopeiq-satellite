@@ -444,13 +444,17 @@ def collect_network(output):
     if not ip_json:
         ip_json = run('ip -j addr show 2>/dev/null')  # older iproute2 without -d
 
+    # Only treat as JSON path if it actually parses — old iproute2 may output
+    # non-JSON text for unknown flags; fall through to text parser in that case.
+    ifaces_raw = None
     if ip_json:
         try:
             import json as _json
             ifaces_raw = _json.loads(ip_json)
         except Exception:
-            ifaces_raw = []
+            ifaces_raw = None  # trigger text fallback below
 
+    if ifaces_raw is not None:
         for iface in ifaces_raw:
             name      = iface.get('ifname', '')
             flags     = iface.get('flags', [])

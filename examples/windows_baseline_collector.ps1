@@ -236,7 +236,9 @@ try {
     if ($use_modern_net) {
         try {
             $addrs = Get-NetIPAddress -ErrorAction SilentlyContinue
+            # Skip loopback addresses; adapter-level filtering happens in ---MAC--- block
             foreach ($a in $addrs) {
+                if ($a.IPAddress -eq '127.0.0.1' -or $a.IPAddress -eq '::1') { continue }
                 $family = if ($a.AddressFamily -eq "IPv4") { "IPv4" } else { "IPv6" }
                 Write-Output "$($a.InterfaceAlias)|$($a.IPAddress)|$($a.PrefixLength)|$family"
             }
@@ -268,9 +270,12 @@ try {
 
     if ($use_modern_net) {
         try {
+            # Emit Name|MacAddress|InterfaceType|Status so the parser can classify
+            # accurately without relying on name-pattern heuristics.
+            # InterfaceType values: 6=Ethernet, 71=WiFi, 24=Loopback, 131=Tunnel, 53=PPP
             $adapters = Get-NetAdapter -ErrorAction SilentlyContinue
             foreach ($a in $adapters) {
-                Write-Output "$($a.Name)|$($a.MacAddress)"
+                Write-Output "$($a.Name)|$($a.MacAddress)|$($a.InterfaceType)|$($a.Status)"
             }
         } catch {}
     } else {

@@ -419,83 +419,219 @@ def collect_os(output):
 # network
 # ---------------------------------------------------------------------------
 
+# InterfaceType values from NET_IF_TYPE (ifdef.h / MSDN)
+# https://docs.microsoft.com/en-us/windows/win32/api/ifdef/ne-ifdef-net_if_type
+_WIN_IF_TYPE_MAP = {
+    6:   'physical',   # Ethernet (IF_TYPE_ETHERNET_CSMACD)
+    71:  'physical',   # IEEE 802.11 Wi-Fi (IF_TYPE_IEEE80211)
+    24:  'loopback',   # Software Loopback (IF_TYPE_SOFTWARE_LOOPBACK)
+    131: 'tunnel',     # Tunnel (IF_TYPE_TUNNEL)
+    53:  'tunnel',     # PPP (IF_TYPE_PPP)
+    23:  'tunnel',     # PPP (IF_TYPE_PPP alternate)
+    157: 'virtual',    # NDIS virtual (IF_TYPE_IEEE8023AD_LAG)
+}
+
+
+def _collect_network_powershell(iface_map):
+    """
+    Populate iface_map using PowerShell Get-NetAdapter + Get-NetIPAddress.
+    Preferred on Windows 8 / Server 2012 and later (including Windows 11 where
+    wmic.exe is deprecated).  Returns True on success, False if unavailable.
+    """
+    import csv as _csv, io as _io
+
+    # ── adapters ────────────────────────────────────────────────────────────
+    adapter_out = run(
+        'powershell -NoProfile -NonInteractive -Command '
+        '"Get-NetAdapter | Select-Object Name,MacAddress,Status,Speed,'
+        'InterfaceType,InterfaceDescription | ConvertTo-Csv -NoTypeInformation"',
+        timeout=30,
+    )
+    # If the cmdlet is absent, PowerShell echoes an error to stderr and returns
+    # empty stdout, or the string contains "not recognized".
+    if not adapter_out or 'not recognized' in adapter_out.lower():
+        return False
+
+    try:
+        for row in _csv.DictReader(_io.StringIO(adapter_out)):
+            name = row.get('Name', '').strip()
+            if not name:
+                continue
+            mac  = row.get('MacAddress', '').strip().replace('-', ':').lower()
+            desc = row.get('InterfaceDescription', '').strip()
+            status = row.get('Status', '').strip().lower()
+
+            try:
+                if_type_int = int(row.get('InterfaceType', '0') or 0)
+            except ValueError:
+                if_type_int = 0
+
+            # Use NDIS type enum first; fall back to name/description heuristic
+            iface_type = _WIN_IF_TYPE_MAP.get(if_type_int)
+            if iface_type is None:
+                iface_type = _classify_iface_windows(desc or name)
+
+            if iface_type in _WIN_SKIP_TYPES:
+                continue
+
+            speed_raw = row.get('Speed', '').strip()
+            try:
+                speed_bps = int(speed_raw)
+                if speed_bps >= 1_000_000_000:
+                    speed = '{}G'.format(speed_bps // 1_000_000_000)
+                elif speed_bps >= 1_000_000:
+                    speed = '{}M'.format(speed_bps // 1_000_000)
+                else:
+                    speed = speed_raw
+            except (ValueError, TypeError):
+                speed = ''
+
+            oper = 'up' if status in ('up', 'connected') else 'down'
+            iface_map[name] = {
+                'name': name, 'mac': mac, 'description': desc,
+                'ipv4': [], 'ipv6': [],
+                'admin_status': oper, 'oper_status': oper,
+                'speed': speed, 'duplex': 'unknown', 'mtu': None,
+                'port_mode': 'routed', 'access_vlan': None, 'trunk_vlans': '',
+                'interface_type': iface_type,
+            }
+    except Exception:
+        return False
+
+    if not iface_map:
+        return False
+
+    # ── IP addresses ────────────────────────────────────────────────────────
+    ip_out = run(
+        'powershell -NoProfile -NonInteractive -Command '
+        '"Get-NetIPAddress | Select-Object InterfaceAlias,IPAddress,'
+        'PrefixLength,AddressFamily | ConvertTo-Csv -NoTypeInformation"',
+        timeout=30,
+    )
+    try:
+        for row in _csv.DictReader(_io.StringIO(ip_out)):
+            alias = row.get('InterfaceAlias', '').strip()
+            ip    = row.get('IPAddress', '').strip()
+            pfx   = row.get('PrefixLength', '').strip()
+            fam   = row.get('AddressFamily', '').strip()  # '2'=IPv4, '23'=IPv6
+            if not alias or not ip or alias not in iface_map:
+                continue
+            if ip in ('127.0.0.1', '::1'):
+                continue
+            cidr = '{}/{}'.format(ip, pfx) if pfx else ip
+            if fam in ('2', 'IPv4'):
+                iface_map[alias]['ipv4'].append(cidr)
+            elif fam in ('23', 'IPv6'):
+                iface_map[alias]['ipv6'].append(cidr)
+    except Exception:
+        pass
+
+    # ── MTU via Get-NetIPInterface ───────────────────────────────────────────
+    mtu_out = run(
+        'powershell -NoProfile -NonInteractive -Command '
+        '"Get-NetIPInterface | Select-Object InterfaceAlias,NlMtu | '
+        'ConvertTo-Csv -NoTypeInformation"',
+        timeout=30,
+    )
+    try:
+        for row in _csv.DictReader(_io.StringIO(mtu_out)):
+            alias = row.get('InterfaceAlias', '').strip()
+            mtu_s = row.get('NlMtu', '').strip()
+            if alias in iface_map and mtu_s:
+                try:
+                    iface_map[alias]['mtu'] = int(mtu_s)
+                except ValueError:
+                    pass
+    except Exception:
+        pass
+
+    return True
+
+
 def collect_network(output):
     iface_map = {}
 
-    # IP addresses via netsh (works on Windows 7)
-    netsh_out = run('netsh interface ip show address')
-    current   = None
-    for line in netsh_out.splitlines():
-        m = re.match(r'Configuration for interface "(.+)"', line.strip())
-        if m:
-            current = m.group(1).strip()
-            if current not in iface_map:
-                iface_map[current] = _empty_iface(current)
-            continue
-        if current:
-            m4 = re.search(r'IP Address:\s+(\d+\.\d+\.\d+\.\d+)', line)
-            if m4:
-                ip = m4.group(1)
-                if ip not in ('127.0.0.1',):
-                    iface_map[current]['ipv4'].append(ip)
-            m6 = re.search(r'IPv6 Address.*?:\s+([0-9a-fA-F:]+)', line)
-            if m6:
-                ip = m6.group(1).strip()
-                if ip not in ('::1',):
-                    iface_map[current]['ipv6'].append(ip)
+    # ── Try PowerShell-native path first (Windows 8 / Server 2012+) ─────────
+    # Get-NetAdapter provides NDIS InterfaceType enum for accurate classification,
+    # speed in bps, description, and link status without relying on wmic.exe
+    # (deprecated in Windows 11).
+    ps_ok = _collect_network_powershell(iface_map)
 
-    # MAC addresses via getmac
-    getmac_out = run('getmac /v /fo csv /nh')
-    for line in getmac_out.splitlines():
-        line = line.strip().strip('"')
-        parts = [p.strip().strip('"') for p in line.split('","')]
-        if len(parts) >= 3:
-            name = parts[0]
-            mac  = parts[2].replace('-', ':')
-            if name in iface_map:
-                iface_map[name]['mac'] = mac
+    if not ps_ok:
+        # ── Legacy fallback: netsh + getmac + wmic (Windows 7) ──────────────
 
-    # Subnet masks via wmic to build proper CIDRs
-    nic_rows = wmic(
-        'nicconfig where IPEnabled=TRUE',
-        ['Description', 'IPAddress', 'IPSubnet', 'MACAddress']
-    )
-    for row in nic_rows:
-        desc = row.get('Description', '').strip()
-        ips  = row.get('IPAddress', '').strip('{} ')
-        subs = row.get('IPSubnet', '').strip('{} ')
-        mac  = row.get('MACAddress', '').strip()
-        ip_list  = [i.strip() for i in ips.split(';') if i.strip()] if ips else []
-        sub_list = [s.strip() for s in subs.split(';') if s.strip()] if subs else []
+        # IP addresses via netsh
+        netsh_out = run('netsh interface ip show address')
+        current   = None
+        for line in netsh_out.splitlines():
+            m = re.match(r'Configuration for interface "(.+)"', line.strip())
+            if m:
+                current = m.group(1).strip()
+                if current not in iface_map:
+                    iface_map[current] = _empty_iface(current)
+                continue
+            if current:
+                m4 = re.search(r'IP Address:\s+(\d+\.\d+\.\d+\.\d+)', line)
+                if m4:
+                    ip = m4.group(1)
+                    if ip not in ('127.0.0.1',):
+                        iface_map[current]['ipv4'].append(ip)
+                m6 = re.search(r'IPv6 Address.*?:\s+([0-9a-fA-F:]+)', line)
+                if m6:
+                    ip = m6.group(1).strip()
+                    if ip not in ('::1',):
+                        iface_map[current]['ipv6'].append(ip)
 
-        # Find matching iface or create one
-        iface = None
-        for ifname, ifobj in iface_map.items():
-            if mac and ifobj.get('mac', '').replace('-', ':').upper() == mac.upper():
-                iface = ifobj
-                break
-        if iface is None:
-            iface = _empty_iface(desc)
-            iface_map[desc] = iface
+        # MAC addresses via getmac
+        getmac_out = run('getmac /v /fo csv /nh')
+        for line in getmac_out.splitlines():
+            line = line.strip().strip('"')
+            parts = [p.strip().strip('"') for p in line.split('","')]
+            if len(parts) >= 3:
+                name = parts[0]
+                mac  = parts[2].replace('-', ':')
+                if name in iface_map:
+                    iface_map[name]['mac'] = mac
 
-        if mac:
-            iface['mac'] = mac
+        # Subnet masks via wmic / Get-CimInstance to build proper CIDRs
+        nic_rows = wmic(
+            'nicconfig where IPEnabled=TRUE',
+            ['Description', 'IPAddress', 'IPSubnet', 'MACAddress']
+        )
+        for row in nic_rows:
+            desc = row.get('Description', '').strip()
+            ips  = row.get('IPAddress', '').strip('{} ')
+            subs = row.get('IPSubnet', '').strip('{} ')
+            mac  = row.get('MACAddress', '').strip()
+            ip_list  = [i.strip() for i in ips.split(';') if i.strip()] if ips else []
+            sub_list = [s.strip() for s in subs.split(';') if s.strip()] if subs else []
 
-        # Rebuild IPs as CIDRs
-        iface['ipv4'] = []
-        iface['ipv6'] = []
-        for i, ip in enumerate(ip_list):
-            sub = sub_list[i] if i < len(sub_list) else ''
-            if ':' in ip:
-                try:
-                    prefix = int(sub) if sub.isdigit() else 64
-                    iface['ipv6'].append('{}/{}'.format(ip, prefix))
-                except Exception:
-                    iface['ipv6'].append(ip)
-            else:
-                prefix = _mask_to_prefix(sub) if sub else 24
-                if ip not in ('127.0.0.1',):
-                    iface['ipv4'].append('{}/{}'.format(ip, prefix))
+            iface = None
+            for ifname, ifobj in iface_map.items():
+                if mac and ifobj.get('mac', '').replace('-', ':').upper() == mac.upper():
+                    iface = ifobj
+                    break
+            if iface is None:
+                iface = _empty_iface(desc)
+                iface_map[desc] = iface
+
+            if mac:
+                iface['mac'] = mac
+
+            iface['ipv4'] = []
+            iface['ipv6'] = []
+            for i, ip in enumerate(ip_list):
+                sub = sub_list[i] if i < len(sub_list) else ''
+                if ':' in ip:
+                    try:
+                        prefix = int(sub) if sub.isdigit() else 64
+                        iface['ipv6'].append('{}/{}'.format(ip, prefix))
+                    except Exception:
+                        iface['ipv6'].append(ip)
+                else:
+                    prefix = _mask_to_prefix(sub) if sub else 24
+                    if ip not in ('127.0.0.1',):
+                        iface['ipv4'].append('{}/{}'.format(ip, prefix))
 
     output['network']['interfaces'] = [
         i for i in iface_map.values()

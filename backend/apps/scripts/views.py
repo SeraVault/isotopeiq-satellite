@@ -12,7 +12,7 @@ class ScriptViewSet(viewsets.ModelViewSet):
     queryset = Script.objects.all()
     serializer_class = ScriptSerializer
     search_fields = ['name', 'description']
-    filterset_fields = ['script_type', 'run_on', 'target_os', 'is_active']
+    filterset_fields = ['script_type', 'run_on', 'is_active']
     ordering_fields = ['name', 'created_at']
 
     @action(detail=False, methods=['post'], url_path='test')

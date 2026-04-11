@@ -99,14 +99,6 @@
         hide-details style="min-width:120px;max-width:155px"
         :items="form.run_on === 'server' ? [{ title: 'Python', value: 'python' }] : langItems"
         item-title="title" item-value="value" />
-      <v-select v-model="form.target_os" label="Target OS" density="compact" variant="outlined"
-        hide-details style="min-width:120px;max-width:145px"
-        :items="[
-          { title: 'Any',     value: 'any' },
-          { title: 'Linux',   value: 'linux' },
-          { title: 'Windows', value: 'windows' },
-          { title: 'macOS',   value: 'macos' },
-        ]" item-title="title" item-value="value" />
       <v-text-field v-model="form.version" label="Version" density="compact" variant="outlined"
         hide-details style="max-width:85px" />
       <v-text-field v-model="form.description" label="Description" density="compact" variant="outlined"
@@ -238,7 +230,7 @@ const langItems = [
 
 const form = reactive({
   name: '', description: '', script_type: 'collection', run_on: 'client',
-  target_os: 'any', language: 'shell', version: '1.0.0', is_active: true,
+  language: 'shell', version: '1.0.0', is_active: true,
   content: '',
 })
 
@@ -264,7 +256,6 @@ onMounted(async () => {
         description: data.description ?? '',
         script_type: data.script_type,
         run_on:      data.run_on ?? 'client',
-        target_os:   data.target_os,
         language:    data.language || 'shell',
         version:     data.version,
         is_active:   data.is_active,
@@ -293,7 +284,7 @@ async function save() {
   const payload = {
     name: form.name, description: form.description,
     script_type: form.script_type, run_on: form.run_on,
-    target_os: form.target_os, language: form.language,
+    language: form.language,
     version: form.version, is_active: form.is_active,
     content: form.content,
   }

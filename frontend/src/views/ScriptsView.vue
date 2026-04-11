@@ -56,7 +56,6 @@
               <tr><td class="font-weight-medium" style="width:28%">Name</td><td>Unique identifier used when adding steps to a Script Job.</td></tr>
               <tr><td class="font-weight-medium">Type</td><td>Collection, Parser, Deployment, or Utility — documents the script's role.</td></tr>
               <tr><td class="font-weight-medium">Run On</td><td><strong>Client</strong> — executes on the remote device. <strong>Server</strong> — executes on the Satellite. <strong>Both</strong> — runs on the device first, then the server.</td></tr>
-              <tr><td class="font-weight-medium">Target OS</td><td>Linux, Windows, macOS, or Any. Informational — helps you select the right script when building a Script Job.</td></tr>
               <tr><td class="font-weight-medium">Language</td><td>Shell, PowerShell, Python, etc. Satellite uses this to invoke the correct interpreter.</td></tr>
               <tr><td class="font-weight-medium">Content</td><td>The full script body. Substitution placeholders like <code>{{USERNAME}}</code> are replaced at runtime. Click the placeholder reference in the script editor for a full list.</td></tr>
               <tr><td class="font-weight-medium">Version</td><td>Free-form version string. Displayed in job results so you can trace which script version produced a given output.</td></tr>
@@ -160,20 +159,6 @@
                 { title: 'Push to device', value: 'client' },
                 { title: 'Run on Satellite', value: 'server' },
                 { title: 'Both', value: 'both' },
-              ]"
-              @update:model-value="resetAndFetchScripts"
-            />
-          </v-col>
-          <v-col cols="6" sm="3" md="2">
-            <v-select
-              v-model="scrFilters.target_os"
-              label="OS"
-              :items="[
-                { title: 'All OS', value: '' },
-                { title: 'Linux', value: 'linux' },
-                { title: 'Windows', value: 'windows' },
-                { title: 'macOS', value: 'macos' },
-                { title: 'Any', value: 'any' },
               ]"
               @update:model-value="resetAndFetchScripts"
             />
@@ -603,13 +588,12 @@ const scripts = ref([])
 const scrLoading = ref(false)
 const totalScripts = ref(0)
 const scrTableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
-const scrFilters = ref({ search: '', script_type: '', run_on: '', target_os: '', is_active: '' })
+const scrFilters = ref({ search: '', script_type: '', run_on: '', is_active: '' })
 const scrHeaders = [
   { title: 'Name',      key: 'name' },
   { title: 'Type',      key: 'script_type' },
   { title: 'Execution', key: 'run_on',     sortable: false },
   { title: 'Language',  key: 'language',   sortable: false },
-  { title: 'Target OS', key: 'target_os' },
   { title: 'Version',   key: 'version' },
   { title: 'Active',    key: 'is_active',  sortable: false },
   { title: '',          key: 'actions',    sortable: false, align: 'end' },
@@ -620,7 +604,6 @@ function buildScrParams(options = scrTableOptions.value) {
   if (scrFilters.value.search)      params.search      = scrFilters.value.search
   if (scrFilters.value.script_type) params.script_type = scrFilters.value.script_type
   if (scrFilters.value.run_on)      params.run_on      = scrFilters.value.run_on
-  if (scrFilters.value.target_os)   params.target_os   = scrFilters.value.target_os
   if (scrFilters.value.is_active)   params.is_active   = scrFilters.value.is_active
   if (options.sortBy?.length) {
     const { key, order } = options.sortBy[0]

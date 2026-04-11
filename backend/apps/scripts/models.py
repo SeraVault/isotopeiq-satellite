@@ -8,12 +8,6 @@ class Script(models.Model):
         ('deployment', 'Deployment'),
         ('utility', 'Utility'),
     ]
-    TARGET_OS_CHOICES = [
-        ('linux', 'Linux'),
-        ('windows', 'Windows'),
-        ('macos', 'macOS'),
-        ('any', 'Any'),
-    ]
     RUN_ON_CHOICES = [
         ('client', 'Client (remote device)'),
         ('server', 'Server (satellite)'),
@@ -24,7 +18,6 @@ class Script(models.Model):
     description = models.TextField(blank=True)
     script_type = models.CharField(max_length=20, choices=SCRIPT_TYPE_CHOICES)
     run_on = models.CharField(max_length=10, choices=RUN_ON_CHOICES, default='client')
-    target_os = models.CharField(max_length=20, choices=TARGET_OS_CHOICES, default='any')
     language = models.CharField(max_length=30, default='shell')
     content = models.TextField()
     version = models.CharField(max_length=50, default='1.0.0')
