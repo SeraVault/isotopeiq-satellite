@@ -107,10 +107,10 @@
     </v-sheet>
 
     <!-- ── Workspace (fills remaining height) ────────────────────────────── -->
-    <div class="d-flex flex-row flex-grow-1" style="min-height:0;overflow:hidden">
+    <div class="d-flex flex-column flex-grow-1" style="min-height:0;overflow:hidden">
 
-      <!-- Code editor pane -->
-      <div class="d-flex flex-column" :style="{ width: editorWidthPct + '%' }" style="min-width:0;overflow:hidden;padding:6px">
+      <!-- Code editor pane — explicit px height so resize works regardless of ancestor height -->
+      <div class="d-flex flex-column flex-shrink-0" :style="{ height: editorHeightPx + 'px' }" style="min-height:80px;overflow:hidden;padding:6px">
         <CodeEditor v-model="form.content" :language="form.language" style="height:100%" />
       </div>
 
@@ -118,10 +118,10 @@
       <div class="sev-resizer" @mousedown="startResize" />
 
       <!-- Output / test pane -->
-      <div class="d-flex flex-column flex-grow-1" style="min-width:0;overflow:hidden">
+      <div class="d-flex flex-column flex-grow-1" style="min-height:80px;overflow:hidden">
 
-        <!-- Run bar -->
-        <v-sheet color="surface-variant" class="d-flex flex-wrap align-center ga-2 pa-2 flex-shrink-0 border-b">
+        <!-- Controls row: device picker + run button + result actions (never grows in height) -->
+        <v-sheet color="surface-variant" class="d-flex align-center flex-wrap ga-2 pa-2 flex-shrink-0 border-b">
           <!-- Device picker — required for push-to-device scripts, optional for satellite scripts that connect to a device -->
           <v-autocomplete
             v-model="test.deviceId"
@@ -134,21 +134,8 @@
             hide-details
             clearable
             :loading="test.devicesLoading"
-            style="min-width:200px;max-width:260px"
+            style="min-width:180px;max-width:240px;flex-shrink:0"
             no-filter
-          />
-          <!-- Input — for server-side scripts that consume previous step output -->
-          <v-textarea
-            v-if="form.run_on === 'server'"
-            v-model="test.stdin"
-            label="Input (previous step output — leave blank if not needed)"
-            density="compact"
-            variant="outlined"
-            hide-details
-            rows="1"
-            auto-grow
-            clearable
-            style="min-width:260px;flex:1"
           />
           <v-btn
             color="primary"
@@ -179,7 +166,22 @@
           >Use as input</v-btn>
         </v-sheet>
 
-        <!-- Output body -->
+        <!-- Stdin row: separate from controls so pasting large output never hides the run button -->
+        <div v-if="form.run_on === 'server'" class="flex-shrink-0 border-b" style="overflow:hidden">
+          <v-textarea
+            v-model="test.stdin"
+            label="Input (previous step output — leave blank if not needed)"
+            density="compact"
+            variant="outlined"
+            hide-details
+            rows="4"
+            clearable
+            class="pa-2"
+            style="font-family:monospace;font-size:.82rem"
+          />
+        </div>
+
+        <!-- Output body — grows to fill remaining space and scrolls independently -->
         <div class="flex-grow-1 overflow-y-auto pa-3" style="min-height:0">
           <div v-if="test.result === null && !test.error && !test.running" class="text-center text-medium-emphasis text-body-2 pt-8">
             Run the script to see output here.
@@ -340,19 +342,19 @@ async function copyOutput() {
 }
 
 // Resizer
-const editorWidthPct = ref(58)
-let resizing = false, resizeStartX = 0, resizeStartPct = 58
+const editorHeightPx = ref(380)
+let resizing = false, resizeStartY = 0, resizeStartPx = 380
 
 function startResize(e) {
   resizing = true
-  resizeStartX = e.clientX
-  resizeStartPct = editorWidthPct.value
+  resizeStartY = e.clientY
+  resizeStartPx = editorHeightPx.value
   document.addEventListener('mousemove', onResizeMove)
   document.addEventListener('mouseup', stopResize)
 }
 function onResizeMove(e) {
   if (!resizing) return
-  editorWidthPct.value = Math.min(80, Math.max(20, resizeStartPct + ((e.clientX - resizeStartX) / window.innerWidth) * 100))
+  editorHeightPx.value = Math.min(window.innerHeight - 220, Math.max(80, resizeStartPx + (e.clientY - resizeStartY)))
 }
 function stopResize() {
   resizing = false
@@ -367,8 +369,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .sev-resizer {
-  width: 5px;
+  height: 5px;
   flex-shrink: 0;
-  cursor: col-resize;
+  cursor: row-resize;
 }
 </style>
