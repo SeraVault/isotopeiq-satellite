@@ -117,7 +117,7 @@ def _execute_steps(steps, device, collector):
             if device.connection_type == 'agent':
                 step_out = _run_agent_script(device, rendered, step.script.language)
             else:
-                step_out = collector.run(rendered)
+                step_out = collector.run(rendered, step.script.language)
             if not first_client_output:
                 first_client_output = step_out
         else:  # server

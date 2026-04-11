@@ -1906,7 +1906,14 @@ def _run_script(script_content, language):
         os.close(fd)
         os.chmod(path, 0o700)
         if language == 'python':
-            cmd = [sys.executable, path]
+            # When running as a compiled PyInstaller binary sys.executable
+            # points to the agent binary itself, not a Python interpreter.
+            if getattr(sys, 'frozen', False):
+                import shutil
+                _py = shutil.which('python3') or shutil.which('python') or 'python3'
+            else:
+                _py = sys.executable
+            cmd = [_py, path]
             use_shell = False
         else:
             cmd = ['/bin/bash', path]

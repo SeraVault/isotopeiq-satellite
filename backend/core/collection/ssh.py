@@ -59,8 +59,13 @@ class SSHCollector:
     def __init__(self, device):
         self._device = device
 
-    def run(self, script_content: str) -> str:
-        """Connect via SSH, execute script_content, and return stdout."""
+    def run(self, script_content: str, language: str = 'shell') -> str:
+        """Connect via SSH, execute script_content, and return stdout.
+
+        language — 'shell' (default) or 'python'.  Shell scripts are piped
+                   directly to exec_command.  Python scripts are uploaded to a
+                   temp file via SFTP and executed with python3.
+        """
         username, password, private_key_str = _resolve_credentials(self._device)
 
         client = paramiko.SSHClient()
@@ -105,6 +110,22 @@ class SSHCollector:
                     sftp.close()
                 _, stdout, stderr = client.exec_command(
                     f'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{tmp}" ; Remove-Item -Force "{tmp}" -ErrorAction SilentlyContinue',
+                    timeout=TIMEOUT,
+                )
+            elif language == 'python':
+                # Upload to a temp file and execute with python3 so Python
+                # syntax is not interpreted by the remote shell.
+                import uuid as _uuid
+                tmp = f'/tmp/isotopeiq_{_uuid.uuid4().hex}.py'
+                sftp = client.open_sftp()
+                try:
+                    with sftp.open(tmp, 'w') as f:
+                        f.write(script_content)
+                    sftp.chmod(tmp, 0o700)
+                finally:
+                    sftp.close()
+                _, stdout, stderr = client.exec_command(
+                    f'python3 {tmp} ; _rc=$? ; rm -f {tmp} ; exit $_rc',
                     timeout=TIMEOUT,
                 )
             else:

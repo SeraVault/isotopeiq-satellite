@@ -1265,7 +1265,17 @@ def _run_script(script_content, language):
         os.write(fd, script_content.encode('utf-8'))
         os.close(fd)
         os.chmod(path, 0o700)
-        cmd = [sys.executable, path] if language == 'python' else ['/bin/bash', path]
+        if language == 'python':
+            # When running as a compiled PyInstaller binary sys.executable
+            # points to the agent binary itself, not a Python interpreter.
+            if getattr(sys, 'frozen', False):
+                import shutil
+                _py = shutil.which('python3') or shutil.which('python') or 'python3'
+            else:
+                _py = sys.executable
+            cmd = [_py, path]
+        else:
+            cmd = ['/bin/bash', path]
         with open(os.devnull, 'rb') as devnull:
             proc = subprocess.Popen(cmd, stdin=devnull, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = proc.communicate()

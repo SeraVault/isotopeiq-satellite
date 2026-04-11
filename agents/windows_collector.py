@@ -1361,7 +1361,14 @@ def _run_script(script_content, language):
     import tempfile
     lang = language.lower()
     if lang == 'python':
-        ext, cmd_fn = '.py', lambda p: [sys.executable, p]
+        # When running as a compiled PyInstaller binary sys.executable
+        # points to the agent binary itself, not a Python interpreter.
+        if getattr(sys, 'frozen', False):
+            import shutil
+            _py = shutil.which('python3') or shutil.which('python') or 'python3'
+        else:
+            _py = sys.executable
+        ext, cmd_fn = '.py', lambda p, _e=_py: [_e, p]
     elif lang in ('powershell', 'ps1'):
         ext = '.ps1'
         cmd_fn = lambda p: [  # noqa: E731
