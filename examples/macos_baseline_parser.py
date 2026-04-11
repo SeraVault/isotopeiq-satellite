@@ -95,6 +95,26 @@ output["os"]["ntp_synced"] = True if ntp_sync == "yes" else (False if ntp_sync =
 
 iface_raw = sections.get("network_interfaces", "")
 
+_MACOS_SKIP_TYPES = {'loopback', 'skip'}
+
+
+def _classify_iface_macos(name, flag_list):
+    """Derive canonical interface_type from macOS ifconfig name and flags."""
+    if 'LOOPBACK' in flag_list or name.startswith('lo'):
+        return 'loopback'
+    if name.startswith(('utun', 'gif', 'stf', 'ipsec', 'ppp')):
+        return 'tunnel'
+    if name.startswith('bridge'):
+        return 'bridge'
+    if name.startswith('vlan'):
+        return 'vlan'
+    if name.startswith(('awdl', 'llw', 'anpi')):
+        return 'skip'  # Apple ephemeral peer-to-peer / proximity interfaces
+    if name.startswith('en'):
+        return 'physical'
+    return 'other'
+
+
 def _parse_ifconfig(raw):
     """Parse BSD ifconfig -a output into canonical interface dicts."""
     ifaces = []
@@ -106,24 +126,29 @@ def _parse_ifconfig(raw):
         if m:
             if current_iface is not None:
                 ifaces.append(current_iface)
+                current_iface = None
             name = m.group(1)
             flags_str = m.group(2)
             mtu = int(m.group(3))
             # flags field is hex<FLAGNAMES>
             flag_names = re.search(r'<([^>]*)>', flags_str)
             flag_list = flag_names.group(1).split(",") if flag_names else []
+            iface_type = _classify_iface_macos(name, flag_list)
+            if iface_type in _MACOS_SKIP_TYPES:
+                continue  # current_iface stays None — skip until next iface header
             admin_status = "up"   if "UP"      in flag_list else "down"
             oper_status  = "up"   if "RUNNING" in flag_list else "down"
             current_iface = {
-                "name":         name,
-                "mac":          "",
-                "ipv4":         [],
-                "ipv6":         [],
-                "admin_status": admin_status,
-                "oper_status":  oper_status,
-                "mtu":          mtu,
-                "port_mode":    "routed",
-                "duplex":       "unknown",
+                "name":           name,
+                "mac":            "",
+                "ipv4":           [],
+                "ipv6":           [],
+                "admin_status":   admin_status,
+                "oper_status":    oper_status,
+                "mtu":            mtu,
+                "port_mode":      "routed",
+                "duplex":         "unknown",
+                "interface_type": iface_type,
             }
             continue
 

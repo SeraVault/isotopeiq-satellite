@@ -62,6 +62,8 @@ _NETWORK_INTERFACE_SCHEMA = {
         'access_vlan':  {'type': ['integer', 'null']},
         # Allowed VLAN range string for trunk ports, e.g. "1-100,200,300-400"
         'trunk_vlans':  {'type': 'string'},
+        # physical | loopback | bridge | veth | bond | vlan | tun | tunnel | dummy | macvlan | other
+        'interface_type': {'type': 'string'},
     },
     'additionalProperties': False,
 }

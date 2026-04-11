@@ -103,6 +103,20 @@ output["os"]["ntp_synced"] = True if ntp_sync == "true" else (False if ntp_sync 
 # followed by ---MAC--- sentinel then: ifAlias|MACAddress
 # Fallback lines from ipconfig are also handled.
 
+def _classify_iface_windows(name):
+    nl = name.lower()
+    if 'loopback' in nl:
+        return 'loopback'
+    if 'teredo' in nl or 'isatap' in nl or '6to4' in nl:
+        return 'tunnel'
+    if any(v in nl for v in ('vmware', 'virtualbox', 'hyper-v', 'virtual adapter')):
+        return 'virtual'
+    if 'wan miniport' in nl or 'kernel debug' in nl:
+        return 'skip'
+    return 'physical'
+
+_WIN_SKIP_TYPES = {'loopback', 'skip'}
+
 iface_map = {}
 mac_section = False
 
@@ -127,6 +141,7 @@ for line in lines("network"):
                 "admin_status": "unknown", "oper_status": "unknown",
                 "speed": "", "duplex": "unknown", "mtu": None,
                 "port_mode": "routed", "access_vlan": None, "trunk_vlans": "",
+                "interface_type": _classify_iface_windows(alias),
             }
         cidr = f"{ip_addr}/{prefix}" if prefix else ip_addr
         if family in ("IPV4", "INET", "2"):  # AddressFamily 2 = IPv4 in .NET
@@ -147,9 +162,13 @@ for line in lines("network"):
                 "admin_status": "unknown", "oper_status": "unknown",
                 "speed": "", "duplex": "unknown", "mtu": None,
                 "port_mode": "routed", "access_vlan": None, "trunk_vlans": "",
+                "interface_type": _classify_iface_windows(alias),
             }
 
-output["network"]["interfaces"] = list(iface_map.values())
+output["network"]["interfaces"] = [
+    i for i in iface_map.values()
+    if i.get("interface_type") not in _WIN_SKIP_TYPES
+]
 
 
 # ── network — routes ─────────────────────────────────────────────────────────

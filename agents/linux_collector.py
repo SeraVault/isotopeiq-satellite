@@ -404,13 +404,14 @@ def collect_os(output):
 # network
 # ---------------------------------------------------------------------------
 
-def _empty_iface(name):
+def _empty_iface(name, interface_type='other'):
     return {
         'name': name, 'mac': '', 'description': '',
         'ipv4': [], 'ipv6': [],
         'admin_status': 'unknown', 'oper_status': 'unknown',
         'speed': '', 'duplex': 'unknown', 'mtu': None,
         'port_mode': 'routed', 'access_vlan': None, 'trunk_vlans': '',
+        'interface_type': interface_type,
     }
 
 
@@ -421,89 +422,177 @@ def _prefix_from_mask(mask):
         return 24
 
 
+# info_kind values from `ip -d -j` → canonical interface_type
+_LINUX_KIND_MAP = {
+    'bridge': 'bridge', 'veth': 'veth', 'tun': 'tun', 'tap': 'tun',
+    'bond': 'bond', 'vlan': 'vlan', 'dummy': 'dummy',
+    'macvlan': 'macvlan', 'macvtap': 'macvlan', 'ipvlan': 'macvlan',
+    'ipip': 'tunnel', 'sit': 'tunnel', 'gre': 'tunnel', 'gretap': 'tunnel',
+    'ip6tnl': 'tunnel', 'ip6gre': 'tunnel', 'ip6gretap': 'tunnel',
+    'vti': 'tunnel', 'vti6': 'tunnel', 'vxlan': 'tunnel',
+    'geneve': 'tunnel', 'wireguard': 'tunnel',
+}
+# interface_type values never worth tracking as configuration
+_LINUX_SKIP_TYPES = {'loopback', 'veth', 'dummy'}
+
+
 def collect_network(output):
     iface_map = {}
 
-    # ── ip addr (iproute2, available since ~2.1.x kernel era) ────────────────
-    ip_out = run('ip addr show 2>/dev/null')
-    if ip_out:
-        current = None
-        for line in ip_out.splitlines():
-            # New interface block: "2: eth0: <FLAGS> mtu ..."
-            m = re.match(r'^\d+:\s+(\S+?)[@:]?\s', line)
-            if m:
-                current = m.group(1).rstrip(':')
-                if current not in iface_map:
-                    iface_map[current] = _empty_iface(current)
-                # State from flags
-                if 'UP' in line:
-                    iface_map[current]['oper_status'] = 'up'
-                    iface_map[current]['admin_status'] = 'up'
-                elif 'DOWN' in line:
-                    iface_map[current]['oper_status']  = 'down'
-                    iface_map[current]['admin_status'] = 'down'
-                # MTU
-                mtu_m = re.search(r'mtu\s+(\d+)', line)
-                if mtu_m:
-                    iface_map[current]['mtu'] = int(mtu_m.group(1))
+    # ── ip -d -j addr (preferred: gives linkinfo.info_kind for type detection) ─
+    ip_json = run('ip -d -j addr show 2>/dev/null')
+    if not ip_json:
+        ip_json = run('ip -j addr show 2>/dev/null')  # older iproute2 without -d
+
+    if ip_json:
+        try:
+            import json as _json
+            ifaces_raw = _json.loads(ip_json)
+        except Exception:
+            ifaces_raw = []
+
+        for iface in ifaces_raw:
+            name      = iface.get('ifname', '')
+            flags     = iface.get('flags', [])
+            link_type = iface.get('link_type', '')
+            info_kind = iface.get('linkinfo', {}).get('info_kind', '')
+
+            # Determine canonical interface_type
+            if link_type == 'loopback':
+                iface_type = 'loopback'
+            elif info_kind in _LINUX_KIND_MAP:
+                iface_type = _LINUX_KIND_MAP[info_kind]
+            elif link_type == 'ether':
+                iface_type = 'physical'
+            else:
+                iface_type = 'other'
+
+            if iface_type in _LINUX_SKIP_TYPES:
                 continue
-            if not current:
-                continue
-            # MAC
-            mac_m = re.match(r'\s+link/\S+\s+([0-9a-f:]{17})', line)
-            if mac_m:
-                iface_map[current]['mac'] = mac_m.group(1)
-                continue
-            # IPv4 — "inet 192.168.1.1/24 ..."
-            v4_m = re.match(r'\s+inet\s+(\d+\.\d+\.\d+\.\d+(?:/\d+)?)', line)
-            if v4_m:
-                addr = v4_m.group(1)
-                if not addr.startswith('127.'):
-                    iface_map[current]['ipv4'].append(addr)
-                continue
-            # IPv6 — "inet6 fe80::1/64 ..."
-            v6_m = re.match(r'\s+inet6\s+([0-9a-f:]+(?:/\d+)?)', line)
-            if v6_m:
-                addr = v6_m.group(1)
-                if not addr.startswith('::1'):
-                    iface_map[current]['ipv6'].append(addr)
+
+            oper  = 'up' if iface.get('operstate', '').lower() == 'up' else 'down'
+            admin = 'up' if 'UP' in flags else 'down'
+            mac   = iface.get('address', '')
+            mtu   = iface.get('mtu')
+            ipv4, ipv6 = [], []
+            for addr in iface.get('addr_info', []):
+                cidr = '{}/{}'.format(addr['local'], addr['prefixlen'])
+                if addr.get('family') == 'inet':
+                    ipv4.append(cidr)
+                elif addr.get('family') == 'inet6':
+                    ipv6.append(cidr)
+
+            iface_map[name] = {
+                'name': name, 'mac': mac, 'description': '',
+                'ipv4': ipv4, 'ipv6': ipv6,
+                'admin_status': admin, 'oper_status': oper,
+                'speed': '', 'duplex': 'unknown', 'mtu': mtu,
+                'port_mode': 'routed', 'access_vlan': None, 'trunk_vlans': '',
+                'interface_type': iface_type,
+            }
 
     else:
-        # ── ifconfig fallback (BSD-style or net-tools on very old distros) ────
-        current = None
-        for line in run('ifconfig -a 2>/dev/null').splitlines():
-            # Interface name — may appear as "eth0:" or "eth0 Link ..."
-            m = re.match(r'^(\S+?)(?::\s|\s+Link|\s+flags)', line)
-            if m and not line.startswith(' '):
-                current = m.group(1).rstrip(':')
-                if current not in iface_map:
-                    iface_map[current] = _empty_iface(current)
-                continue
-            if not current:
-                continue
-            # MAC
-            mac_m = re.search(r'(?:HWaddr|ether)\s+([0-9a-fA-F:]{17})', line)
-            if mac_m:
-                iface_map[current]['mac'] = mac_m.group(1).lower()
-            # IPv4
-            v4_m = re.search(r'inet\s+(?:addr:)?(\d+\.\d+\.\d+\.\d+)', line)
-            mask_m = re.search(r'[Mm]ask:?(\d+\.\d+\.\d+\.\d+)', line)
-            if v4_m:
-                ip = v4_m.group(1)
-                if not ip.startswith('127.'):
-                    if mask_m:
-                        prefix = _prefix_from_mask(mask_m.group(1))
-                        iface_map[current]['ipv4'].append('{0}/{1}'.format(ip, prefix))
-                    else:
-                        iface_map[current]['ipv4'].append(ip)
-            # IPv6
-            v6_m = re.search(r'inet6\s+(?:addr:)?\s*([0-9a-f:]+(?:/\d+)?)', line)
-            if v6_m:
-                addr = v6_m.group(1).strip()
-                if not addr.startswith('::1'):
-                    iface_map[current]['ipv6'].append(addr)
+        # ── ip addr show text fallback ─────────────────────────────────────────
+        ip_text = run('ip addr show 2>/dev/null')
+        if ip_text:
+            current = None
+            for line in ip_text.splitlines():
+                m = re.match(r'^\d+:\s+(\S+?)[@:]?\s', line)
+                if m:
+                    current = m.group(1).rstrip(':')
+                    # Classify by name pattern when linkinfo is unavailable
+                    iface_type = _classify_linux_iface_by_name(current, line)
+                    if iface_type in _LINUX_SKIP_TYPES:
+                        current = None
+                        continue
+                    if current not in iface_map:
+                        iface_map[current] = _empty_iface(current, iface_type)
+                    if 'UP' in line:
+                        iface_map[current]['oper_status'] = 'up'
+                        iface_map[current]['admin_status'] = 'up'
+                    elif 'DOWN' in line:
+                        iface_map[current]['oper_status']  = 'down'
+                        iface_map[current]['admin_status'] = 'down'
+                    mtu_m = re.search(r'mtu\s+(\d+)', line)
+                    if mtu_m:
+                        iface_map[current]['mtu'] = int(mtu_m.group(1))
+                    continue
+                if not current:
+                    continue
+                mac_m = re.match(r'\s+link/\S+\s+([0-9a-f:]{17})', line)
+                if mac_m:
+                    iface_map[current]['mac'] = mac_m.group(1)
+                    continue
+                v4_m = re.match(r'\s+inet\s+(\d+\.\d+\.\d+\.\d+(?:/\d+)?)', line)
+                if v4_m:
+                    addr = v4_m.group(1)
+                    if not addr.startswith('127.'):
+                        iface_map[current]['ipv4'].append(addr)
+                    continue
+                v6_m = re.match(r'\s+inet6\s+([0-9a-f:]+(?:/\d+)?)', line)
+                if v6_m:
+                    addr = v6_m.group(1)
+                    if not addr.startswith('::1'):
+                        iface_map[current]['ipv6'].append(addr)
+        else:
+            # ── ifconfig fallback (very old distros / BSD net-tools) ─────────
+            current = None
+            for line in run('ifconfig -a 2>/dev/null').splitlines():
+                m = re.match(r'^(\S+?)(?::\s|\s+Link|\s+flags)', line)
+                if m and not line.startswith(' '):
+                    current = m.group(1).rstrip(':')
+                    iface_type = _classify_linux_iface_by_name(current, line)
+                    if iface_type in _LINUX_SKIP_TYPES:
+                        current = None
+                        continue
+                    if current not in iface_map:
+                        iface_map[current] = _empty_iface(current, iface_type)
+                    continue
+                if not current:
+                    continue
+                mac_m = re.search(r'(?:HWaddr|ether)\s+([0-9a-fA-F:]{17})', line)
+                if mac_m:
+                    iface_map[current]['mac'] = mac_m.group(1).lower()
+                v4_m = re.search(r'inet\s+(?:addr:)?(\d+\.\d+\.\d+\.\d+)', line)
+                mask_m = re.search(r'[Mm]ask:?(\d+\.\d+\.\d+\.\d+)', line)
+                if v4_m:
+                    ip = v4_m.group(1)
+                    if not ip.startswith('127.'):
+                        if mask_m:
+                            prefix = _prefix_from_mask(mask_m.group(1))
+                            iface_map[current]['ipv4'].append('{0}/{1}'.format(ip, prefix))
+                        else:
+                            iface_map[current]['ipv4'].append(ip)
+                v6_m = re.search(r'inet6\s+(?:addr:)?\s*([0-9a-f:]+(?:/\d+)?)', line)
+                if v6_m:
+                    addr = v6_m.group(1).strip()
+                    if not addr.startswith('::1'):
+                        iface_map[current]['ipv6'].append(addr)
 
     output['network']['interfaces'] = list(iface_map.values())
+
+
+def _classify_linux_iface_by_name(name, flags_line=''):
+    """Best-effort classification from interface name when ip -d JSON is unavailable."""
+    if 'LOOPBACK' in flags_line or name.startswith('lo'):
+        return 'loopback'
+    if name.startswith('veth'):
+        return 'veth'
+    if name.startswith('dummy'):
+        return 'dummy'
+    if re.match(r'^(virbr|lxcbr|docker|br-|br\d)', name):
+        return 'bridge'
+    if name.startswith('br'):
+        return 'bridge'
+    if name.startswith('bond'):
+        return 'bond'
+    if re.match(r'^(tun|tap|gre|gretap|ip6tnl|vxlan|geneve|wg\d)', name):
+        return 'tunnel'
+    if re.match(r'^(vlan|\.)', name) or '.' in name:
+        return 'vlan'
+    if name.startswith('macvlan') or name.startswith('macvtap'):
+        return 'macvlan'
+    return 'physical'
 
     # ── DNS servers from /etc/resolv.conf ─────────────────────────────────────
     dns = []

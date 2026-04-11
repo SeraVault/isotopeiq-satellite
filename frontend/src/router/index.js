@@ -26,7 +26,7 @@ const routes = [
   { path: '/policies', component: PoliciesView },
   { path: '/jobs', component: JobMonitorView },
   { path: '/drift', component: DriftView },
-  { path: '/volatile-rules', component: VolatileRulesView },
+  { path: '/drift-exclusions', component: VolatileRulesView },
   { path: '/baselines', component: BaselinesView },
   { path: '/audit', component: AuditLogView },
   { path: '/system-settings', component: SystemSettingsView },

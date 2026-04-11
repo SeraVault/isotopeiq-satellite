@@ -18,9 +18,21 @@
         <v-col v-if="!changedOnly || sec.hasChanges" cols="12" sm="6">
           <v-card variant="tonal" :color="sec.hasChanges ? 'warning' : 'secondary'" rounded="lg">
             <v-card-text class="pa-3">
-              <div class="text-caption font-weight-bold text-uppercase mb-2"
-                   :class="sec.hasChanges ? 'text-warning' : 'text-primary'"
-                   style="letter-spacing:.08em">{{ sec.title }}</div>
+              <div class="d-flex align-center mb-2">
+                <div class="text-caption font-weight-bold text-uppercase"
+                     :class="sec.hasChanges ? 'text-warning' : 'text-primary'"
+                     style="letter-spacing:.08em">{{ sec.title }}</div>
+                <v-btn
+                  v-if="allowIgnore"
+                  icon="mdi-eye-off-outline"
+                  size="x-small"
+                  variant="text"
+                  color="medium-emphasis"
+                  class="ml-1 ignore-btn"
+                  :title="`Exclude entire '${sec.title}' section from drift`"
+                  @click="emitExcludeSection(sec.key)"
+                />
+              </div>
               <v-table density="compact">
                 <thead>
                   <tr>
@@ -41,7 +53,7 @@
                         variant="text"
                         color="medium-emphasis"
                         class="ml-1 ignore-btn"
-                        :title="`Ignore '${row.key}' in volatile rules`"
+                        :title="`Add '${row.key}' as a drift exclusion`"
                         @click="emitIgnoreKv(sec.key, row.key)"
                       />
                     </td>
@@ -67,6 +79,16 @@
               <v-chip v-if="sec.removed" color="error"   size="x-small" label>-{{ sec.removed }}</v-chip>
               <v-chip v-if="sec.changed" color="warning" size="x-small" label>~{{ sec.changed }}</v-chip>
               <v-chip v-if="!sec.added && !sec.removed && !sec.changed" color="default" size="x-small" label>{{ sec.rows.length }}</v-chip>
+              <v-btn
+                v-if="allowIgnore && !sec.key.includes('.')"
+                icon="mdi-eye-off-outline"
+                size="x-small"
+                variant="text"
+                color="medium-emphasis"
+                class="ignore-btn"
+                :title="`Exclude entire '${sec.title}' section from drift`"
+                @click.stop="emitExcludeSection(sec.key)"
+              />
             </div>
           </v-expansion-panel-title>
           <v-expansion-panel-text>
@@ -94,7 +116,7 @@
                           variant="text"
                           color="medium-emphasis"
                           class="ml-1 ignore-btn"
-                          :title="`Ignore '${col}' field in volatile rules`"
+                          :title="`Add '${col}' field as a drift exclusion`"
                           @click="emitIgnoreArrayField(sec.key, col)"
                         />
                       </template>
@@ -109,13 +131,13 @@
                       <div class="d-flex align-center ga-1">
                         <v-chip v-if="row._status !== 'unchanged'" size="x-small" :color="statusColor(row._status)" label>{{ row._status }}</v-chip>
                         <v-btn
-                          v-if="allowIgnore && sec.key === 'sysctl' && row._status !== 'unchanged'"
+                          v-if="allowIgnore && ITEM_KEY_FIELD[sec.key] && row._status !== 'unchanged'"
                           icon="mdi-eye-off-outline"
                           size="x-small"
                           variant="text"
                           color="medium-emphasis"
-                          :title="`Ignore key '${row.key}'`"
-                          @click="emitIgnoreSysctlKey(row.key)"
+                          :title="`Exclude this item from drift`"
+                          @click="emitExcludeItem(sec.key, row)"
                         />
                       </div>
                     </td>
@@ -189,8 +211,44 @@ function emitIgnoreArrayField(secKey, col) {
   }
 }
 
-function emitIgnoreSysctlKey(keyValue) {
-  emit('ignore-field', { section: 'sysctl', spec_type: 'exclude_key', field_name: keyValue, aux: 'key' })
+// Map from section key to the identity field used for exclude_key rules.
+// Sections with compound identity keys (listening_services, firewall_rules,
+// ssh_keys) are excluded — use item_field exclusions for those instead.
+const ITEM_KEY_FIELD = {
+  users:             'username',
+  groups:            'group_name',
+  packages:          'name',
+  services:          'name',
+  filesystem:        'mount',
+  scheduled_tasks:   'name',
+  startup_items:     'name',
+  kernel_modules:    'name',
+  pci_devices:       'slot',
+  storage_devices:   'name',
+  usb_devices:       'bus_id',
+  sysctl:            'key',
+  certificates:      'thumbprint',
+  vpn_tunnels:       'name',
+  shares:            'name',
+  logging_targets:   'destination',
+  vlans:             'id',
+  routing_protocols: 'protocol',
+  acls:              'name',
+}
+
+function emitExcludeSection(secKey) {
+  // network_kv is displayed as the network object section
+  const section = secKey === 'network_kv' ? 'network' : secKey.split('.')[0]
+  emit('ignore-field', { section, spec_type: 'exclude_section', field_name: '*', aux: '' })
+}
+
+function emitExcludeItem(secKey, row) {
+  const keyField = ITEM_KEY_FIELD[secKey]
+  if (!keyField) return
+  const source = row._status === 'removed' ? row._baseline : (row._current ?? row)
+  const keyValue = source?.[keyField]
+  if (keyValue === undefined || keyValue === null) return
+  emit('ignore-field', { section: secKey, spec_type: 'exclude_key', field_name: String(keyValue), aux: keyField })
 }
 
 

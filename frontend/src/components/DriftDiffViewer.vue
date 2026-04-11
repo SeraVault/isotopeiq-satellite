@@ -1,7 +1,7 @@
 <template>
   <div>
     <div v-if="volatileFields" class="mb-3">
-      <v-checkbox v-model="hideVolatile" label="Hide volatile fields" density="compact" hide-details />
+      <v-checkbox v-model="hideVolatile" label="Hide excluded fields" density="compact" hide-details />
     </div>
     <CanonicalDiffViewer
       :baseline="filteredBaseline"
@@ -40,7 +40,11 @@ async function onIgnoreField({ section, spec_type, field_name, aux }) {
     snackbar.value = {
       show: true,
       color: 'success',
-      msg: `Volatile rule added: ${section} › ${field_name}`,
+      msg: spec_type === 'exclude_section'
+        ? `Drift exclusion added: ${section} — entire section`
+        : spec_type === 'exclude_key'
+          ? `Drift exclusion added: ${section} [${field_name}]`
+          : `Drift exclusion added: ${section} › ${field_name}`,
     }
     emit('rule-created')
   } catch (e) {
@@ -72,6 +76,12 @@ function stripVolatile(data) {
     if (spec.exclude_keys && Array.isArray(sectionData)) {
       const { key_field, values } = spec.exclude_keys
       data[section] = sectionData.filter(item => !values.includes(item?.[key_field]))
+    }
+    if (spec.exclude_key_prefixes && Array.isArray(data[section])) {
+      const { key_field, prefixes } = spec.exclude_key_prefixes
+      data[section] = data[section].filter(item =>
+        !prefixes.some(p => String(item?.[key_field] ?? '').startsWith(p))
+      )
     }
     if (spec.nested) {
       const items = Array.isArray(sectionData) ? sectionData : [sectionData]

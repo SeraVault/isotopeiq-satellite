@@ -34,6 +34,11 @@ def volatile_fields(request):
             }
         if entry.get('exclude_section'):
             serialisable[section]['exclude_section'] = True
+        if 'exclude_key_prefixes' in entry:
+            serialisable[section]['exclude_key_prefixes'] = {
+                'key_field': entry['exclude_key_prefixes']['key_field'],
+                'prefixes':  list(entry['exclude_key_prefixes']['prefixes']),
+            }
     return Response(serialisable)
 
 

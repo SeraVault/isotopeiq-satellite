@@ -157,7 +157,7 @@ fi
 # ── Network ───────────────────────────────────────────────────────────────────
 section "network"
 if command -v ip &>/dev/null; then
-    ip -j addr show 2>/dev/null || ip addr show
+    ip -d -j addr show 2>/dev/null || ip -j addr show 2>/dev/null || ip addr show
 else
     ifconfig -a 2>/dev/null || echo ""
 fi

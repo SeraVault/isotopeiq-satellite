@@ -497,7 +497,10 @@ def collect_network(output):
                 if ip not in ('127.0.0.1',):
                     iface['ipv4'].append('{}/{}'.format(ip, prefix))
 
-    output['network']['interfaces'] = list(iface_map.values())
+    output['network']['interfaces'] = [
+        i for i in iface_map.values()
+        if i.get('interface_type') not in _WIN_SKIP_TYPES
+    ]
 
     # DNS servers
     dns_out = run('netsh interface ip show dns')
@@ -560,6 +563,23 @@ def collect_network(output):
     output['network']['hosts_file'] = hosts
 
 
+_WIN_SKIP_TYPES = {'loopback', 'skip'}
+
+
+def _classify_iface_windows(name):
+    """Classify a Windows adapter by its display name."""
+    nl = name.lower()
+    if 'loopback' in nl:
+        return 'loopback'
+    if 'teredo' in nl or 'isatap' in nl or '6to4' in nl:
+        return 'tunnel'
+    if any(v in nl for v in ('vmware', 'virtualbox', 'hyper-v', 'virtual adapter')):
+        return 'virtual'
+    if 'wan miniport' in nl or 'kernel debug' in nl:
+        return 'skip'
+    return 'physical'
+
+
 def _empty_iface(name):
     return {
         'name': name, 'mac': '', 'description': '',
@@ -567,6 +587,7 @@ def _empty_iface(name):
         'admin_status': 'unknown', 'oper_status': 'unknown',
         'speed': '', 'duplex': 'unknown', 'mtu': None,
         'port_mode': 'routed', 'access_vlan': None, 'trunk_vlans': '',
+        'interface_type': _classify_iface_windows(name),
     }
 
 

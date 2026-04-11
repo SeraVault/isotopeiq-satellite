@@ -86,7 +86,41 @@ output["os"]["ntp_synced"] = True if ntp_sync == "yes" else (False if ntp_sync =
 iface_raw = sections.get("network", "")
 
 def _parse_ip_json(raw):
-    """Parse `ip -j addr show` JSON output."""
+    """Parse `ip -d -j addr show` JSON output.
+
+    Skips loopback and ephemeral virtual interfaces (veth pairs, dummy
+    devices) which are never meaningful configuration data.  Bridges,
+    bonds, VLANs and tunnels are retained with an `interface_type` field
+    so operators can create drift exclusions for them if desired.
+    """
+    # interface_type values for info_kind strings reported by ip -d
+    _KIND_MAP = {
+        'bridge':  'bridge',
+        'veth':    'veth',
+        'tun':     'tun',
+        'tap':     'tun',
+        'bond':    'bond',
+        'vlan':    'vlan',
+        'dummy':   'dummy',
+        'macvlan': 'macvlan',
+        'macvtap': 'macvlan',
+        'ipvlan':  'macvlan',
+        'ipip':    'tunnel',
+        'sit':     'tunnel',
+        'gre':     'tunnel',
+        'gretap':  'tunnel',
+        'ip6tnl':  'tunnel',
+        'ip6gre':  'tunnel',
+        'ip6gretap': 'tunnel',
+        'vti':     'tunnel',
+        'vti6':    'tunnel',
+        'vxlan':   'tunnel',
+        'geneve':  'tunnel',
+        'wireguard': 'tunnel',
+    }
+    # interface_type values to skip entirely — never config-meaningful
+    _SKIP_TYPES = {'loopback', 'veth', 'dummy'}
+
     try:
         ifaces = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
@@ -95,7 +129,23 @@ def _parse_ip_json(raw):
     for iface in ifaces:
         name = iface.get("ifname", "")
         flags = iface.get("flags", [])
-        link_info = iface.get("link_type", "")
+        link_type = iface.get("link_type", "")
+        info_kind = iface.get("linkinfo", {}).get("info_kind", "")
+
+        # Classify interface type
+        if link_type == "loopback":
+            iface_type = "loopback"
+        elif info_kind in _KIND_MAP:
+            iface_type = _KIND_MAP[info_kind]
+        elif link_type == "ether":
+            iface_type = "physical"
+        else:
+            iface_type = "other"
+
+        # Skip ephemeral/noise-only types
+        if iface_type in _SKIP_TYPES:
+            continue
+
         oper = "up" if iface.get("operstate", "").lower() == "up" else "down"
         admin = "up" if "UP" in flags else "down"
         mac = iface.get("address", "")
@@ -115,6 +165,7 @@ def _parse_ip_json(raw):
             "admin_status": admin,
             "oper_status": oper,
             "mtu": mtu,
+            "interface_type": iface_type,
             "port_mode": "routed",
             "duplex": "unknown",
         })

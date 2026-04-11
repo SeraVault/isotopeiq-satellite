@@ -307,36 +307,61 @@ def collect_os(output):
 # network
 # ---------------------------------------------------------------------------
 
-def _empty_iface(name):
+_MACOS_SKIP_TYPES = {'loopback', 'skip'}
+
+
+def _classify_iface_macos(name, flag_list):
+    """Derive canonical interface_type from macOS ifconfig name and flags."""
+    if 'LOOPBACK' in flag_list or name.startswith('lo'):
+        return 'loopback'
+    if name.startswith(('utun', 'gif', 'stf', 'ipsec', 'ppp')):
+        return 'tunnel'
+    if name.startswith('bridge'):
+        return 'bridge'
+    if name.startswith('vlan'):
+        return 'vlan'
+    if name.startswith(('awdl', 'llw', 'anpi')):
+        return 'skip'  # Apple ephemeral peer-to-peer / proximity interfaces
+    if name.startswith('en'):
+        return 'physical'
+    return 'other'
+
+
+def _empty_iface(name, interface_type='other'):
     return {
         'name': name, 'mac': '', 'description': '',
         'ipv4': [], 'ipv6': [],
         'admin_status': 'unknown', 'oper_status': 'unknown',
         'speed': '', 'duplex': 'unknown', 'mtu': None,
         'port_mode': 'routed', 'access_vlan': None, 'trunk_vlans': '',
+        'interface_type': interface_type,
     }
 
 
 def collect_network(output):
     iface_map = {}
 
+    current = None
     for line in run('ifconfig -a 2>/dev/null').splitlines():
         # New interface block: "en0: flags=8863<UP,RUNNING,...> mtu 1500"
         m = re.match(r'^(\S+):\s+flags=\S+\s+mtu\s+(\d+)', line)
         if m:
             name, mtu = m.group(1), int(m.group(2))
-            iface_map[name] = _empty_iface(name)
-            iface_map[name]['mtu'] = mtu
             flags_m = re.search(r'<([^>]*)>', line)
-            if flags_m:
-                fl = flags_m.group(1).split(',')
-                iface_map[name]['admin_status'] = 'up'   if 'UP'      in fl else 'down'
-                iface_map[name]['oper_status']  = 'up'   if 'RUNNING' in fl else 'down'
+            fl = flags_m.group(1).split(',') if flags_m else []
+            iface_type = _classify_iface_macos(name, fl)
+            if iface_type in _MACOS_SKIP_TYPES:
+                current = None
+                continue
+            iface_map[name] = _empty_iface(name, iface_type)
+            iface_map[name]['mtu'] = mtu
+            iface_map[name]['admin_status'] = 'up' if 'UP'      in fl else 'down'
+            iface_map[name]['oper_status']  = 'up' if 'RUNNING' in fl else 'down'
+            current = name
             continue
 
-        if not iface_map:
+        if current is None:
             continue
-        current = list(iface_map.keys())[-1]
 
         m = re.match(r'^\s+ether\s+([0-9a-f:]+)', line)
         if m:

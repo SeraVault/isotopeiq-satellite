@@ -2,7 +2,7 @@
   <div>
     <div class="d-flex align-center mb-5">
       <div>
-        <div class="text-h5 font-weight-bold">Volatile Field Rules</div>
+        <div class="text-h5 font-weight-bold">Drift Exclusions</div>
         <div class="text-caption text-medium-emphasis">
           Fields matching these rules are excluded from drift comparison.
           Changes take effect within 60 seconds on the next policy run.
@@ -135,7 +135,7 @@
             label="Description"
             rows="2"
             density="compact"
-            placeholder="Why is this field volatile?"
+            placeholder="Why should this field be excluded from drift?"
           />
 
           <v-alert v-if="form.error" type="error" variant="tonal" density="compact" class="mt-3">
@@ -169,7 +169,7 @@
       <v-card rounded="lg">
         <v-card-title class="d-flex align-center pt-4 pb-2">
           <v-icon icon="mdi-tune" class="mr-2" color="primary" />
-          Volatile Field Rules
+          Drift Exclusions
           <v-spacer />
           <v-btn icon="mdi-close" variant="text" @click="showHelp = false" />
         </v-card-title>
@@ -177,7 +177,7 @@
         <v-card-text class="pa-5" style="font-size:0.92rem;line-height:1.7">
 
           <p class="mb-3">
-            <strong>Volatile Field Rules</strong> tell IsotopeIQ Satellite which fields to ignore during
+            <strong>Drift Exclusions</strong> tell IsotopeIQ Satellite which fields to ignore during
             drift comparison. Some values change legitimately on every collection run — timestamps,
             lease counters, uptime — and without exclusion rules they would generate constant false-positive
             drift alerts.
@@ -219,7 +219,7 @@
               <tr>
                 <td class="font-weight-medium">Exclude key</td>
                 <td>Excludes items from a key=value section (e.g. <code>sysctl</code>) where the
-                  item's key field matches. Useful for volatile kernel parameters.</td>
+                  item's key field matches. Useful for frequently-changing kernel parameters.</td>
               </tr>
               <tr>
                 <td class="font-weight-medium">Exclude section</td>
@@ -237,6 +237,199 @@
               <tr><td class="font-weight-medium"><code>network</code> / exact / <code>leases</code></td><td>Ignores DHCP lease counts that fluctuate continuously.</td></tr>
               <tr><td class="font-weight-medium"><code>services</code> / regex / <code>.*_pid$</code></td><td>Ignores any field ending in <code>_pid</code> across all service entries.</td></tr>
               <tr><td class="font-weight-medium"><code>sysctl</code> / exclude key / <code>kernel.random.entropy_avail</code></td><td>Ignores the entropy counter sysctl entry.</td></tr>
+            </tbody>
+          </v-table>
+
+          <v-divider class="my-3" />
+          <div class="text-subtitle-2 font-weight-bold mb-2">Canonical schema reference</div>
+          <p class="mb-3 text-medium-emphasis" style="font-size:0.88rem">
+            The <em>Section</em> field on every exclusion must match one of the top-level keys below.
+            Required sections are always present; optional sections only appear when the collection
+            script populates them.
+          </p>
+
+          <!-- Required sections -->
+          <div class="text-caption font-weight-bold text-medium-emphasis mb-1 mt-2">Required sections</div>
+          <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12);font-size:0.82rem">
+            <thead><tr>
+              <th style="width:22%">Section</th>
+              <th style="width:12%">Type</th>
+              <th>Fields</th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td><code>device</code></td>
+                <td class="text-medium-emphasis">object</td>
+                <td><code>hostname</code>, <code>fqdn</code>, <code>device_type</code>, <code>vendor</code>, <code>model</code></td>
+              </tr>
+              <tr>
+                <td><code>hardware</code></td>
+                <td class="text-medium-emphasis">object</td>
+                <td><code>cpu_model</code>, <code>cpu_cores</code>, <code>memory_gb</code>, <code>bios_version</code>, <code>serial_number</code>, <code>architecture</code>, <code>virtualization_type</code></td>
+              </tr>
+              <tr>
+                <td><code>os</code></td>
+                <td class="text-medium-emphasis">object</td>
+                <td><code>name</code>, <code>version</code>, <code>build</code>, <code>kernel</code>, <code>timezone</code>, <code>ntp_servers</code>, <code>ntp_synced</code></td>
+              </tr>
+              <tr>
+                <td><code>network</code></td>
+                <td class="text-medium-emphasis">object</td>
+                <td><code>interfaces[ ]</code>, <code>dns_servers</code>, <code>default_gateway</code>, <code>routes[ ]</code>, <code>hosts_file[ ]</code>, <code>open_ports</code><br>
+                  <span class="text-medium-emphasis" style="font-size:0.8rem">Each interface: <code>name</code>, <code>mac</code>, <code>ipv4</code>, <code>ipv6</code>, <code>admin_status</code>, <code>oper_status</code>, <code>mtu</code>, <code>speed</code>, <code>duplex</code>, <code>interface_type</code> (<code>physical</code> | <code>bridge</code> | <code>bond</code> | <code>vlan</code> | <code>tun</code> | <code>tunnel</code> | <code>macvlan</code> | <code>other</code>)</span></td>
+              </tr>
+              <tr>
+                <td><code>users</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>username</code>, <code>uid</code>, <code>groups</code>, <code>home</code>, <code>shell</code>, <code>disabled</code>, <code>password_last_set</code>, <code>last_login</code>, <code>sudo_privileges</code></td>
+              </tr>
+              <tr>
+                <td><code>groups</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>group_name</code>, <code>gid</code>, <code>members</code></td>
+              </tr>
+              <tr>
+                <td><code>packages</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>name</code>, <code>version</code>, <code>vendor</code>, <code>install_date</code>, <code>source</code></td>
+              </tr>
+              <tr>
+                <td><code>services</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>name</code>, <code>status</code>, <code>startup</code></td>
+              </tr>
+              <tr>
+                <td><code>filesystem</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>mount</code>, <code>type</code>, <code>size_gb</code>, <code>free_gb</code>, <code>mount_options</code>, <code>suid_files</code></td>
+              </tr>
+              <tr>
+                <td><code>security</code></td>
+                <td class="text-medium-emphasis">object</td>
+                <td><code>firewall_enabled</code>, <code>antivirus</code>, <code>secure_boot</code>, <code>selinux_mode</code>, <code>apparmor_status</code>, <code>audit_logging_enabled</code>, <code>uac_enabled</code>, <code>defender_enabled</code>, <code>password_policy{ }</code></td>
+              </tr>
+            </tbody>
+          </v-table>
+
+          <!-- Optional sections -->
+          <div class="text-caption font-weight-bold text-medium-emphasis mb-1 mt-2">Optional sections</div>
+          <v-table density="compact" class="mb-3 rounded-lg" style="border:1px solid rgba(0,0,0,.12);font-size:0.82rem">
+            <thead><tr>
+              <th style="width:22%">Section</th>
+              <th style="width:12%">Type</th>
+              <th>Fields</th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td><code>scheduled_tasks</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>name</code>, <code>type</code>, <code>command</code>, <code>schedule</code>, <code>user</code>, <code>enabled</code></td>
+              </tr>
+              <tr>
+                <td><code>startup_items</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>name</code>, <code>type</code>, <code>command</code>, <code>path</code>, <code>enabled</code></td>
+              </tr>
+              <tr>
+                <td><code>ssh_keys</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>username</code>, <code>key_type</code>, <code>public_key</code>, <code>comment</code></td>
+              </tr>
+              <tr>
+                <td><code>kernel_modules</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>name</code>, <code>type</code>, <code>description</code>, <code>path</code>, <code>hash</code>, <code>signed</code></td>
+              </tr>
+              <tr>
+                <td><code>pci_devices</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>slot</code>, <code>class</code>, <code>vendor</code>, <code>device</code>, <code>driver</code>, <code>subsystem_vendor</code>, <code>subsystem_device</code></td>
+              </tr>
+              <tr>
+                <td><code>storage_devices</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>name</code>, <code>type</code>, <code>model</code>, <code>vendor</code>, <code>size</code>, <code>serial</code>, <code>interface</code>, <code>removable</code></td>
+              </tr>
+              <tr>
+                <td><code>usb_devices</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>bus_id</code>, <code>vendor_id</code>, <code>product_id</code>, <code>manufacturer</code>, <code>product</code></td>
+              </tr>
+              <tr>
+                <td><code>listening_services</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>protocol</code>, <code>local_address</code>, <code>port</code>, <code>process_name</code>, <code>pid</code>, <code>user</code></td>
+              </tr>
+              <tr>
+                <td><code>certificates</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>subject</code>, <code>issuer</code>, <code>thumbprint</code>, <code>serial</code>, <code>not_before</code>, <code>not_after</code>, <code>store</code></td>
+              </tr>
+              <tr>
+                <td><code>firewall_rules</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>chain</code>, <code>direction</code>, <code>action</code>, <code>protocol</code>, <code>source</code>, <code>destination</code>, <code>port</code>, <code>enabled</code>, <code>description</code>, <code>source_tool</code></td>
+              </tr>
+              <tr>
+                <td><code>sysctl</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>key</code>, <code>value</code></td>
+              </tr>
+              <tr>
+                <td><code>ssh_config</code></td>
+                <td class="text-medium-emphasis">object</td>
+                <td><code>port</code>, <code>protocol</code>, <code>permit_root_login</code>, <code>password_authentication</code>, <code>pubkey_authentication</code>, <code>permit_empty_passwords</code>, <code>x11_forwarding</code>, <code>max_auth_tries</code>, <code>allow_users</code>, <code>deny_users</code>, <code>allow_groups</code>, <code>deny_groups</code>, <code>use_pam</code></td>
+              </tr>
+              <tr>
+                <td><code>snmp</code></td>
+                <td class="text-medium-emphasis">object</td>
+                <td><code>enabled</code>, <code>versions</code>, <code>communities</code>, <code>v3_users[ ]</code>, <code>trap_targets</code>, <code>location</code>, <code>contact</code></td>
+              </tr>
+              <tr>
+                <td><code>shares</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>name</code>, <code>type</code>, <code>path</code>, <code>comment</code>, <code>permissions</code>, <code>read_only</code>, <code>enabled</code></td>
+              </tr>
+              <tr>
+                <td><code>logging_targets</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>type</code>, <code>destination</code>, <code>protocol</code>, <code>facility</code>, <code>enabled</code></td>
+              </tr>
+              <tr>
+                <td><code>vpn_tunnels</code></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>name</code>, <code>type</code>, <code>local_address</code>, <code>remote_address</code>, <code>status</code>, <code>cipher_suite</code>, <code>auth_method</code></td>
+              </tr>
+              <tr>
+                <td><code>vlans</code> <span class="text-caption text-medium-emphasis">(network devices)</span></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>id</code>, <code>name</code>, <code>state</code></td>
+              </tr>
+              <tr>
+                <td><code>acls</code> <span class="text-caption text-medium-emphasis">(network devices)</span></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>name</code>, <code>type</code>, <code>entries[ ]</code></td>
+              </tr>
+              <tr>
+                <td><code>routing_protocols</code> <span class="text-caption text-medium-emphasis">(network devices)</span></td>
+                <td class="text-medium-emphasis">array</td>
+                <td><code>protocol</code>, <code>instance</code>, <code>router_id</code>, <code>networks</code>, <code>neighbors[ ]</code></td>
+              </tr>
+              <tr>
+                <td><code>aaa</code> <span class="text-caption text-medium-emphasis">(network devices)</span></td>
+                <td class="text-medium-emphasis">object</td>
+                <td><code>tacacs_servers</code>, <code>radius_servers</code>, <code>authentication_lists</code>, <code>authorization_lists</code>, <code>accounting_lists</code></td>
+              </tr>
+              <tr>
+                <td><code>spanning_tree</code> <span class="text-caption text-medium-emphasis">(network devices)</span></td>
+                <td class="text-medium-emphasis">object</td>
+                <td><code>mode</code>, <code>root_bridge</code>, <code>root_priority</code>, <code>root_address</code>, <code>ports[ ]</code></td>
+              </tr>
+              <tr>
+                <td><code>custom</code></td>
+                <td class="text-medium-emphasis">object</td>
+                <td>Free-form object — any fields populated by custom parsers.</td>
+              </tr>
             </tbody>
           </v-table>
 

@@ -43,11 +43,11 @@
             side-by-side comparison.
           </p>
           <p class="mb-0">
-            Fields covered by a <strong>volatile rule</strong> are silently excluded before comparison
+            Fields covered by a <strong>drift exclusion</strong> are silently excluded before comparison
             so expected, high-churn values (e.g. disk free space, PIDs, entropy pool) never
             trigger false positives. Use the
             <v-icon icon="mdi-eye-off-outline" size="x-small" /> ignore button inside any diff
-            to permanently promote a noisy field to a volatile rule.
+            to permanently add a noisy field as a drift exclusion.
           </p>
 
           <v-divider class="my-3" />
@@ -70,10 +70,10 @@
           </v-table>
 
           <v-divider class="my-3" />
-          <div class="text-subtitle-2 font-weight-bold mb-2">Volatile rules</div>
+          <div class="text-subtitle-2 font-weight-bold mb-2">Drift Exclusions</div>
           <p class="mb-0">
-            Volatile rules tell Satellite which fields to ignore during comparison. They are managed
-            on the <strong>Volatile Rules</strong> page and applied globally across all devices.
+            Drift exclusions tell Satellite which fields to ignore during comparison. They are managed
+            on the <strong>Drift Exclusions</strong> page and applied globally across all devices.
             Rules can target a top-level section field, a per-item field in an array section, a
             nested sub-field, or a specific key in key-value sections like <code>sysctl</code>.
           </p>

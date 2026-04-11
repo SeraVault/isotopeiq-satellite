@@ -172,15 +172,16 @@ def _parse_network_interfaces(raw):
         link    = rec.get("Portgroup", rec.get("Netstack", ""))
         ipv4_cidr = ipv4_map.get(name, "")
         ifaces.append({
-            "name":         name,
-            "mac":          mac,
-            "ipv4":         [ipv4_cidr] if ipv4_cidr else [],
-            "ipv6":         [],
-            "admin_status": admin,
-            "oper_status":  "unknown",
-            "mtu":          mtu,
-            "port_mode":    "routed",
-            "duplex":       "unknown",
+            "name":           name,
+            "mac":            mac,
+            "ipv4":           [ipv4_cidr] if ipv4_cidr else [],
+            "ipv6":           [],
+            "admin_status":   admin,
+            "oper_status":    "unknown",
+            "mtu":            mtu,
+            "port_mode":      "routed",
+            "duplex":         "unknown",
+            "interface_type": "vmkernel",
         })
 
     # Physical NICs — tab/space separated table
@@ -215,16 +216,17 @@ def _parse_network_interfaces(raw):
             except (ValueError, TypeError):
                 mtu = None
             ifaces.append({
-                "name":         name,
-                "mac":          mac,
-                "ipv4":         [],
-                "ipv6":         [],
-                "admin_status": admin,
-                "oper_status":  oper,
-                "speed":        speed,
-                "duplex":       duplex,
-                "mtu":          mtu,
-                "port_mode":    "routed",
+                "name":           name,
+                "mac":            mac,
+                "ipv4":           [],
+                "ipv6":           [],
+                "admin_status":   admin,
+                "oper_status":    oper,
+                "speed":          speed,
+                "duplex":         duplex,
+                "mtu":            mtu,
+                "port_mode":      "routed",
+                "interface_type": "physical",
             })
 
     return ifaces
