@@ -2,23 +2,14 @@
   <div>
     <div class="text-h5 font-weight-bold mb-5">Job Monitor</div>
 
-    <v-tabs v-model="activeTab" class="mb-5">
-      <v-tab value="policy">Policy Jobs</v-tab>
-      <v-tab value="script">Bundle Runs</v-tab>
-    </v-tabs>
-
-    <v-window v-model="activeTab">
-      <!-- ── POLICY JOBS TAB ─────────────────────────────────────────── -->
-      <v-window-item value="policy">
-
     <!-- Filters -->
     <v-card rounded="lg" elevation="1" class="mb-5 pa-4">
       <v-row dense align="end">
         <v-col cols="12" sm="6" md="2">
-          <DeviceAutocomplete v-model="filters.device" @update:model-value="onDeviceSelect" />
+          <DeviceAutocomplete v-model="filters.device" @update:model-value="applyFilters" />
         </v-col>
         <v-col cols="12" sm="6" md="2">
-          <v-select v-model="filters.policy" label="Policy" :items="policyItems" item-title="title" item-value="value" clearable @update:model-value="applyFilters" />
+          <v-select v-model="filters.type" label="Type" :items="typeItems" clearable @update:model-value="applyFilters" />
         </v-col>
         <v-col cols="12" sm="6" md="2">
           <v-select v-model="filters.status" label="Status" :items="statuses" clearable @update:model-value="applyFilters" />
@@ -39,9 +30,9 @@
     <v-data-table-server
       v-model:options="tableOptions"
       :headers="headers"
-      :items="store.jobs"
-      :items-length="store.totalCount"
-      :loading="store.loading"
+      :items="jobs.items"
+      :items-length="jobs.total"
+      :loading="jobs.loading"
       :items-per-page-options="[25, 50, 100]"
       density="compact"
       rounded="lg"
@@ -50,13 +41,16 @@
       hover
       @update:options="onTableOptions"
     >
-      <template #item.id="{ item }">
-        <span class="text-medium-emphasis">#{{ item.id }}</span>
+      <template #item.record_type="{ item }">
+        <v-chip
+          :color="item.record_type === 'policy_job' ? 'blue-darken-1' : 'purple-darken-1'"
+          size="x-small" label
+        >{{ item.record_type === 'policy_job' ? 'Policy Job' : 'Bundle Run' }}</v-chip>
       </template>
       <template #item.device_name="{ item }">
-        <span class="font-weight-medium">{{ item.device_name ?? (item.device ? `Device ${item.device}` : '—') }}</span>
+        <span class="font-weight-medium">{{ item.device_name ?? '—' }}</span>
       </template>
-      <template #item.policy_name="{ item }">{{ item.policy_name ?? '—' }}</template>
+      <template #item.source="{ item }">{{ item.source }}</template>
       <template #item.status="{ item }">
         <v-chip :color="statusColor(item.status)" size="x-small" label>{{ item.status }}</v-chip>
       </template>
@@ -69,7 +63,7 @@
       <template #item.actions="{ item }">
         <v-btn size="x-small" variant="tonal" class="mr-1" @click="openDetail(item)">Details</v-btn>
         <v-btn
-          v-if="item.status === 'running' || item.status === 'pending'"
+          v-if="item.record_type === 'policy_job' && (item.status === 'running' || item.status === 'pending')"
           size="x-small" color="error" variant="tonal"
           @click="cancel(item)"
         >Cancel</v-btn>
@@ -89,25 +83,24 @@
       </v-card>
     </v-dialog>
 
-    <!-- Job detail dialog -->
-    <v-dialog v-model="detailOpen" max-width="760" scrollable>
-      <v-card v-if="selected" rounded="lg">
+    <!-- Policy job detail dialog -->
+    <v-dialog v-model="policyDetailOpen" max-width="760" scrollable>
+      <v-card v-if="policySelected" rounded="lg">
         <v-card-title class="d-flex justify-space-between align-center">
           <div>
-            <span>{{ selected.device_name ?? (selected.device ? `Device ${selected.device}` : `Job #${selected.id}`) }}</span>
-            <v-chip :color="statusColor(selected.status)" size="x-small" label class="ml-2">{{ selected.status }}</v-chip>
+            <span>{{ policySelected.device_name ?? `Job #${policySelected.id}` }}</span>
+            <v-chip :color="statusColor(policySelected.status)" size="x-small" label class="ml-2">{{ policySelected.status }}</v-chip>
           </div>
-          <v-btn icon="mdi-close" variant="text" size="small" @click="detailOpen = false" />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="policyDetailOpen = false" />
         </v-card-title>
         <v-card-subtitle>
-          {{ selected.policy_name ? `Policy: ${selected.policy_name}` : 'Ad-hoc' }}
-          · triggered by {{ selected.triggered_by }}
-          · {{ selected.started_at ? fmt(selected.started_at) : '—' }}
+          {{ policySelected.policy_name ? `Policy: ${policySelected.policy_name}` : 'Ad-hoc' }}
+          · triggered by {{ policySelected.triggered_by }}
+          · {{ policySelected.started_at ? fmt(policySelected.started_at) : '—' }}
         </v-card-subtitle>
         <v-card-text>
-          <!-- Single device result, shown inline -->
-          <template v-if="selected.device_results && selected.device_results.length">
-            <div v-for="result in selected.device_results" :key="result.id">
+          <template v-if="policySelected.device_results?.length">
+            <div v-for="result in policySelected.device_results" :key="result.id">
               <div class="d-flex align-center ga-2 mb-3">
                 <v-chip :color="statusColor(result.status)" size="x-small" label>{{ result.status }}</v-chip>
                 <span class="text-caption text-medium-emphasis">
@@ -145,68 +138,27 @@
       </v-card>
     </v-dialog>
 
-      </v-window-item>
-
-      <!-- ── BUNDLE RUNS TAB ───────────────────────────────────────────── -->
-      <v-window-item value="script">
-        <div class="d-flex align-center justify-space-between mb-4">
-          <div class="text-caption text-medium-emphasis">Results from ad-hoc and policy-triggered bundle executions.</div>
-          <v-btn size="small" variant="tonal" prepend-icon="mdi-refresh" :loading="sjRuns.loading" @click="loadSjRuns">Refresh</v-btn>
-        </div>
-        <v-data-table-server
-          v-model:options="sjRunsTableOptions"
-          :headers="sjRunHeaders"
-          :items="sjRuns.items"
-          :items-length="sjRuns.total"
-          :loading="sjRuns.loading"
-          density="compact"
-          rounded="lg"
-          elevation="1"
-          no-data-text="No bundle runs yet."
-          hover
-          @update:options="onSjRunsTableOptions"
-        >
-          <template #item.script_job_name="{ item }">
-            <span class="font-weight-medium">{{ item.script_job_name }}</span>
-          </template>
-          <template #item.device_name="{ item }">{{ item.device_name || '(server-only)' }}</template>
-          <template #item.status="{ item }">
-            <v-chip :color="statusColor(item.status)" size="x-small" label>{{ item.status }}</v-chip>
-          </template>
-          <template #item.started_at="{ item }">
-            <span class="text-caption text-medium-emphasis">{{ item.started_at ? fmt(item.started_at) : '—' }}</span>
-          </template>
-          <template #item.duration="{ item }">
-            <span class="text-caption text-medium-emphasis">{{ duration(item) }}</span>
-          </template>
-          <template #item.actions="{ item }">
-            <v-btn size="x-small" variant="tonal" @click="openSjDetail(item)">Details</v-btn>
-          </template>
-        </v-data-table-server>
-      </v-window-item>
-    </v-window>
-
-    <!-- Script job run detail dialog -->
-    <v-dialog v-model="sjDetailOpen" max-width="760" scrollable>
-      <v-card v-if="sjSelected" rounded="lg">
+    <!-- Bundle run detail dialog -->
+    <v-dialog v-model="bundleDetailOpen" max-width="760" scrollable>
+      <v-card v-if="bundleSelected" rounded="lg">
         <v-card-title class="d-flex justify-space-between align-center">
           <div>
-            <span>{{ sjSelected.script_job_name }}</span>
-            <v-chip :color="statusColor(sjSelected.status)" size="x-small" label class="ml-2">{{ sjSelected.status }}</v-chip>
+            <span>{{ bundleSelected.script_job_name }}</span>
+            <v-chip :color="statusColor(bundleSelected.status)" size="x-small" label class="ml-2">{{ bundleSelected.status }}</v-chip>
           </div>
-          <v-btn icon="mdi-close" variant="text" size="small" @click="sjDetailOpen = false" />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="bundleDetailOpen = false" />
         </v-card-title>
         <v-card-subtitle>
-          Device: {{ sjSelected.device_name || '(server-only)' }}
-          · triggered by {{ sjSelected.triggered_by }}
-          · {{ sjSelected.started_at ? fmt(sjSelected.started_at) : '—' }}
+          Device: {{ bundleSelected.device_name || '(server-only)' }}
+          · triggered by {{ bundleSelected.triggered_by }}
+          · {{ bundleSelected.started_at ? fmt(bundleSelected.started_at) : '—' }}
         </v-card-subtitle>
         <v-card-text>
-          <v-alert v-if="sjSelected.error_message" type="error" variant="tonal" density="compact" class="mb-4">
-            {{ sjSelected.error_message }}
+          <v-alert v-if="bundleSelected.error_message" type="error" variant="tonal" density="compact" class="mb-4">
+            {{ bundleSelected.error_message }}
           </v-alert>
-          <template v-if="sjSelected.step_outputs?.length">
-            <div v-for="step in sjSelected.step_outputs" :key="step.order" class="mb-4">
+          <template v-if="bundleSelected.step_outputs?.length">
+            <div v-for="step in bundleSelected.step_outputs" :key="step.order" class="mb-4">
               <div class="d-flex align-center ga-2 mb-1">
                 <span class="text-caption font-weight-bold text-medium-emphasis text-uppercase">Step {{ step.order + 1 }} — {{ step.script }}</span>
                 <v-chip size="x-small" label :color="step.run_on === 'client' ? 'blue-darken-1' : 'purple-darken-1'">{{ step.run_on === 'client' ? 'Push to device' : 'Run on Satellite' }}</v-chip>
@@ -222,62 +174,103 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
-import { useJobsStore } from '../stores/jobs'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import api from '../api'
 import DeviceAutocomplete from '../components/DeviceAutocomplete.vue'
 
-const route = useRoute()
-
-const store = useJobsStore()
-
 const headers = [
-  { title: '#',            key: 'id',           sortable: false },
-  { title: 'Device',       key: 'device_name',  sortable: true  },
-  { title: 'Policy',       key: 'policy_name',  sortable: false },
+  { title: 'Type',         key: 'record_type',  sortable: false },
+  { title: 'Device',       key: 'device_name',  sortable: false },
+  { title: 'Source',       key: 'source',       sortable: false },
   { title: 'Triggered By', key: 'triggered_by', sortable: false },
   { title: 'Status',       key: 'status',       sortable: false },
-  { title: 'Started',      key: 'started_at',   sortable: true  },
+  { title: 'Started',      key: 'started_at',   sortable: false },
   { title: 'Duration',     key: 'duration',     sortable: false },
   { title: '',             key: 'actions',      sortable: false, align: 'end' },
 ]
 
-const SORT_FIELD = {
-  device_name: 'device__name',
-  started_at:  'started_at',
-}
+const typeItems = [
+  { title: 'Policy Jobs', value: 'policy_job' },
+  { title: 'Bundle Runs', value: 'bundle_run' },
+]
+const statuses = ['pending', 'running', 'success', 'partial', 'failed', 'cancelled']
 
-const tableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [{ key: 'started_at', order: 'desc' }] })
+const filters = reactive({
+  device: null,
+  type: null,
+  status: '',
+  created_after: '',
+  created_before: '',
+})
+
+const tableOptions = ref({ page: 1, itemsPerPage: 25, sortBy: [] })
+const jobs = ref({ items: [], total: 0, loading: false })
+
+// True when any row is still running/pending — drives poll interval
+const hasActiveJobs = computed(() =>
+  jobs.value.items.some(j => j.status === 'running' || j.status === 'pending')
+)
+
+// Merge incoming rows into the existing reactive array in-place so Vuetify
+// only patches DOM rows that actually changed, avoiding full-table flicker.
+function mergeItems(incoming) {
+  const key = (r) => `${r.record_type}:${r.record_id}`
+  const incomingKeys = new Set(incoming.map(key))
+  for (let i = jobs.value.items.length - 1; i >= 0; i--) {
+    if (!incomingKeys.has(key(jobs.value.items[i]))) jobs.value.items.splice(i, 1)
+  }
+  incoming.forEach((item, idx) => {
+    const existing = jobs.value.items.findIndex(c => key(c) === key(item))
+    if (existing !== -1) {
+      Object.assign(jobs.value.items[existing], item)
+    } else {
+      jobs.value.items.splice(idx, 0, item)
+    }
+  })
+}
 
 function buildParams(options = tableOptions.value) {
   const params = { page: options.page, page_size: options.itemsPerPage }
   if (filters.device)         params.device         = filters.device
-  if (filters.policy)         params.policy         = filters.policy
+  if (filters.type)           params.type           = filters.type
   if (filters.status)         params.status         = filters.status
   if (filters.created_after)  params.created_after  = new Date(filters.created_after).toISOString()
   if (filters.created_before) params.created_before = new Date(filters.created_before).toISOString()
-  if (options.sortBy?.length) {
-    const { key, order } = options.sortBy[0]
-    const field = SORT_FIELD[key] ?? key
-    params.ordering = order === 'desc' ? `-${field}` : field
-  }
   return params
+}
+
+async function loadJobs(options = tableOptions.value, showSpinner = true) {
+  if (showSpinner) jobs.value.loading = true
+  try {
+    const { data } = await api.get('/jobs/unified/', { params: buildParams(options) })
+    mergeItems(data.results ?? [])
+    jobs.value.total = data.count ?? 0
+  } finally {
+    if (showSpinner) jobs.value.loading = false
+  }
 }
 
 function onTableOptions(options) {
   tableOptions.value = options
-  store.fetchJobs(buildParams(options))
+  loadJobs(options)
 }
 
-function resetAndFetch() {
+function applyFilters() {
   const opts = { ...tableOptions.value, page: 1 }
   tableOptions.value = opts
-  store.fetchJobs(buildParams(opts))
+  loadJobs(opts)
 }
 
-const selectedId = ref(null)
-const detailOpen = ref(false)
+function clearFilters() {
+  Object.assign(filters, { device: null, type: null, status: '', created_after: '', created_before: '' })
+  applyFilters()
+}
+
+// ── Detail dialogs ────────────────────────────────────────────────────────────
+const policyDetailOpen = ref(false)
+const policySelected   = ref(null)
+const bundleDetailOpen = ref(false)
+const bundleSelected   = ref(null)
 
 const confirmDialog = ref({ open: false, message: '', resolve: () => {} })
 function askConfirm(message) {
@@ -286,54 +279,29 @@ function askConfirm(message) {
   })
 }
 
-// Local ref holds the full detail (raw_output/parsed_output) from the detail endpoint.
-// We do NOT derive it from the store because the list-poll serializer strips those fields.
-const selected = ref(null)
-
-// When the poll refreshes store.jobs, merge only lightweight fields into the detail ref
-// so the modal shows live status without losing the rich data we fetched from the detail endpoint.
-watch(() => store.jobs, (jobs) => {
-  if (!selected.value) return
-  const fresh = jobs.find(j => j.id === selected.value.id)
-  if (fresh) {
-    selected.value = {
-      ...selected.value,
-      status:      fresh.status,
-      started_at:  fresh.started_at,
-      finished_at: fresh.finished_at,
-    }
+async function openDetail(item) {
+  if (item.record_type === 'policy_job') {
+    const { data } = await api.get(`/jobs/${item.record_id}/`)
+    policySelected.value   = data
+    policyDetailOpen.value = true
+  } else {
+    const { data } = await api.get(`/scripts/script-jobs/results/${item.record_id}/`)
+    bundleSelected.value   = data
+    bundleDetailOpen.value = true
   }
-}, { deep: true })
+}
 
-const policies = ref([])
-const statuses = ['pending', 'running', 'success', 'partial', 'failed', 'cancelled']
-
-function onDeviceSelect() {
+async function cancel(item) {
+  if (!await askConfirm(`Cancel job ${item.record_id}?`)) return
+  await api.post(`/jobs/${item.record_id}/cancel/`)
   applyFilters()
 }
-const policyItems = computed(() => policies.value.map(p => ({ title: p.name, value: p.id })))
 
-const filters = reactive({
-  device: null, policy: null,
-  status:         route.query.status || '',
-  created_after:  '',
-  created_before: '',
-})
-
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function statusColor(status) {
   return { success: 'success', resolved: 'success', failed: 'error', running: 'info',
            pending: 'warning', new: 'error', acknowledged: 'warning', partial: 'warning',
            cancelled: 'default' }[status] ?? 'default'
-}
-
-function resultColor(status) {
-  return { success: 'success', failed: 'error', running: 'info', partial: 'warning' }[status] ?? 'default'
-}
-
-function applyFilters() { resetAndFetch() }
-function clearFilters() {
-  Object.assign(filters, { device: null, policy: null, status: '', created_after: '', created_before: '' })
-  resetAndFetch()
 }
 
 function fmt(iso) { return new Date(iso).toLocaleString() }
@@ -346,86 +314,25 @@ function duration(job) {
   return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`
 }
 
-async function openDetail(job) {
-  const { data } = await api.get(`/jobs/${job.id}/`)
-  selected.value  = data
-  selectedId.value = data.id
-  detailOpen.value = true
+// ── Polling ───────────────────────────────────────────────────────────────────
+// Poll silently every 5s while active jobs exist, every 30s otherwise.
+let pollTimer = null
+
+function schedulePoll() {
+  clearInterval(pollTimer)
+  const interval = hasActiveJobs.value ? 5_000 : 30_000
+  pollTimer = setInterval(() => {
+    loadJobs(tableOptions.value, false)  // silent — no spinner
+    schedulePoll()                       // re-schedule with updated interval
+  }, interval)
 }
 
-async function cancel(job) {
-  if (!await askConfirm(`Cancel job ${job.id}?`)) return
-  await api.post(`/jobs/${job.id}/cancel/`)
-  applyFilters()
-  if (selectedId.value === job.id) detailOpen.value = false
-}
-
-// ── Script Job Runs tab ──────────────────────────────────────────────────────
-const activeTab = ref(route.query.tab === 'script' ? 'script' : 'policy')
-
-const sjRunHeaders = [
-  { title: 'Bundle',        key: 'script_job_name', sortable: false },
-  { title: 'Device',       key: 'device_name',     sortable: false },
-  { title: 'Triggered By', key: 'triggered_by',    sortable: false },
-  { title: 'Status',       key: 'status',          sortable: false },
-  { title: 'Started',      key: 'started_at',      sortable: true },
-  { title: 'Duration',     key: 'duration',        sortable: false },
-  { title: '',             key: 'actions',         sortable: false, align: 'end' },
-]
-
-const sjRuns = ref({ items: [], total: 0, loading: false })
-const sjRunsTableOptions = ref({ page: 1, itemsPerPage: 20, sortBy: [{ key: 'started_at', order: 'desc' }] })
-const sjDetailOpen = ref(false)
-const sjSelected = ref(null)
-
-async function loadSjRuns(options = sjRunsTableOptions.value) {
-  sjRuns.value.loading = true
-  try {
-    const params = { page: options.page, page_size: options.itemsPerPage }
-    if (options.sortBy?.length) {
-      const { key, order } = options.sortBy[0]
-      params.ordering = order === 'desc' ? `-${key}` : key
-    } else {
-      params.ordering = '-started_at'
-    }
-    const res = await api.get('/scripts/script-jobs/results/', { params })
-    sjRuns.value.items = res.data?.results ?? res.data ?? []
-    sjRuns.value.total = res.data?.count ?? sjRuns.value.items.length
-  } finally {
-    sjRuns.value.loading = false
-  }
-}
-
-function onSjRunsTableOptions(options) {
-  sjRunsTableOptions.value = options
-  loadSjRuns(options)
-}
-
-function openSjDetail(item) {
-  sjSelected.value = item
-  sjDetailOpen.value = true
-}
-
-// Refresh script job runs on tab switch and every 10s while on that tab
-let sjPollTimer = null
-watch(activeTab, (tab) => {
-  clearInterval(sjPollTimer)
-  if (tab === 'script') {
-    sjRunsTableOptions.value = { ...sjRunsTableOptions.value, page: 1 }
-    loadSjRuns()
-    sjPollTimer = setInterval(loadSjRuns, 10_000)
-  }
-}, { immediate: true })
-
-onMounted(async () => {
-  const { data } = await api.get('/policies/')
-  policies.value = data.results ?? data
-  applyFilters()
-  store.startPolling()
+onMounted(() => {
+  loadJobs().then(schedulePoll)
 })
+
 onUnmounted(() => {
-  store.stopPolling()
-  clearInterval(sjPollTimer)
+  clearInterval(pollTimer)
 })
 </script>
 
@@ -442,5 +349,4 @@ onUnmounted(() => {
   word-break: break-word;
   max-height: 300px;
 }
-
 </style>

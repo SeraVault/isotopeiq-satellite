@@ -38,10 +38,11 @@ export const useDashboardStore = defineStore('dashboard', {
       const initial = this.driftEvents.length === 0 && this.recentJobs.length === 0
       if (initial) this.loading = true
       try {
-        const [devRes, polRes, runRes, driftRes, jobsRes, blRes] = await Promise.all([
+        const [devRes, polRes, runRes, bundleRunRes, driftRes, jobsRes, blRes] = await Promise.all([
           api.get('/devices/',   { params: { page_size: 1 } }),
           api.get('/policies/',  { params: { page_size: 1 } }),
           api.get('/jobs/',      { params: { status: 'running', page_size: 1 } }),
+          api.get('/scripts/script-jobs/results/', { params: { status: 'running', page_size: 1 } }),
           api.get('/drift/',     { params: { status: 'new', page_size: 50 } }),
           api.get('/jobs/',      { params: { page_size: 20, ordering: '-started_at' } }),
           api.get('/baselines/', { params: { page_size: 100, ordering: '-established_at' } }),
@@ -50,7 +51,7 @@ export const useDashboardStore = defineStore('dashboard', {
         Object.assign(this.stats, {
           devices:      devRes.data.count   ?? 0,
           policies:     polRes.data.count   ?? 0,
-          running_jobs: runRes.data.count   ?? 0,
+          running_jobs: (runRes.data.count ?? 0) + (bundleRunRes.data.count ?? 0),
           new_drift:    driftRes.data.count ?? 0,
         })
         mergeList(this.driftEvents, driftRes.data.results ?? driftRes.data ?? [])
