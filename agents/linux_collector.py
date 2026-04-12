@@ -937,8 +937,6 @@ def _detect_init():
 
 def collect_services(output):
     init = _detect_init()
-    status_map  = {'active': 'running', 'running': 'running',
-                   'inactive': 'stopped', 'stopped': 'stopped', 'failed': 'stopped'}
     startup_map = {'enabled': 'enabled', 'disabled': 'disabled',
                    'static': 'manual', 'manual': 'manual', 'masked': 'disabled'}
 
@@ -947,68 +945,69 @@ def collect_services(output):
         # this excludes transient, runtime-generated, and session units that
         # would otherwise change every boot/login.
         enabled_out = run('systemctl list-unit-files --type=service --no-pager --no-legend 2>/dev/null')
-        enabled_map = {}
         for line in enabled_out.splitlines():
             parts = line.split()
             if len(parts) >= 2:
                 sname = parts[0].replace('.service', '')
-                enabled_map[sname] = parts[1].lower()
-
-        # Get current running state only for units that have a unit file.
-        active_map = {}
-        units_out = run('systemctl list-units --type=service --all --no-pager --no-legend 2>/dev/null')
-        for line in units_out.splitlines():
-            parts = line.split(None, 4)
-            if len(parts) < 3:
-                continue
-            unit = parts[0].replace('.service', '')
-            if unit.startswith('●'):
-                unit = unit[1:]
-            active_map[unit] = parts[2].lower()
-
-        for unit, startup_raw in sorted(enabled_map.items()):
-            if startup_raw == 'masked':
-                continue
-            active = active_map.get(unit, 'inactive')
-            output['services'].append({
-                'name':    unit,
-                'status':  status_map.get(active, 'unknown'),
-                'startup': startup_map.get(startup_raw, startup_raw),
-            })
-
-    elif init == 'openrc':
-        for line in run_lines('rc-status --all --nocolor 2>/dev/null'):
-            m = re.match(r'\s+(\S+)\s+\[\s*(\S+)\s*\]', line)
-            if m:
+                startup_raw = parts[1].lower()
+                if startup_raw == 'masked':
+                    continue
                 output['services'].append({
-                    'name':    m.group(1),
-                    'status':  'running' if m.group(2).lower() == 'started' else 'stopped',
-                    'startup': 'unknown',
+                    'name':    sname,
+                    'startup': startup_map.get(startup_raw, startup_raw),
                 })
 
+    elif init == 'openrc':
+        # rc-update show lists service→runlevel pairs for enabled services.
+        # Build enabled set, then walk /etc/init.d for the full list.
+        enabled_svcs = set()
+        for line in run_lines('rc-update show 2>/dev/null'):
+            parts = line.split()
+            if parts:
+                enabled_svcs.add(parts[0])
+        if os.path.isdir('/etc/init.d'):
+            for svc in sorted(os.listdir('/etc/init.d')):
+                if not os.path.isfile(os.path.join('/etc/init.d', svc)):
+                    continue
+                output['services'].append({
+                    'name':    svc,
+                    'startup': 'enabled' if svc in enabled_svcs else 'disabled',
+                })
+        else:
+            for svc in sorted(enabled_svcs):
+                output['services'].append({'name': svc, 'startup': 'enabled'})
+
     elif init == 'upstart':
+        # initctl list shows job/state — parse for goal (start/stop) as proxy
+        # for enabled vs disabled; stable across reboots.
         for line in run_lines('initctl list 2>/dev/null'):
             parts = line.split(None, 2)
             if len(parts) >= 2:
+                startup = 'enabled' if parts[1].startswith('start/') else 'disabled'
                 output['services'].append({
                     'name':    parts[0],
-                    'status':  'running' if 'running' in parts[1] else 'stopped',
-                    'startup': 'unknown',
+                    'startup': startup,
                 })
 
     else:
-        # SysVinit — iterate /etc/init.d scripts
+        # SysVinit — check rc2.d/rc3.d for S* symlinks (enabled = has start link)
         if os.path.isdir('/etc/init.d'):
             for svc in sorted(os.listdir('/etc/init.d')):
-                path = os.path.join('/etc/init.d', svc)
-                if not os.path.isfile(path):
+                if not os.path.isfile(os.path.join('/etc/init.d', svc)):
                     continue
-                status_out = run('{0} status 2>/dev/null'.format(path))
-                running = bool(re.search(r'running|started|active', status_out, re.IGNORECASE))
+                enabled = any(
+                    os.path.exists(os.path.join('/etc/rc{0}.d'.format(rl), 'S' + svc))
+                    or any(
+                        f.endswith(svc)
+                        for f in os.listdir('/etc/rc{0}.d'.format(rl))
+                        if f.startswith('S')
+                    )
+                    for rl in ('2', '3')
+                    if os.path.isdir('/etc/rc{0}.d'.format(rl))
+                )
                 output['services'].append({
                     'name':    svc,
-                    'status':  'running' if running else 'stopped',
-                    'startup': 'unknown',
+                    'startup': 'enabled' if enabled else 'disabled',
                 })
 
 

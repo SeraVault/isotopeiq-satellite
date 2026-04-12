@@ -612,31 +612,27 @@ def collect_packages(output):
 # ---------------------------------------------------------------------------
 
 def collect_services(output):
-    # launchctl list: PID  LastExitStatus  Label
-    for line in run_lines('launchctl list 2>/dev/null'):
-        parts = line.split('\t')
-        if len(parts) < 3 or parts[0] == 'PID':
+    # Enumerate LaunchDaemons/LaunchAgents plist files for a stable, boot-invariant
+    # list of installed services. launchctl list only shows currently loaded services
+    # and fluctuates across reboots/logins.
+    seen = set()
+    for d in ('/System/Library/LaunchDaemons', '/System/Library/LaunchAgents',
+              '/Library/LaunchDaemons', '/Library/LaunchAgents'):
+        if not os.path.isdir(d):
             continue
-        pid_s  = parts[0].strip()
-        label  = parts[2].strip()
-        status = 'running' if pid_s != '-' and pid_s.isdigit() else 'stopped'
-
-        # Startup state — check if plist has Disabled=true
-        startup = 'enabled'
-        for d in ('/Library/LaunchDaemons', '/Library/LaunchAgents',
-                  '/System/Library/LaunchDaemons', '/System/Library/LaunchAgents'):
-            plist = os.path.join(d, '{0}.plist'.format(label))
-            if os.path.isfile(plist):
-                disabled = run('defaults read {0} Disabled 2>/dev/null'.format(plist)).strip()
-                if disabled == '1':
-                    startup = 'disabled'
-                break
-
-        output['services'].append({
-            'name':    label,
-            'status':  status,
-            'startup': startup,
-        })
+        for fname in sorted(os.listdir(d)):
+            if not fname.endswith('.plist'):
+                continue
+            plist = os.path.join(d, fname)
+            label    = run('defaults read {0} Label 2>/dev/null'.format(plist)).strip()
+            if not label:
+                label = fname[:-6]   # strip .plist
+            if label in seen:
+                continue
+            seen.add(label)
+            disabled = run('defaults read {0} Disabled 2>/dev/null'.format(plist)).strip()
+            startup  = 'disabled' if disabled == '1' else 'enabled'
+            output['services'].append({'name': label, 'startup': startup})
 
 
 # ---------------------------------------------------------------------------
