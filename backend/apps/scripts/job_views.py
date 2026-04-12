@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from core.permissions import IsAdminOrReadOnly
 from .job_models import ScriptJob, ScriptJobResult
 from .job_serializers import ScriptJobSerializer, ScriptJobResultSerializer
+from .pack import export_script_job, import_script_pack
 from .tasks import run_script_job
 
 
@@ -35,6 +36,56 @@ class ScriptJobViewSet(viewsets.ModelViewSet):
         qs = ScriptJobResult.objects.filter(script_job=script_job).select_related('device')
         serializer = ScriptJobResultSerializer(qs, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='export')
+    def export(self, request, pk=None):
+        """
+        Export this ScriptJob and all its referenced scripts as a portable
+        Script Pack (JSON).
+
+        Response body is the pack dict.  The Content-Disposition header
+        suggests a filename so browsers / fetch clients can save it directly.
+        """
+        script_job = self.get_object()
+        pack = export_script_job(script_job)
+        safe_name = script_job.name.lower().replace(' ', '_')
+        response = Response(pack)
+        response['Content-Disposition'] = f'attachment; filename="{safe_name}.scriptpack.json"'
+        return response
+
+    @action(detail=False, methods=['post'], url_path='import')
+    def import_pack(self, request):
+        """
+        Import a Script Pack JSON document.
+
+        Request body:
+            pack      object  required — the full pack document
+            overwrite bool    optional — if true, update existing scripts/jobs
+                                         with the same name (default: false)
+
+        Response:
+            summary   object  — created/updated/skipped counts per resource type
+        """
+        pack = request.data.get('pack')
+        if not pack or not isinstance(pack, dict):
+            return Response(
+                {'error': "'pack' must be a JSON object."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        overwrite = bool(request.data.get('overwrite', False))
+
+        try:
+            summary = import_script_pack(pack, overwrite=overwrite)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:  # noqa: BLE001
+            return Response(
+                {'error': f'Import failed: {exc}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response(summary, status=status.HTTP_200_OK)
 
 
 class ScriptJobResultViewSet(viewsets.ReadOnlyModelViewSet):

@@ -4,7 +4,7 @@
 
     <v-tabs v-model="activeTab" class="mb-5">
       <v-tab value="policy">Policy Jobs</v-tab>
-      <v-tab value="script">Script Job Runs</v-tab>
+      <v-tab value="script">Bundle Runs</v-tab>
     </v-tabs>
 
     <v-window v-model="activeTab">
@@ -147,10 +147,10 @@
 
       </v-window-item>
 
-      <!-- ── SCRIPT JOB RUNS TAB ─────────────────────────────────────── -->
+      <!-- ── BUNDLE RUNS TAB ───────────────────────────────────────────── -->
       <v-window-item value="script">
         <div class="d-flex align-center justify-space-between mb-4">
-          <div class="text-caption text-medium-emphasis">Results from ad-hoc and policy-triggered script job executions.</div>
+          <div class="text-caption text-medium-emphasis">Results from ad-hoc and policy-triggered bundle executions.</div>
           <v-btn size="small" variant="tonal" prepend-icon="mdi-refresh" :loading="sjRuns.loading" @click="loadSjRuns">Refresh</v-btn>
         </div>
         <v-data-table-server
@@ -162,7 +162,7 @@
           density="compact"
           rounded="lg"
           elevation="1"
-          no-data-text="No script job runs yet."
+          no-data-text="No bundle runs yet."
           hover
           @update:options="onSjRunsTableOptions"
         >
@@ -364,7 +364,7 @@ async function cancel(job) {
 const activeTab = ref(route.query.tab === 'script' ? 'script' : 'policy')
 
 const sjRunHeaders = [
-  { title: 'Script Job',   key: 'script_job_name', sortable: false },
+  { title: 'Bundle',        key: 'script_job_name', sortable: false },
   { title: 'Device',       key: 'device_name',     sortable: false },
   { title: 'Triggered By', key: 'triggered_by',    sortable: false },
   { title: 'Status',       key: 'status',          sortable: false },

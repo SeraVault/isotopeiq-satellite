@@ -21,6 +21,9 @@ canonical JSON baseline, and get alerted when that configuration drifts unexpect
   changes surface as drift events with a structured side-by-side diff viewer
 - **Notifies** via syslog, email (SMTP), and FTP/SFTP export on configurable per-policy
   triggers
+- **Executes arbitrary scripts** on any managed device — remediation, deployment,
+  maintenance, and diagnostic Bundles can be run on a schedule or ad-hoc, independent
+  of the collection/drift workflow
 - Supports **LDAP / Active Directory** and **SAML 2.0** single sign-on in addition to
   local accounts
 
@@ -64,7 +67,7 @@ operations reference.
 | Document | Audience | Contents |
 |---|---|---|
 | [ADMIN_GUIDE.md](ADMIN_GUIDE.md) | System administrators | Installation, Docker setup, environment config, authentication (LDAP/SAML), service management, backup/restore, troubleshooting, security hardening, agent deployment |
-| [USER_GUIDE.md](USER_GUIDE.md) | End users | Devices, credentials, scripts, script jobs, policies, job monitor, drift review, drift exclusions, baselines, system settings |
+| [USER_GUIDE.md](USER_GUIDE.md) | End users | Devices, credentials, scripts, bundles, policies, job monitor, drift review, drift exclusions, baselines, system settings |
 
 ---
 
@@ -74,11 +77,12 @@ operations reference.
 data from a device or parses that data into canonical JSON. Four types: Collection, Parser,
 Deployment, Utility.
 
-**Script Job** — An ordered pipeline of script steps. Steps execute on the remote device
+**Bundle** — An ordered pipeline of script steps. Steps execute on the remote device
 (*client*) or on the Satellite server (*server*). Steps can pipe output to each other and
-flag outputs for baseline storage and drift comparison.
+flag outputs for baseline storage and drift comparison. Bundles can be exported as
+`.scriptpack.json` files and shared between Satellite instances.
 
-**Policy** — Binds one or more devices to a Script Job and a cron schedule. The primary
+**Policy** — Binds one or more devices to a Bundle and a cron schedule. The primary
 automation unit. Supports Agent Pull (no remote script execution) and Script Execution
 (SSH / Telnet / WinRM / HTTPS) collection methods.
 

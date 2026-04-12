@@ -499,6 +499,13 @@ a { color: inherit; text-decoration: none; }
 }
 .deploy-block ul li::before { content: '–'; position: absolute; left: 0; color: var(--text-dim); }
 
+.deploy-block-highlight {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, rgba(59,130,246,.08) 0%, var(--bg-2) 60%);
+  grid-column: 1 / -1;
+}
+.deploy-block-highlight h3 { color: var(--accent-2); }
+
 
 /* ── Footer ──────────────────────────────────────────────── */
 

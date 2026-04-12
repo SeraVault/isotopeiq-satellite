@@ -38,7 +38,7 @@ IsotopeIQ Satellite is a configuration collection, baseline, and drift-detection
 **Core workflow:**
 
 ```
-Devices → Credentials → Scripts → Script Jobs → Policies → Jobs → Baselines → Drift Alerts
+Devices → Credentials → Scripts → Bundles → Policies → Jobs → Baselines → Drift Alerts
 ```
 
 **Service stack:**
@@ -634,7 +634,7 @@ backend (Django / DRF)   :8000
 Policy schedule fires (or manual Run Now)
   → celery_beat enqueues a job per device
     → celery_worker picks up each job
-      → executes Script Job steps in order:
+      → executes Bundle steps in order:
           Client step → runs on device (SSH / Telnet / WinRM / HTTPS)
           Server step → runs on Satellite, receives previous step output via stdin
           Agent Pull  → Satellite calls GET device:9322/collect; no script step needed

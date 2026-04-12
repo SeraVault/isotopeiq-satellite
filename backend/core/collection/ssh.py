@@ -6,6 +6,7 @@ import paramiko
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 300  # seconds — Windows PS collection can be slow
+RECV_TIMEOUT = 330  # slightly longer than TIMEOUT to cover post-exec drain
 
 
 _KEY_TYPES = [
@@ -131,6 +132,7 @@ class SSHCollector:
             else:
                 _, stdout, stderr = client.exec_command(script_content, timeout=TIMEOUT)
             try:
+                stdout.channel.settimeout(RECV_TIMEOUT)
                 output = stdout.read().decode('utf-8', errors='replace')
                 error = stderr.read().decode('utf-8', errors='replace')
                 exit_code = stdout.channel.recv_exit_status()

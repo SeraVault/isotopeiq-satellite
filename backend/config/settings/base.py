@@ -113,6 +113,12 @@ CELERY_TIMEZONE = 'UTC'
 # Use a project-specific queue so tasks from other projects sharing the same
 # Redis instance are not accidentally consumed or discarded.
 CELERY_TASK_DEFAULT_QUEUE = 'isotopeiq_satellite_2'
+# Hard kill a task after 10 minutes; soft warning at 9 minutes.
+# This is a safety net — individual collectors already have per-operation
+# timeouts, but a hung TCP socket can still block recv_exit_status() forever
+# without this guard.
+CELERY_TASK_TIME_LIMIT = 600        # seconds — SIGKILL
+CELERY_TASK_SOFT_TIME_LIMIT = 540   # seconds — SoftTimeLimitExceeded
 
 # Static beat schedule — retention pruning runs daily at 03:00 UTC.
 # Policy-driven schedules are registered dynamically via django_celery_beat.

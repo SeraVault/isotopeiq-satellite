@@ -111,8 +111,8 @@
     </v-dialog>
 
     <v-tabs v-model="activeTab" class="mb-5">
+      <v-tab value="ScriptJobs">Bundles</v-tab>
       <v-tab value="Scripts">Scripts</v-tab>
-      <v-tab value="ScriptJobs">Script Jobs</v-tab>
     </v-tabs>
 
     <!-- ── WINDOW ─────────────────────────────────────────────────────────── -->
@@ -217,14 +217,19 @@
       <v-window-item value="ScriptJobs">
         <!-- What is a Script Job? -->
         <v-alert type="info" variant="tonal" density="compact" rounded="lg" class="mb-4 text-body-2" icon="mdi-information-outline">
-          A <strong>Script Job</strong> is an ordered pipeline of steps. Each step runs a script on the remote
+          A <strong>Bundle</strong> is an ordered pipeline of script steps. Each step runs a script on the remote
           device (<em>client</em>) or the satellite (<em>server</em>), optionally piping its output to the next
           step, saving results, and enabling baseline storage or drift detection.
+          Use <strong>Export</strong> to share a bundle as a <code>.scriptpack.json</code> file and
+          <strong>Import Pack</strong> to load one from another Satellite.
         </v-alert>
 
         <div class="d-flex justify-space-between align-center mb-3">
           <span class="text-body-2 text-medium-emphasis">{{ totalScriptJobs }} job definition(s)</span>
-          <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewScriptJob">New Script Job</v-btn>
+          <div class="d-flex ga-2">
+            <v-btn variant="tonal" prepend-icon="mdi-import" @click="importDialog.show = true">Import Pack</v-btn>
+            <v-btn color="primary" prepend-icon="mdi-plus" @click="openNewScriptJob">New Script Job</v-btn>
+          </div>
         </div>
 
         <!-- Filters -->
@@ -302,6 +307,7 @@
           </template>
           <template #item.actions="{ item }">
             <div class="d-flex ga-1">
+              <v-btn size="x-small" variant="tonal" @click="exportScriptJob(item)">Export</v-btn>
               <v-btn size="x-small" variant="tonal" @click="openRunNow(item)">Run Now</v-btn>
               <v-btn size="x-small" variant="tonal" @click="openScriptJobResults(item)">Results</v-btn>
               <v-btn size="x-small" variant="tonal" @click="openEditScriptJob(item)">Edit</v-btn>
@@ -420,22 +426,23 @@
         <v-card-text class="pa-4">
           <v-autocomplete
             v-model="runNowDialog.device_id"
-            :label="runNowDialog.needsDevice ? 'Device *' : 'Device (optional — leave blank for server-only)'"
+            label="Device *"
             :items="runNowDialog.devices"
             item-title="name"
             item-value="id"
             :loading="runNowDialog.deviceLoading"
-            clearable
+            :clearable="runNowDialog.noDevice"
+            :disabled="runNowDialog.noDevice"
             density="compact"
-            :hint="runNowDialog.needsDevice ? 'Required — this job has client steps.' : 'Leave blank to run server steps only.'"
+            hint="Select the device this bundle will run against."
             persistent-hint
           />
-          <v-alert
-            v-if="runNowDialog.needsDevice && !runNowDialog.device_id"
-            type="warning"
+          <v-checkbox
+            v-model="runNowDialog.noDevice"
+            label="No device — this bundle is self-contained (server-only, no device context needed)"
             density="compact"
+            hide-details
             class="mt-3"
-            text="This job has at least one client step. Please select a device."
           />
         </v-card-text>
         <v-card-actions class="pa-4 pt-0">
@@ -445,7 +452,7 @@
             color="primary"
             variant="tonal"
             :loading="runNowDialog.running"
-            :disabled="runNowDialog.needsDevice && !runNowDialog.device_id"
+            :disabled="!runNowDialog.noDevice && !runNowDialog.device_id"
             @click="confirmRunNow"
           >Run</v-btn>
         </v-card-actions>
@@ -563,11 +570,55 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Import Pack dialog -->
+    <v-dialog v-model="importDialog.show" max-width="500">
+      <v-card rounded="lg">
+        <v-card-title class="pt-4">Import Script Pack</v-card-title>
+        <v-divider />
+        <v-card-text class="pa-4">
+          <v-alert v-if="importDialog.error" type="error" variant="tonal" density="compact" class="mb-3">
+            {{ importDialog.error }}
+          </v-alert>
+          <v-alert v-if="importDialog.summary" type="success" variant="tonal" density="compact" class="mb-3">
+            <div v-if="importDialog.summary.created_jobs.length || importDialog.summary.created_scripts.length">
+              Created: {{ importDialog.summary.created_jobs.length }} bundle(s), {{ importDialog.summary.created_scripts.length }} script(s).
+            </div>
+            <div v-if="importDialog.summary.updated_jobs.length || importDialog.summary.updated_scripts.length">
+              Updated: {{ importDialog.summary.updated_jobs.length }} bundle(s), {{ importDialog.summary.updated_scripts.length }} script(s).
+            </div>
+            <div v-if="importDialog.summary.skipped_jobs.length || importDialog.summary.skipped_scripts.length">
+              Skipped (already exist): {{ importDialog.summary.skipped_jobs.length }} bundle(s), {{ importDialog.summary.skipped_scripts.length }} script(s).
+            </div>
+          </v-alert>
+          <v-file-input
+            v-model="importDialog.file"
+            label="Script Pack (.json)"
+            accept=".json"
+            prepend-icon="mdi-paperclip"
+            density="compact"
+            class="mb-3"
+          />
+          <v-checkbox
+            v-model="importDialog.overwrite"
+            label="Overwrite existing scripts and jobs with the same name"
+            density="compact"
+            hide-details
+          />
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="pa-3">
+          <v-spacer />
+          <v-btn @click="importDialog.show = false; importDialog.summary = null; importDialog.error = null">Close</v-btn>
+          <v-btn color="primary" variant="tonal" :loading="importDialog.loading" @click="doImportPack">Import</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 
 const confirmDialog = ref({ open: false, message: '', resolve: () => {} })
@@ -580,7 +631,7 @@ import api from '../api'
 
 const router = useRouter()
 
-const activeTab  = ref('Scripts')
+const activeTab  = ref('ScriptJobs')
 const showHelp   = ref(false)
 
 // ── individual scripts ────────────────────────────────────────────────────────
@@ -756,7 +807,7 @@ function sjMoveStep(idx, dir) {
 }
 
 // Run Now dialog
-const runNowDialog = ref({ show: false, job: null, device_id: null, devices: [], deviceLoading: false, running: false, needsDevice: false })
+const runNowDialog = ref({ show: false, job: null, device_id: null, devices: [], deviceLoading: false, running: false, noDevice: false })
 const snackbar = ref({ show: false, text: '', color: 'success' })
 
 function showSnack(text, color = 'success') {
@@ -764,8 +815,7 @@ function showSnack(text, color = 'success') {
 }
 
 async function openRunNow(item) {
-  const needsDevice = (item.steps ?? []).some(s => s.script_run_on === 'client' || s.script_run_on === 'both')
-  runNowDialog.value = { show: true, job: item, device_id: null, devices: [], deviceLoading: true, running: false, needsDevice }
+  runNowDialog.value = { show: true, job: item, device_id: null, devices: [], deviceLoading: true, running: false, noDevice: false }
   try {
     const res = await api.get('/devices/', { params: { page_size: 1000 } })
     runNowDialog.value.devices = res.data?.results ?? res.data ?? []
@@ -851,6 +901,46 @@ async function removeScriptJob(id) {
   if (!await askConfirm('Delete this Script Job?')) return
   await api.delete(`/scripts/script-jobs/${id}/`)
   await loadScriptJobs()
+}
+
+// ── Pack export / import ─────────────────────────────────────────────────────
+async function exportScriptJob(item) {
+  try {
+    const { data } = await api.get(`/scripts/script-jobs/${item.id}/export/`)
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${item.name.toLowerCase().replace(/ /g, '_')}.scriptpack.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    showSnack('Export failed.', 'error')
+  }
+}
+
+const importDialog = ref({ show: false, file: null, overwrite: false, loading: false, error: null, summary: null })
+
+async function doImportPack() {
+  if (!importDialog.value.file) return
+  importDialog.value.loading = true
+  importDialog.value.error = null
+  importDialog.value.summary = null
+  try {
+    const rawFile = toRaw(importDialog.value.file)
+    const text = await rawFile.text()
+    const pack = JSON.parse(text)
+    console.log('[ImportPack] format:', pack.format, '| version:', pack.version,
+      '| scripts:', pack.scripts?.length, '| jobs:', pack.script_jobs?.length)
+    const { data } = await api.post('/scripts/script-jobs/import/', { pack, overwrite: importDialog.value.overwrite })
+    importDialog.value.summary = data
+    await loadScriptJobs()
+    await loadAllScripts()
+  } catch (e) {
+    importDialog.value.error = e?.response?.data?.error ?? 'Import failed — check the file is a valid Script Pack.'
+  } finally {
+    importDialog.value.loading = false
+  }
 }
 
 

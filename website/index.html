@@ -43,6 +43,11 @@
           Deployment scripts can be pushed to devices on a schedule or on demand, providing
           Ansible-like remediation capability from the same interface.
         </p>
+        <p>
+          Satellite is designed for <strong>air-gapped and classified environments</strong>. There are
+          no cloud dependencies, no telemetry, no licence checks, and no external network calls at
+          runtime. All agent binaries ship with the repository.
+        </p>
         <div class="header-links">
           <a href="https://github.com/SeraVault/isotopeiq-satellite" class="btn btn-primary" target="_blank" rel="noopener">View Source on GitHub</a>
           <a href="#how-it-works" class="btn btn-ghost">How It Works</a>
@@ -247,11 +252,31 @@
         </div>
 
         <div class="cap-section">
-          <h3>Notifications</h3>
+          <h3>Notifications &amp; Export</h3>
+          <p style="margin:0 0 0.6rem">Per-policy <strong>Post-Collection Actions</strong> fire automatically on a configurable trigger — choose any combination of destination and event:</p>
           <ul>
-            <li>Per-policy <strong>Post-Collection Actions</strong> define trigger (new baseline / drift detected / always) × destination (syslog / email / FTP/SFTP)</li>
-            <li>Syslog messages include device name, policy name, and a summary of changed fields — suitable for SIEM ingestion</li>
-            <li>A global fallback action handles agent-push jobs not associated with a policy</li>
+            <li><strong>Triggers:</strong> New baseline established · Drift detected · Every successful collection</li>
+            <li>
+              <strong>Syslog</strong> — UDP syslog message to a configurable host, port, and facility
+              (default <code>local0</code>, port 514). Each message is structured with
+              <code>DRIFT_DETECTED</code> or <code>BASELINE_ESTABLISHED</code> keyword, device name,
+              hostname, event ID, and a flat list of changed fields — ready for direct ingestion into
+              a SIEM (Splunk, Elastic, Graylog, etc.). Works entirely over the local network; no
+              internet access required.
+            </li>
+            <li>
+              <strong>Email</strong> — SMTP notification with configurable host, port, TLS, credentials,
+              and recipient list. Compatible with an internal mail relay — no external mail service needed.
+            </li>
+            <li>
+              <strong>FTP / SFTP</strong> — on each trigger, the device's full canonical JSON baseline
+              is uploaded as <code>&lt;device-name&gt;_baseline.json</code> to a configured remote path.
+              FTP uses the Python standard library; SFTP uses Paramiko (the same library used for SSH
+              collection). Remote directories are created automatically. Use this to push snapshots into
+              a document store, NAS, or archival system inside the air-gapped network.
+            </li>
+            <li>A global fallback action covers agent-push jobs not associated with a policy</li>
+            <li>All notification targets are configured through the admin UI — no restart required</li>
           </ul>
         </div>
 
@@ -311,24 +336,34 @@
 
         <div class="deploy-block">
           <h3>Docker Compose</h3>
-          <p>Requires Docker and Docker Compose on any Linux host.</p>
+          <p>Requires Docker and Docker Compose on the target host. Images are built from source — no registry pull needed.</p>
           <div class="code-block">
-            <div class="code-header">terminal</div>
-            <pre><code><span class="dim">$</span> git clone https://github.com/SeraVault/isotopeiq-satellite
-<span class="dim">$</span> cd isotopeiq-satellite
-<span class="dim">$</span> cp .env.example .env
-<span class="dim"># edit .env — set SECRET_KEY, FERNET_KEY, etc.</span>
+            <div class="code-header">on the target host</div>
+            <pre><code><span class="dim">$</span> cp .env.example .env
+<span class="dim"># edit .env — set SECRET_KEY, FIELD_ENCRYPTION_KEY, DB_PASSWORD</span>
 <span class="dim">$</span> ./deploy.sh up</code></pre>
           </div>
+          <p style="margin-top:10px">The <code>deploy.sh</code> script also provides <code>logs</code>, <code>restart</code>, <code>migrate</code>, <code>shell</code>, and <code>reset-db</code> sub-commands.</p>
         </div>
 
         <div class="deploy-block">
-          <h3>Bare Metal</h3>
+          <h3>Bare Metal (systemd + nginx)</h3>
           <p>
-            The included <code>deploy/push.sh</code> script rsyncs the project to a remote Ubuntu 24.04
-            host and configures systemd services and nginx. TLS options: self-signed, Let's Encrypt,
-            or bring your own certificate.
+            Run from your development machine. <code>deploy/push.sh</code> rsyncs the project to a
+            remote Ubuntu 24.04 host over SSH, then runs <code>deploy/install.sh</code> on the server
+            to install a Python virtualenv, build the frontend, configure systemd services, and set up nginx.
+            Safe to re-run for updates.
           </p>
+          <div class="code-block">
+            <div class="code-header">from your dev machine</div>
+            <pre><code><span class="dim"># First-time deployment with a self-signed certificate</span>
+<span class="dim">$</span> SETUP=true DOMAIN=myserver.lan \
+    bash deploy/push.sh isotopeiq@192.168.1.10
+
+<span class="dim"># Subsequent updates (no SETUP needed)</span>
+<span class="dim">$</span> bash deploy/push.sh isotopeiq@192.168.1.10</code></pre>
+          </div>
+          <p style="margin-top:10px">TLS options: self-signed (auto-generated, no internet needed), internal CA certificate, or Let's Encrypt.</p>
         </div>
 
         <div class="deploy-block">
@@ -342,12 +377,25 @@
           </ul>
         </div>
 
-        <div class="deploy-block">
-          <h3>Air-Gapped Environments</h3>
+        <div class="deploy-block deploy-block-highlight">
+          <h3>Air-Gapped &amp; Classified Networks</h3>
           <p>
-            All agent binaries are pre-compiled and included in the repository. Python source agents
-            are provided as a fallback. No external network access is required at runtime — there
-            are no cloud dependencies or telemetry calls.
+            Satellite is built to operate without any external network access. Every dependency
+            needed at runtime ships with the repository:
+          </p>
+          <ul>
+            <li>Pre-compiled agent binaries for Linux x86-64, Linux x86, macOS, and Windows — no package manager or internet connection required on managed hosts</li>
+            <li>Python source agents provided as a drop-in fallback for environments that block compiled binaries or unsigned executables</li>
+            <li>No telemetry, no licence server, no cloud callbacks — the server makes no outbound connections except to the devices you configure</li>
+            <li>All notification paths (syslog, email, FTP/SFTP) target internal infrastructure — point them at your on-site SIEM, mail relay, or file server</li>
+            <li>Authentication can be handled entirely on-premises via local accounts, LDAP/Active Directory, or SAML 2.0 against an internal IdP</li>
+            <li>Docker images can be built from source on the deployment host; no registry pull required</li>
+            <li>Compatible with <strong>data diode</strong> architectures — the FTP/SFTP export action can push canonical JSON snapshots across a one-way transfer device to a higher-security enclave, with no return path required</li>
+          </ul>
+          <p style="margin-top:0.75rem">
+            To deploy into an air-gapped environment: clone the repository on an internet-connected
+            machine, transfer it to the target host via USB, SCP, or your standard media transfer
+            process, then run <code>./deploy.sh up</code> or the bare-metal installer as normal.
           </p>
         </div>
 

@@ -8,7 +8,7 @@
 4. [Dashboard](#dashboard)
 5. [Devices](#devices)
 6. [Credentials](#credentials)
-7. [Scripts & Script Jobs](#scripts--script-jobs)
+7. [Scripts & Bundles](#scripts--bundles)
 8. [Policies](#policies)
 9. [Job Monitor](#job-monitor)
 10. [Drift](#drift)
@@ -31,13 +31,13 @@ IsotopeIQ Satellite is a configuration collection and drift detection platform. 
 **Core workflow:**
 
 ```
-Devices → Scripts → Script Jobs → Policies → Jobs → Baselines → Drift Detection
+Devices → Scripts → Bundles → Policies → Jobs → Baselines → Drift Detection
 ```
 
 1. Add your **devices** and **credentials**
 2. Write or import **collection and parser scripts**
-3. Compose scripts into a **Script Job** — an ordered execution pipeline
-4. Create a **policy** that ties devices, a Script Job, and a schedule together
+3. Compose scripts into a **Bundle** — an ordered execution pipeline
+4. Create a **policy** that ties devices, a Bundle, and a schedule together
 5. Policies run as **jobs** — raw output is collected, parsed, and stored
 6. Each successful parse updates the device **baseline**
 7. If the new baseline differs from the previous one, a **drift event** is raised
@@ -55,8 +55,8 @@ Navigate to the Satellite URL and log in with your username and password. Tokens
 1. **Credentials** — Create SSH keys or passwords before adding devices
 2. **Devices** — Register the hosts you want to monitor
 3. **Scripts** — Upload or write your collection and parser scripts
-4. **Script Jobs** — Compose scripts into an ordered pipeline with baseline and drift steps enabled
-5. **Policies** — Create a policy that combines devices + Script Job + a schedule
+4. **Bundles** — Compose scripts into an ordered pipeline with baseline and drift steps enabled
+5. **Policies** — Create a policy that combines devices + Bundle + a schedule
 6. **Run** — Trigger a manual run to validate everything, then let the schedule take over
 
 ---
@@ -185,7 +185,7 @@ Click **Add Credential**, select the type, and fill in the required fields. Pass
 
 ---
 
-## Scripts & Script Jobs
+## Scripts & Bundles
 
 *Configuration → Scripts*
 
@@ -204,12 +204,12 @@ Scripts are the individual executable units. There are four types:
 
 | Field | Notes |
 |---|---|
-| Name | Unique identifier; shown in the Script Job step picker |
+| Name | Unique identifier; shown in the Bundle step picker |
 | Type | Collection, Parser, Deployment, or Utility |
 | Run On | **Push to device** — executes on the remote device; **Run on Satellite** — executes on the Satellite server; **Both** — runs on the device first, then the server |
 | Language | Shell, PowerShell, Python, etc. Used to invoke the correct interpreter |
 | Version | Free-form version string; visible in job results |
-| Active | Inactive scripts are hidden from the Script Job step picker but remain visible for reference |
+| Active | Inactive scripts are hidden from the Bundle step picker but remain visible for reference |
 
 #### Script Editor
 
@@ -221,15 +221,15 @@ Click **New Script** to open the full-screen script editor, or click **Edit** on
 - **Output section** — shows stdout, parsed result, and any errors, with copy and *Use as input* buttons for chaining tests
 - **Substitution placeholder reference** — click Help in the toolbar for the full list of runtime placeholders (`{{USERNAME}}`, `{{PRIVATE_KEY}}`, `{{ELEVATE}}`, `{{SATELLITE_URL}}`, etc.)
 
-### Script Jobs
+### Bundles
 
-*Scripts → Script Jobs tab*
+*Scripts → Bundles tab*
 
-A **Script Job** is an ordered pipeline of one or more script steps. Script Jobs are what Policies actually execute — scripts themselves are not assigned to policies directly.
+A **Bundle** is an ordered pipeline of one or more script steps. Bundles are what Policies actually execute — scripts themselves are not assigned to policies directly.
 
 #### Step Options
 
-Each step in a Script Job has four optional flags:
+Each step in a Bundle has four optional flags:
 
 | Flag | Effect |
 |---|---|
@@ -238,13 +238,36 @@ Each step in a Script Job has four optional flags:
 | Enable Baseline | Saves this step's canonical JSON output as the device's baseline |
 | Enable Drift | Compares this step's output against the stored baseline and creates drift events if differences are found |
 
-A typical collection Script Job has two steps:
+A typical collection Bundle has two steps:
 1. A **Collection** script with *Run on: Push to device* — gathers raw data
 2. A **Parser** script with *Run on: Run on Satellite*, *Pipe to next* enabled on step 1, *Enable Baseline* and *Enable Drift* enabled on step 2 — transforms to canonical JSON and stores it
 
-#### Running a Script Job Ad-Hoc
+None of the four step flags are required. If none are set, the Bundle simply executes and stores its output — no baseline, no drift check. This makes Bundles suitable for any remote execution need, not just configuration collection.
 
-Click **Run Now** on a Script Job row to execute it immediately. A dialog prompts you to select a target device (for client steps) or confirms server-only execution. Results appear in the **Script Job Runs** tab of the Job Monitor.
+#### Arbitrary Script Execution
+
+Bundles do not have to perform baseline or drift operations at all. You can use them for:
+
+- **Remediation** — push a hardening script or configuration fix to one or more devices when drift is detected
+- **Deployment** — roll out a package installation or configuration change across a device group
+- **Data export** — run a server-side script to push collected data to an external system
+- **Maintenance tasks** — clear logs, rotate credentials, restart services
+- **One-off diagnostics** — run a read-only diagnostic command and capture the output without touching the baseline
+
+Create a Bundle with the relevant Deployment or Utility script steps, leave *Enable Baseline* and *Enable Drift* unchecked, and use **Run Now** to execute it against any device. The full output is captured and visible in the Bundle Runs tab of the Job Monitor.
+
+Remediation Bundles can also be assigned to a Policy, allowing them to run on a schedule alongside or independently of collection jobs.
+
+#### Running a Bundle Ad-Hoc
+
+Click **Run Now** on a Bundle row to execute it immediately. A dialog prompts you to select a target device (for client steps) or confirms server-only execution. Results appear in the **Bundle Runs** tab of the Job Monitor.
+
+#### Sharing Bundles
+
+Bundles and the scripts they reference can be packaged into a portable **Script Pack** (`.scriptpack.json`) for sharing between Satellite instances or with the wider community.
+
+- **Export** — click **Export** on any Bundle row to download a self-contained JSON file containing the Bundle definition and all referenced scripts.
+- **Import Pack** — click **Import Pack** in the Bundles toolbar, choose a `.scriptpack.json` file, and optionally tick *Overwrite existing* to replace scripts/bundles with the same name. The import summary shows how many scripts and bundles were created, updated, or skipped.
 
 ---
 
@@ -252,15 +275,15 @@ Click **Run Now** on a Script Job row to execute it immediately. A dialog prompt
 
 *Configuration → Policies*
 
-A Policy ties together devices, a Script Job, and a schedule to create an automated collection workflow.
+A Policy ties together devices, a Bundle, and a schedule to create an automated collection workflow.
 
 ### Policy Components
 
 | Component | Required | Description |
 |---|---|---|
 | Name | Yes | Shown in job monitor and notifications |
-| Collection Method | Yes | **Script Execution** — Satellite connects to devices and runs the Script Job; **Agent Pull** — Satellite calls `GET /collect` on the agent, then passes the result to any server-side parser steps |
-| Script Job | Yes | The ordered pipeline of steps to execute |
+| Collection Method | Yes | **Script Execution** — Satellite connects to devices and runs the Bundle; **Agent Pull** — Satellite calls `GET /collect` on the agent, then passes the result to any server-side parser steps |
+| Bundle | Yes | The ordered pipeline of steps to execute |
 | Devices | Yes | One or more devices to target |
 | Schedule | Yes | When to run (cron expression) |
 | Delay between devices | No | Seconds to wait between each device execution — useful for rate-limiting against shared infrastructure |
@@ -329,9 +352,9 @@ Click **Details** on any job row to expand the full result view:
 
 Running or pending jobs show a **Cancel** button. Cancellation is best-effort — if the job is mid-execution on a remote device, the remote script may already have completed.
 
-### Script Job Runs Tab
+### Bundle Runs Tab
 
-Shows ad-hoc and policy-triggered executions of Script Jobs. Columns: Script Job name, device, triggered by, status, started time, and duration.
+Shows ad-hoc and policy-triggered executions of Bundles. Columns: Bundle name, device, triggered by, status, started time, and duration.
 
 Click a row to expand the per-step output viewer — each step's stdout and any error text is shown separately.
 
@@ -663,20 +686,20 @@ The agent download page shows the exact commands for each platform.
 
 ## Runtime Flow Diagram
 
-The following diagram shows how a policy or script job execution flows from trigger through to drift resolution.
+The following diagram shows how a policy or bundle execution flows from trigger through to drift resolution.
 
 ```mermaid
 flowchart TD
-    START(["Policy · Script Job trigger\n(scheduler / manual / Run button)"])
+    START(["Policy · Bundle trigger\n(scheduler / manual / Run button)"])
     START --> CM{"Triggered\nhow?"}
 
     CM -->|"Policy — agent pull"| AGENTCOL["Satellite calls\nGET device:port/collect"]
-    CM -->|"Policy / Script Job\n— script execution"| STEPS
+    CM -->|"Policy / Bundle\n— script execution"| STEPS
 
     AGENTCOL --> AGENTRAW["Raw JSON received\nfrom agent"]
     AGENTRAW --> BL
 
-    STEPS["Execute Script Job steps in order\n─────────────────────────────\nClient step → run on device\n  SSH · Telnet · WinRM · HTTPS · Agent /run\nServer step → exec on Satellite\n  receives previous step output via stdin"]
+    STEPS["Execute Bundle steps in order\n─────────────────────────────\nClient step → run on device\n  SSH · Telnet · WinRM · HTTPS · Agent /run\nServer step → exec on Satellite\n  receives previous step output via stdin"]
 
     STEPS --> PIPE{"Pipe to next?"}
     PIPE -->|Yes| STEPS
@@ -728,7 +751,7 @@ flowchart TD
 
 **Credential** — Stored authentication material (SSH key, password, API token) used to connect to devices. Encrypted at rest.
 
-**Deployment Script** — A script pushed to a device to apply remediation or a golden configuration. Used as a step in a Script Job.
+**Deployment Script** — A script pushed to a device to apply remediation or a golden configuration. Used as a step in a Bundle.
 
 **Device** — A managed host, appliance, or network node. Devices are collected from using a pull model (Satellite connects) or the agent model (agent installed on device).
 
@@ -744,11 +767,11 @@ flowchart TD
 
 **Parser Script** — A server-side script that receives raw collection output via stdin and must write valid canonical JSON to stdout.
 
-**Policy** — The main scheduling unit. Binds one or more devices to a Script Job and defines when collection should run.
+**Policy** — The main scheduling unit. Binds one or more devices to a Bundle and defines when collection should run.
 
 **Post-Collection Action** — A configured trigger/destination pair on a policy that sends a notification or export automatically when a certain event occurs (new baseline, drift detected, or always).
 
-**Script Job** — An ordered pipeline of script steps. Each step can run on the remote device or on the Satellite server. Steps can pipe output to subsequent steps, save output, enable baseline storage, and enable drift detection. Script Jobs are what Policies reference.
+**Bundle** — An ordered pipeline of script steps. Each step can run on the remote device or on the Satellite server. Steps can pipe output to subsequent steps, save output, enable baseline storage, and enable drift detection. Bundles are what Policies reference. Bundles can be exported and imported as `.scriptpack.json` files.
 
 **Volatile Fields / Drift Exclusions** — Configuration fields that change frequently and legitimately without indicating a real configuration problem. Managed as Drift Exclusion rules.
 
