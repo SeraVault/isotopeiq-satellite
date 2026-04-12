@@ -227,22 +227,48 @@ if command -v flatpak &>/dev/null; then
 fi
 
 # ── Services ──────────────────────────────────────────────────────────────────
+# Use list-unit-files (not list-units) so the list is stable and complete:
+# every installed service appears with its enabled/disabled state regardless
+# of whether it is currently loaded or running in memory.
 section "services"
 if [ "$INIT_SYSTEM" = "systemd" ]; then
-    systemctl list-units --type=service --all --no-pager --no-legend \
+    systemctl list-unit-files --type=service --no-pager --no-legend \
         --output=json 2>/dev/null \
-    || systemctl list-units --type=service --all --no-pager --no-legend 2>/dev/null
+    || systemctl list-unit-files --type=service --no-pager --no-legend 2>/dev/null
 elif [ "$INIT_SYSTEM" = "openrc" ]; then
-    rc-status --all --nocolor 2>/dev/null || rc-update show 2>/dev/null || true
-elif [ "$INIT_SYSTEM" = "upstart" ]; then
-    initctl list 2>/dev/null || true
-else
-    # SysVinit — list scripts in /etc/init.d
+    # rc-update show emits "svc | runlevel" for enabled services; emit name|enabled
+    # then list all init.d scripts so disabled ones appear as name|disabled
+    enabled_svcs=$(rc-update show 2>/dev/null | awk '{print $1}' | sort -u)
     if [ -d /etc/init.d ]; then
         for svc in /etc/init.d/*; do
             name=$(basename "$svc")
-            status=$("$svc" status 2>/dev/null | grep -qiE "running|started" && echo "running" || echo "stopped")
-            echo "${name}|${status}"
+            if echo "$enabled_svcs" | grep -qx "$name"; then
+                echo "${name}|enabled"
+            else
+                echo "${name}|disabled"
+            fi
+        done
+    else
+        echo "$enabled_svcs" | while read -r name; do echo "${name}|enabled"; done
+    fi
+elif [ "$INIT_SYSTEM" = "upstart" ]; then
+    # initctl show-config -e emits start/stop conditions — use initctl list for
+    # enabled state ("stop/waiting" = disabled effectively, "start/running" = running)
+    initctl list 2>/dev/null | awk '
+        /start\/running/ { print $1 "|enabled" }
+        /stop\/waiting/  { print $1 "|disabled" }
+    ' || true
+else
+    # SysVinit — check rc2.d (default runlevel) for S* symlinks
+    if [ -d /etc/init.d ]; then
+        for svc in /etc/init.d/*; do
+            name=$(basename "$svc")
+            # Service is enabled if an S* symlink exists in rc2.d or rc3.d
+            if ls /etc/rc2.d/S*"${name}" /etc/rc3.d/S*"${name}" 2>/dev/null | grep -q .; then
+                echo "${name}|enabled"
+            else
+                echo "${name}|disabled"
+            fi
         done
     fi
 fi

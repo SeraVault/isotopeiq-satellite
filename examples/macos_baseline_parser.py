@@ -343,28 +343,21 @@ for line in lines("packages"):
     })
 
 
-# ── services (launchctl list) ─────────────────────────────────────────────────
+# ── services (plist enumeration) ─────────────────────────────────────────────
 
-# launchctl list columns: PID  LastExitStatus  Label
-# PID is "-" when not running.
+# Collector emits: label|enabled   or   label|disabled
+# Source: defaults read on each .plist in LaunchDaemons / LaunchAgents dirs.
 
 output["services"] = []
 for line in lines("services"):
     line = line.strip()
-    if not line or line.startswith("PID"):
+    if not line or "|" not in line:
         continue
-    parts = line.split(None, 2)
-    if len(parts) < 3:
-        continue
-    pid_field, exit_status, label = parts[0], parts[1], parts[2]
-    running = pid_field != "-" and pid_field.isdigit()
-    status  = "running" if running else "stopped"
-    # Treat exit status 0 as clean stop; non-zero suggests failure (still "stopped")
-    output["services"].append({
-        "name":    label,
-        "status":  status,
-        "startup": "unknown",   # launchctl list does not expose this reliably
-    })
+    parts = line.split("|", 1)
+    name    = parts[0].strip()
+    startup = parts[1].strip().lower() if len(parts) > 1 else "unknown"
+    if name:
+        output["services"].append({"name": name, "startup": startup})
 
 
 # ── filesystem (df -P -k) ─────────────────────────────────────────────────────

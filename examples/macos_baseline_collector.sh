@@ -209,8 +209,26 @@ fi
 
 # ── Services ──────────────────────────────────────────────────────────────────
 section "services"
-# launchctl list: PID  LastExitStatus  Label
-launchctl list 2>/dev/null || echo ""
+# Enumerate LaunchDaemons and LaunchAgents plist files for stable enabled/disabled
+# state. launchctl list only shows currently loaded services — it fluctuates.
+# Format: label|enabled  (enabled = Disabled key absent or 0)
+for dir in \
+    /System/Library/LaunchDaemons \
+    /System/Library/LaunchAgents \
+    /Library/LaunchDaemons \
+    /Library/LaunchAgents; do
+    [ -d "$dir" ] || continue
+    for plist in "$dir"/*.plist; do
+        [ -f "$plist" ] || continue
+        label=$(defaults read "$plist" Label 2>/dev/null || basename "$plist" .plist)
+        disabled=$(defaults read "$plist" Disabled 2>/dev/null || echo "0")
+        if [ "$disabled" = "1" ]; then
+            echo "${label}|disabled"
+        else
+            echo "${label}|enabled"
+        fi
+    done
+done
 
 # ── Filesystem ────────────────────────────────────────────────────────────────
 section "filesystem"

@@ -308,34 +308,42 @@ for line in lines("packages"):
 svc_raw = sections.get("services", "")
 
 def _parse_services(raw):
-    # Try JSON first (systemctl --output=json)
+    # Try JSON first (systemctl list-unit-files --output=json)
+    # Each entry: {"unit_file": "sshd.service", "state": "enabled", "preset": "enabled"}
     try:
         units = json.loads(raw)
         result_svcs = []
         for u in units:
-            name = u.get("unit", "").removesuffix(".service")
-            active = u.get("active", "").lower()
-            sub    = u.get("sub", "").lower()
-            load   = u.get("load", "").lower()
-            status = "running" if sub == "running" else ("stopped" if active in ("inactive", "failed") else "unknown")
-            startup = "enabled" if load == "loaded" else "disabled"
-            result_svcs.append({"name": name, "status": status, "startup": startup})
+            name = u.get("unit_file", "").removesuffix(".service")
+            if not name:
+                continue
+            state = u.get("state", "unknown").lower()
+            # Normalise: enabled/disabled/masked/static/generated/indirect -> keep as-is
+            result_svcs.append({"name": name, "startup": state})
         return result_svcs
     except (json.JSONDecodeError, ValueError, AttributeError):
         pass
-    # Fallback: plain-text `systemctl list-units` output
+    # Fallback: plain-text `systemctl list-unit-files` output
+    # Columns: UNIT FILE  STATE  PRESET
     result_svcs = []
     for line in raw.splitlines():
         line = line.strip()
         if not line or line.startswith("UNIT"):
             continue
+        # Non-systemd collectors emit pipe-delimited "name|state" format
+        if "|" in line:
+            parts = line.split("|", 1)
+            name  = parts[0].strip()
+            state = parts[1].strip().lower() if len(parts) > 1 else "unknown"
+            if name:
+                result_svcs.append({"name": name, "startup": state})
+            continue
         parts = line.split()
-        if len(parts) < 4:
+        if len(parts) < 2:
             continue
         name = parts[0].removesuffix(".service")
-        sub  = parts[3].lower() if len(parts) > 3 else ""
-        status = "running" if sub == "running" else "stopped"
-        result_svcs.append({"name": name, "status": status, "startup": "unknown"})
+        state = parts[1].lower()
+        result_svcs.append({"name": name, "startup": state})
     return result_svcs
 
 output["services"] = _parse_services(svc_raw)
