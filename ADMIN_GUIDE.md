@@ -5,6 +5,9 @@
 1. [Overview](#1-overview)
 2. [Prerequisites](#2-prerequisites)
 3. [Installation](#3-installation)
+   - [Pre-Built Bundle (Offline)](#31-pre-built-bundle-installation-offline)
+   - [From Source](#32-installing-from-source)
+   - [Accessing the Application](#33-accessing-the-application)
 4. [Environment Configuration](#4-environment-configuration)
 5. [Starting and Stopping Services](#5-starting-and-stopping-services)
 6. [Authentication Configuration](#6-authentication-configuration)
@@ -47,18 +50,19 @@ Devices → Credentials → Scripts → Bundles → Policies → Jobs → Baseli
 |---|---|---|
 | `db` | PostgreSQL 16 | 5432 (internal) |
 | `redis` | Celery broker / cache | 6379 (internal) |
-| `backend` | Django REST API | 8000 |
+| `backend` | Django REST API | 8000 (internal) |
 | `celery_worker` | Job execution | — |
 | `celery_beat` | Job scheduler | — |
-| `frontend` | Vue 3 / Vite UI | 5173 |
+| `frontend` | Vue 3 / Vite UI | 80 (internal) |
+| `nginx` | Reverse proxy / TLS | **80, 443** |
 
 ---
 
 ## 2. Prerequisites
 
 - **Docker** 24+ with the Compose plugin (`docker compose` — not legacy `docker-compose`)
-- **Git** (to clone the repository)
-- **Python 3** on the host (only required to generate the `FIELD_ENCRYPTION_KEY`)
+- **Git** — only required for source-based installation (§3.2)
+- **Python 3** on the host — only required to generate `FIELD_ENCRYPTION_KEY` (see §4.1)
 - Network access from the Satellite host to all managed devices on their management ports (SSH 22, WinRM 5985/5986, SNMP 161, etc.)
 
 Verify Docker is ready:
@@ -72,14 +76,67 @@ docker compose version
 
 ## 3. Installation
 
-### 3.1 Clone the Repository
+Two installation paths are available:
+
+| Path | When to use |
+|---|---|
+| **§3.1 Pre-built bundle** | Air-gapped / offline servers, no build tools required |
+| **§3.2 From source** | Development or when building images on the server |
+
+---
+
+### 3.1 Pre-Built Bundle Installation (Offline)
+
+This path uses a self-contained archive that includes all Docker images. No internet access, Git, or build tools are required on the target server — only Docker.
+
+#### 3.1.1 Transfer the Bundle
+
+Copy the bundle archive to the server by whatever means is available (USB, SCP, shared drive, etc.):
+
+```bash
+scp isotopeiq-satellite-docker-<date>.tar.gz user@server:~
+```
+
+#### 3.1.2 Extract and Configure
+
+```bash
+tar -xzf isotopeiq-satellite-docker-<date>.tar.gz
+cd isotopeiq-satellite-docker-<date>
+cp .env.example .env
+```
+
+Edit `.env` and fill in all required values. See [Section 4](#4-environment-configuration) for details.
+
+#### 3.1.3 Deploy
+
+```bash
+bash deploy.sh
+```
+
+This script:
+1. Loads all Docker images from `images.tar.gz` into the local Docker store
+2. Creates any configured host data directories
+3. Starts all containers in the background
+4. Runs Django database migrations automatically
+
+#### 3.1.4 Create the First Admin User
+
+```bash
+bash deploy.sh createsuperuser
+```
+
+---
+
+### 3.2 Installing from Source
+
+#### 3.2.1 Clone the Repository
 
 ```bash
 git clone <repository-url> isotopeiq-satellite
 cd isotopeiq-satellite
 ```
 
-### 3.2 Create the Environment File
+#### 3.2.2 Create the Environment File
 
 ```bash
 cp .env.example .env
@@ -87,19 +144,19 @@ cp .env.example .env
 
 Edit `.env` and fill in all required values before proceeding. See [Section 4](#4-environment-configuration) for details.
 
-### 3.3 Build and Start
+#### 3.2.3 Build and Start
 
 ```bash
 ./deploy.sh up
 ```
 
 This command:
-1. Builds all Docker images
+1. Builds all Docker images from source
 2. Starts all containers in the background
 3. Waits for PostgreSQL to become ready
 4. Runs all Django database migrations automatically
 
-### 3.4 Create the First Admin User
+#### 3.2.4 Create the First Admin User
 
 ```bash
 ./deploy.sh createsuperuser
@@ -107,13 +164,20 @@ This command:
 
 Follow the prompts to set a username, email address, and password. This account has full administrative access to the UI and API.
 
-### 3.5 Access the Application
+---
+
+### 3.3 Accessing the Application
+
+All traffic is routed through the nginx reverse proxy. Direct service ports are not exposed externally.
 
 | Interface | URL |
 |---|---|
-| Web UI | `http://<host>:5173` |
-| REST API | `http://<host>:8000/api/v1/` |
-| API Auth | `http://<host>:8000/api/v1/auth/token/` |
+| Web UI | `https://<host>/` |
+| REST API | `https://<host>/api/v1/` |
+| API Auth | `https://<host>/api/v1/auth/token/` |
+| Django Admin | `https://<host>/admin/` |
+
+> **Note:** A self-signed TLS certificate is generated automatically on first start. To use a trusted certificate, place `server.crt` and `server.key` in the directory configured by `DATA_TLS` (default `./data/tls/`) before starting, and the nginx container will use them in preference to generating a new one.
 
 ---
 
@@ -182,11 +246,11 @@ These env-var defaults are applied on first start. Syslog, email, and FTP/SFTP n
 
 ### 4.6 LDAP (Optional)
 
-See [Section 7.2](#72-ldap).
+See [Section 6.2](#62-ldap).
 
 ### 4.7 SAML 2.0 (Optional)
 
-See [Section 7.3](#73-saml-20).
+See [Section 6.3](#63-saml-20).
 
 ---
 
@@ -665,7 +729,7 @@ Pre-compiled agents are available for push-mode or deployment scenarios:
 | `agents/linux_collector_amd64` | Linux x86-64 (glibc 2.17+, RHEL 7+) |
 | `agents/linux_collector_i686` | Linux x86 32-bit |
 | `agents/macos_collector` | macOS (recent versions) |
-| `agents/windows_collector.exe` | Windows 10+ |
+| `agents/windows_collector.exe` | Windows 7 32-bit and later |
 
 When the managed device has network access to the Satellite, agents can be downloaded directly:
 

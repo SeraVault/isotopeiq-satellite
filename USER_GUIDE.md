@@ -860,7 +860,7 @@ You should see a listener entry with `Transport = HTTPS` and `Port = 5986`.
 
 ### Configuring the Device in Satellite
 
-In **Infrastructure → Devices → Add Device**:
+In **Configuration → Devices → Add Device**:
 
 | Field | Value |
 |---|---|

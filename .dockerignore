@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# Virtual environment
+.venv/
+venv/
+
+# Node
+frontend/node_modules/
+
+# Data / runtime volumes
+data/
+
+# Build artifacts
+*.tar.gz
+*.zip
+frontend/dist/
+
+# Version control
+.git/
+.gitignore
+
+# Secrets / env files (only example is needed at build time)
+.env
+.env.*
+!.env.example
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

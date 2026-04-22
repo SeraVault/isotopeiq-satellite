@@ -1,3 +1,12 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# IsotopeIQ Satellite — Docker Compose (pre-built images)
+#
+# Used by the docker bundle deployment path.
+# Images are loaded from images.tar.gz — no source code or build tools required.
+#
+# Usage:
+#   docker compose --env-file .env.docker -f docker-compose.images.yml up -d
+# ─────────────────────────────────────────────────────────────────────────────
 services:
 
   db:
@@ -27,9 +36,6 @@ services:
       retries: 10
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: isotopeiq-satellite/backend:latest
     restart: unless-stopped
     env_file: .env.docker
@@ -45,12 +51,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/users/me/\")' 2>&1 | grep -qv 'Connection refused' || exit 0"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
     command:
       - sh
       - -c
@@ -59,6 +59,13 @@ services:
         python manage.py collectstatic --noinput &&
         python manage.py ensure_admin &&
         exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120
+
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/users/me/\")' 2>&1 | grep -qv 'Connection refused' || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   celery_worker:
     image: isotopeiq-satellite/backend:latest
@@ -95,8 +102,6 @@ services:
     command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
 
   nginx:
-    build:
-      context: ./nginx
     image: isotopeiq-satellite/nginx:latest
     restart: unless-stopped
     ports:
@@ -113,6 +118,6 @@ services:
     depends_on:
       - backend
 
-# Data directories are configured via DATA_* variables in .env.
+# Data directories are configured via DATA_* variables in .env.docker.
 # Defaults: ./data/postgres  ./data/redis  ./data/staticfiles  ./data/tls
 # Back up by copying those directories. Never run 'docker compose down -v'.

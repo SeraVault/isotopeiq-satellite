@@ -66,6 +66,12 @@ cmd_build() {
 }
 
 cmd_up() {
+  log "Creating data directories…"
+  mkdir -p \
+    "${DATA_POSTGRES:-./data/postgres}" \
+    "${DATA_REDIS:-./data/redis}" \
+    "${DATA_STATICFILES:-./data/staticfiles}" \
+    "${DATA_TLS:-./data/tls}"
   log "Starting all services…"
   compose up --build --detach
   ok "Services started. Backend: http://localhost:8000  Frontend: http://localhost:5173"

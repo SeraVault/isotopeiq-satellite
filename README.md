@@ -148,7 +148,7 @@ Pre-compiled agent binaries are in [`agents/`](agents/):
 | `linux_collector_amd64` | Linux x86-64 (glibc 2.17+) |
 | `linux_collector_i686` | Linux x86 32-bit |
 | `macos_collector` | macOS |
-| `windows_collector.py` | Windows (Python source) |
+| `windows_collector.exe` | Windows 7 32-bit and later |
 
 Installers are in [`agents/installers/`](agents/installers/). For online devices the agent
 can be downloaded directly from the UI (**Configuration → Agent Download**). For air-gapped

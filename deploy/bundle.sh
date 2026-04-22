@@ -28,6 +28,14 @@ ok()  { echo -e "\033[1;32m[  OK  ]\033[0m $*"; }
 
 cd "$ROOT"
 
+# ── Build frontend ────────────────────────────────────────────────────────────
+log "Building frontend…"
+cd "$ROOT/frontend"
+npm ci --silent
+npm run build
+cd "$ROOT"
+ok "Frontend built → frontend/dist"
+
 log "Creating bundle: $ARCHIVE"
 
 # Write to /tmp first so tar doesn't see the archive being created inside the source tree
@@ -38,7 +46,6 @@ tar -czf "$ARCHIVE_TMP" \
     --exclude='./.venv' \
     --exclude='./venv' \
     --exclude='./frontend/node_modules' \
-    --exclude='./frontend/dist' \
     --exclude='./backend/staticfiles' \
     --exclude='./backend/celerybeat-schedule' \
     --exclude='./backend/**/__pycache__' \

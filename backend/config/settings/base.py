@@ -97,6 +97,12 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# Include the pre-built Vue SPA so collectstatic publishes its assets to the
+# staticfiles volume.  The path only exists inside the Docker image; ignored
+# otherwise (development uses the Vite dev server instead).
+_FRONTEND_DIST = BASE_DIR / 'frontend' / 'dist'
+STATICFILES_DIRS = [_FRONTEND_DIST] if _FRONTEND_DIST.is_dir() else []
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Redis
