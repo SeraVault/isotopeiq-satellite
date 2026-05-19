@@ -71,6 +71,11 @@
       }
     },
     {
+      "label": "Start Celery",
+      "dependsOn": ["Celery: Worker", "Celery: Beat"],
+      "dependsOrder": "parallel"
+    },
+    {
       "label": "Start All",
       "dependsOn": ["Celery: Worker", "Celery: Beat", "Vite: Frontend"],
       "dependsOrder": "parallel"

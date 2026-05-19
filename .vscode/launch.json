@@ -11,8 +11,25 @@
       "django": true,
       "justMyCode": true,
       "python": "${workspaceFolder}/.venv/bin/python",
-      "preLaunchTask": "Start All",
+      "preLaunchTask": "Start Celery",
       "postDebugTask": "Stop All"
+    },
+    {
+      "name": "Vue: Frontend (Vite)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/frontend/node_modules/.bin/vite",
+      "args": ["--host"],
+      "cwd": "${workspaceFolder}/frontend",
+      "console": "integratedTerminal",
+      "postDebugTask": "Stop: Vite"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Django + Vue",
+      "configurations": ["Django: Local", "Vue: Frontend (Vite)"],
+      "stopAll": true
     }
   ]
 }
