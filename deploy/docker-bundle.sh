@@ -33,7 +33,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DATE="$(date +%Y%m%d)"
 BUNDLE_NAME="isotopeiq-satellite-docker-${DATE}"
 BUNDLE_DIR="/tmp/${BUNDLE_NAME}"
-ARCHIVE="${ROOT}/${BUNDLE_NAME}.tar.gz"
+mkdir -p "${ROOT}/dist"
+ARCHIVE="${ROOT}/dist/${BUNDLE_NAME}.tar.gz"
 
 log() { echo -e "\033[1;34m[docker-bundle]\033[0m $*"; }
 ok()  { echo -e "\033[1;32m[  OK  ]\033[0m $*"; }

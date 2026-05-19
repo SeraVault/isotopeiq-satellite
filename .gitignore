@@ -23,6 +23,7 @@ frontend/dist/
 *.log
 
 # Build / export artifacts
+dist/
 isotopeiq-satellite-*.tar.gz
 isotopeiq-satellite-*.tar.gz.tmp
 *.ova

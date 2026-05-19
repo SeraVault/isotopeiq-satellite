@@ -40,6 +40,7 @@ services:
     volumes:
       - ${DATA_STATICFILES:-./data/staticfiles}:/app/staticfiles
       - ${DATA_AGENTS:-./agents}:/agents:ro
+      - ${LDAP_CA_CERTS_DIR:-/etc/ssl/certs}:/etc/ssl/certs:ro
     depends_on:
       db:
         condition: service_healthy
@@ -68,6 +69,8 @@ services:
       DJANGO_SETTINGS_MODULE: config.settings.production
       DB_HOST: db
       REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ${LDAP_CA_CERTS_DIR:-/etc/ssl/certs}:/etc/ssl/certs:ro
     depends_on:
       db:
         condition: service_healthy
@@ -85,6 +88,8 @@ services:
       DJANGO_SETTINGS_MODULE: config.settings.production
       DB_HOST: db
       REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ${LDAP_CA_CERTS_DIR:-/etc/ssl/certs}:/etc/ssl/certs:ro
     depends_on:
       db:
         condition: service_healthy
