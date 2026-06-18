@@ -24,9 +24,10 @@ import api from '../api'
 import CanonicalDiffViewer from './CanonicalDiffViewer.vue'
 
 const props = defineProps({
-  baseline:       { type: Object, default: null },
-  current:        { type: Object, default: null },
+  baseline:     { type: Object,  default: null },
+  current:      { type: Object,  default: null },
   volatileFields: { type: Object, default: null },
+  scriptJobId:  { type: Number,  default: null },
 })
 
 const emit = defineEmits(['rule-created'])
@@ -36,7 +37,9 @@ const snackbar = ref({ show: false, msg: '', color: 'success' })
 
 async function onIgnoreField({ section, spec_type, field_name, aux }) {
   try {
-    await api.post('/drift/volatile-rules/', { section, spec_type, field_name, aux, is_active: true })
+    const payload = { section, spec_type, field_name, aux, is_active: true }
+    if (props.scriptJobId) payload.script_job = props.scriptJobId
+    await api.post('/drift/volatile-rules/', payload)
     snackbar.value = {
       show: true,
       color: 'success',

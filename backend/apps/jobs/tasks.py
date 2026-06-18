@@ -26,7 +26,10 @@ def _get_collector(device):
 logger = logging.getLogger(__name__)
 
 
-def _apply_baseline_and_drift(device, result, enable_baseline=True, enable_drift=True) -> None:
+def _apply_baseline_and_drift(
+    device, result, enable_baseline=True, enable_drift=True,
+    script_job_id: int | None = None,
+) -> None:
     from apps.baselines.models import Baseline
     from apps.drift.detector import detect_drift
     from apps.drift.models import DriftEvent
@@ -51,7 +54,9 @@ def _apply_baseline_and_drift(device, result, enable_baseline=True, enable_drift
             dispatch_actions('collection_success', policy, device, baseline=baseline)
         return
 
-    diffs = detect_drift(baseline.parsed_data, result.parsed_output)
+    diffs = detect_drift(
+        baseline.parsed_data, result.parsed_output, script_job_id=script_job_id,
+    )
     if diffs:
         existing = DriftEvent.objects.filter(device=device, status='new').order_by('-created_at').first()
         if existing:
@@ -259,7 +264,12 @@ def run_policy(self, policy_id: int, triggered_by: str = 'scheduler', device_id:
 
             if result.status == 'success' and result.parsed_output and (any_baseline or any_drift):
                 try:
-                    _apply_baseline_and_drift(device, result, enable_baseline=any_baseline, enable_drift=any_drift)
+                    _apply_baseline_and_drift(
+                        device, result,
+                        enable_baseline=any_baseline,
+                        enable_drift=any_drift,
+                        script_job_id=policy.script_job_id,
+                    )
                 except Exception:
                     logger.exception('Baseline/drift error for device "%s".', device)
 

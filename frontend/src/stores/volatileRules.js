@@ -7,6 +7,8 @@ export const useVolatileRulesStore = defineStore('volatileRules', {
     loading: false,
     totalCount: 0,
     lastParams: {},
+    scriptJobs: [],
+    scriptJobsLoading: false,
   }),
   actions: {
     async fetchRules(params = {}) {
@@ -18,6 +20,16 @@ export const useVolatileRulesStore = defineStore('volatileRules', {
         this.totalCount = data.count ?? this.rules.length
       } finally {
         this.loading = false
+      }
+    },
+    async fetchScriptJobs() {
+      if (this.scriptJobs.length) return
+      this.scriptJobsLoading = true
+      try {
+        const { data } = await api.get('/scripts/script-jobs/', { params: { page_size: 200 } })
+        this.scriptJobs = data.results ?? data
+      } finally {
+        this.scriptJobsLoading = false
       }
     },
     async createRule(payload) {

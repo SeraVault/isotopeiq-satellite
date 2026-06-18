@@ -3,63 +3,64 @@ from django.db import models
 
 class VolatileFieldRule(models.Model):
     """
-    A single rule that tells the drift detector to ignore a field (or item)
-    when comparing canonical snapshots.  Stored in the database so operators
-    can tune drift sensitivity without a deployment.
+    A single rule telling the drift detector to ignore a field or item.
+
+    script_job — when set, the rule applies only to drift comparisons
+    triggered by that ScriptJob.  Null means global (all jobs).
 
     spec_type determines how field_name / aux are interpreted:
 
-    section_field
-        Drop `field_name` from the top-level section dict.
-        Example: section=os, field_name=ntp_synced
-
-    item_field
-        Drop `field_name` from every item in the section array.
-        Example: section=filesystem, field_name=free_gb
-
-    nested_field
-        Drop `field_name` from every item in the nested array named `aux`.
-        Example: section=routing_protocols, aux=neighbors, field_name=state
-
-    exclude_key
-        Remove an entire item from the section array when item[aux] == field_name.
-        `aux` defaults to 'key' (i.e. sysctl key names).
-        Example: section=sysctl, aux=key, field_name=fs.dentry-state
+    section_field  — drop field_name from the top-level section dict
+    item_field     — drop field_name from every item in the section array
+    nested_field   — drop field_name from every item in nested array `aux`
+    exclude_key    — remove array item where item[aux] == field_name
+    exclude_section — omit the entire section from comparison
+    key_prefix     — remove array items whose key starts with field_name
     """
+
     SPEC_SECTION_FIELD = 'section_field'
-    SPEC_ITEM_FIELD      = 'item_field'
-    SPEC_NESTED_FIELD    = 'nested_field'
-    SPEC_EXCLUDE_KEY     = 'exclude_key'
+    SPEC_ITEM_FIELD = 'item_field'
+    SPEC_NESTED_FIELD = 'nested_field'
+    SPEC_EXCLUDE_KEY = 'exclude_key'
     SPEC_EXCLUDE_SECTION = 'exclude_section'
-    SPEC_KEY_PREFIX      = 'key_prefix'
+    SPEC_KEY_PREFIX = 'key_prefix'
     SPEC_CHOICES = [
-        (SPEC_SECTION_FIELD,   'Section field — drop from section dict'),
-        (SPEC_ITEM_FIELD,      'Item field — drop from each array item'),
-        (SPEC_NESTED_FIELD,    'Nested field — drop from nested array items'),
-        (SPEC_EXCLUDE_KEY,     'Exclude item by key value'),
-        (SPEC_EXCLUDE_SECTION, 'Exclude section — omit entire section from comparison'),
-        (SPEC_KEY_PREFIX,      'Exclude items whose key starts with prefix'),
+        (SPEC_SECTION_FIELD, 'Section field — drop from section dict'),
+        (SPEC_ITEM_FIELD, 'Item field — drop from each array item'),
+        (SPEC_NESTED_FIELD, 'Nested field — drop from nested array items'),
+        (SPEC_EXCLUDE_KEY, 'Exclude item by key value'),
+        (SPEC_EXCLUDE_SECTION, 'Exclude section — omit entire section'),
+        (SPEC_KEY_PREFIX, 'Exclude items whose key starts with prefix'),
     ]
 
-    section     = models.CharField(max_length=100)
-    spec_type   = models.CharField(max_length=30, choices=SPEC_CHOICES)
-    # field_name: the field to suppress, OR the value to match for exclude_key
-    field_name  = models.CharField(max_length=200)
-    # aux usage:
-    #   nested_field → name of the nested array (e.g. 'neighbors', 'ports')
-    #   exclude_key  → subfield to match on (e.g. 'key'); defaults to 'key'
-    aux         = models.CharField(max_length=100, blank=True, default='')
+    # When non-null this rule is scoped to the given ScriptJob; null = global.
+    script_job = models.ForeignKey(
+        'scripts.ScriptJob',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='volatile_rules',
+    )
+    section = models.CharField(max_length=100)
+    spec_type = models.CharField(max_length=30, choices=SPEC_CHOICES)
+    # field to suppress, or key value matched by exclude_key / key_prefix
+    field_name = models.CharField(max_length=200)
+    # aux: nested array name (nested_field) or match subfield (exclude_key)
+    aux = models.CharField(max_length=100, blank=True, default='')
     description = models.TextField(blank=True)
-    is_active   = models.BooleanField(default=True)
-    created_at  = models.DateTimeField(auto_now_add=True)
-    updated_at  = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = [('section', 'spec_type', 'field_name', 'aux')]
+        unique_together = [
+            ('script_job', 'section', 'spec_type', 'field_name', 'aux'),
+        ]
         ordering = ['section', 'spec_type', 'field_name']
 
     def __str__(self):
-        return f'{self.section} / {self.spec_type} / {self.field_name}'
+        scope = f'{self.script_job} / ' if self.script_job_id else 'global / '
+        return f'{scope}{self.section} / {self.spec_type} / {self.field_name}'
 
 
 class DriftEvent(models.Model):

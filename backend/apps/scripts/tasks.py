@@ -218,7 +218,10 @@ def _run_single(task, script_job, device, triggered_by):
     if result.status == 'success' and result.parsed_output and device:
         if any_baseline or any_drift:
             try:
-                _apply_baseline_and_drift(device, result, any_baseline, any_drift, script_job.name)
+                _apply_baseline_and_drift(
+                    device, result, any_baseline, any_drift,
+                    script_job_id=script_job.pk,
+                )
             except Exception:
                 logger.exception(
                     'Baseline/drift error for ScriptJob "%s" device "%s".',
@@ -227,9 +230,12 @@ def _run_single(task, script_job, device, triggered_by):
                 )
 
 
-def _apply_baseline_and_drift(device, result, enable_baseline, enable_drift, job_label='ScriptJob'):
+def _apply_baseline_and_drift(
+    device, result, enable_baseline, enable_drift,
+    script_job_id: int | None = None,
+):
     """
-    Save a device baseline and/or run drift detection against the stored baseline.
+    Save baseline and/or detect drift for a ScriptJob run.
     `result` must have a `parsed_output` attribute containing canonical JSON.
     """
     from apps.baselines.models import Baseline
@@ -245,16 +251,22 @@ def _apply_baseline_and_drift(device, result, enable_baseline, enable_drift, job
             parsed_data=result.parsed_output,
             source_result=None,
         )
-        logger.info('Baseline established for device "%s" via %s.', device, job_label)
+        logger.info('Baseline established for device "%s".', device)
         dispatch_actions('new_baseline', None, device, baseline=baseline)
         return
 
     if not enable_drift or baseline is None:
         if baseline:
-            dispatch_actions('collection_success', None, device, baseline=baseline)
+            dispatch_actions(
+                'collection_success', None, device, baseline=baseline,
+            )
         return
 
-    diffs = detect_drift(baseline.parsed_data, result.parsed_output)
+    diffs = detect_drift(
+        baseline.parsed_data,
+        result.parsed_output,
+        script_job_id=script_job_id,
+    )
     if diffs:
         existing = DriftEvent.objects.filter(device=device, status='new').order_by('-created_at').first()
         if existing:

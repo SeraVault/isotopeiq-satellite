@@ -13,8 +13,12 @@ from .volatile_utils import get_volatile_spec, invalidate_spec_cache, build_spec
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def volatile_fields(request):
-    """Return the volatile field definitions used for drift comparison (from DB)."""
-    spec = get_volatile_spec()
+    """Return volatile field definitions for drift comparison."""
+    try:
+        sj_id = int(request.query_params['script_job_id'])
+    except (KeyError, ValueError, TypeError):
+        sj_id = None
+    spec = get_volatile_spec(sj_id)
     # Convert sets to lists for JSON serialisation
     serialisable = {}
     for section, entry in spec.items():
@@ -45,10 +49,22 @@ def volatile_fields(request):
 class VolatileFieldRuleViewSet(viewsets.ModelViewSet):
     """CRUD for volatile field rules.  Write access is admin-only."""
     permission_classes = [IsAdminOrReadOnly]
-    queryset = VolatileFieldRule.objects.all()
     serializer_class = VolatileFieldRuleSerializer
+    filterset_fields = ['script_job', 'section', 'spec_type', 'is_active']
     ordering_fields = ['section', 'spec_type', 'field_name', 'is_active']
     ordering = ['section', 'spec_type', 'field_name']
+
+    def get_queryset(self):
+        qs = VolatileFieldRule.objects.select_related('script_job')
+        effective_for = self.request.query_params.get('effective_for')
+        if effective_for is not None:
+            try:
+                sj_id = int(effective_for)
+                from django.db.models import Q
+                qs = qs.filter(Q(script_job__isnull=True) | Q(script_job_id=sj_id))
+            except (ValueError, TypeError):
+                pass
+        return qs
 
     def perform_create(self, serializer):
         serializer.save()
@@ -65,7 +81,9 @@ class VolatileFieldRuleViewSet(viewsets.ModelViewSet):
 
 class DriftEventViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAdminOrDriftAction]
-    queryset = DriftEvent.objects.select_related('device', 'job_result').all()
+    queryset = DriftEvent.objects.select_related(
+        'device', 'job_result', 'job_result__job__policy',
+    ).all()
     serializer_class = DriftEventSerializer
     filterset_fields = ['device', 'status']
     ordering_fields = ['created_at', 'status', 'device__name']

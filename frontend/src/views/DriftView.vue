@@ -164,6 +164,7 @@
             :baseline="selected.baseline_data"
             :current="selected.result_data"
             :volatile-fields="store.volatileFields"
+            :script-job-id="selected.script_job_id ?? null"
             @rule-created="onRuleCreated"
           />
         </v-card-text>

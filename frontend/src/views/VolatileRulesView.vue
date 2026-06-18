@@ -10,8 +10,29 @@
       </div>
       <v-spacer />
       <v-btn variant="tonal" prepend-icon="mdi-help-circle-outline" class="mr-2" @click="showHelp = true">How it works</v-btn>
-      <v-btn color="primary" prepend-icon="mdi-plus" @click="openNew">Add Rule</v-btn>
+      <v-btn color="primary" prepend-icon="mdi-plus" @click="openNew(activeBundleId)">Add Rule</v-btn>
     </div>
+
+    <!-- Bundle filter -->
+    <v-row class="mb-3" dense align="center">
+      <v-col cols="12" sm="5" md="4">
+        <v-select
+          v-model="bundleFilter"
+          :items="bundleFilterItems"
+          label="Filter by bundle"
+          density="compact"
+          clearable
+          hide-details
+          prepend-inner-icon="mdi-filter-outline"
+          @update:model-value="applyBundleFilter"
+        />
+      </v-col>
+      <v-col cols="auto">
+        <span class="text-caption text-medium-emphasis">
+          Selecting a bundle shows its rules plus all global rules.
+        </span>
+      </v-col>
+    </v-row>
 
     <v-data-table-server
       v-model:options="tableOptions"
@@ -26,6 +47,13 @@
       no-data-text="No rules defined."
       @update:options="onTableOptions"
     >
+      <template #item.script_job_name="{ item }">
+        <v-chip v-if="item.script_job" size="x-small" color="purple-lighten-2" label>
+          {{ item.script_job_name }}
+        </v-chip>
+        <span v-else class="text-caption text-medium-emphasis">global</span>
+      </template>
+
       <template #item.section="{ item }">
         <code class="text-caption">{{ item.section }}</code>
       </template>
@@ -71,6 +99,18 @@
         <v-card-title>{{ form.id ? 'Edit Rule' : 'Add Rule' }}</v-card-title>
         <v-divider />
         <v-card-text class="pa-4">
+
+          <v-select
+            v-model="form.script_job"
+            label="Bundle (optional)"
+            :items="scriptJobItems"
+            :loading="store.scriptJobsLoading"
+            density="compact"
+            clearable
+            hint="Leave blank for a global rule that applies to all jobs."
+            persistent-hint
+            class="mb-4"
+          />
 
           <v-select
             v-model="form.section"
@@ -445,29 +485,64 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useVolatileRulesStore } from '../stores/volatileRules'
 
 const store = useVolatileRulesStore()
 
 const showHelp = ref(false)
 
+onMounted(() => store.fetchScriptJobs())
+
+// ── Bundle filter ─────────────────────────────────────────────────────────────
+
+const bundleFilter = ref(null)
+
+const bundleFilterItems = computed(() => [
+  { title: 'Global rules only', value: 'global' },
+  ...store.scriptJobs.map(j => ({ title: j.name, value: String(j.id) })),
+])
+
+const scriptJobItems = computed(() => [
+  ...store.scriptJobs.map(j => ({ title: j.name, value: j.id })),
+])
+
+// numeric bundle id when a specific job is selected in the filter (not 'global')
+const activeBundleId = computed(() => {
+  const v = bundleFilter.value
+  if (!v || v === 'global') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+})
+
+function buildFetchParams(page = 1) {
+  const params = { page, page_size: tableOptions.value.itemsPerPage }
+  const val = bundleFilter.value
+  if (val === 'global') params.script_job = 'null'
+  else if (val) params.effective_for = val
+  return params
+}
+
+function applyBundleFilter() {
+  store.fetchRules(buildFetchParams(1))
+}
+
 // ── Table ─────────────────────────────────────────────────────────────────────
 
 const headers = [
-  { title: 'Section',    key: 'section',    sortable: true  },
-  { title: 'Type',       key: 'spec_type',  sortable: false },
-  { title: 'Field / Value', key: 'field_name', sortable: true },
-  { title: 'Active',     key: 'is_active',  sortable: false },
-  { title: '',           key: 'actions',    sortable: false, align: 'end' },
+  { title: 'Bundle',        key: 'script_job_name', sortable: false },
+  { title: 'Section',       key: 'section',         sortable: true  },
+  { title: 'Type',          key: 'spec_type',        sortable: false },
+  { title: 'Field / Value', key: 'field_name',       sortable: true  },
+  { title: 'Active',        key: 'is_active',        sortable: false },
+  { title: '',              key: 'actions',          sortable: false, align: 'end' },
 ]
 
 const tableOptions = ref({ page: 1, itemsPerPage: 50, sortBy: [] })
 
 function onTableOptions(options) {
   tableOptions.value = options
-  const params = { page: options.page, page_size: options.itemsPerPage }
-  store.fetchRules(params)
+  store.fetchRules(buildFetchParams(options.page))
 }
 
 // ── Canonical sections ────────────────────────────────────────────────────────
@@ -540,17 +615,22 @@ async function toggleActive(rule) {
 // ── Add / Edit dialog ─────────────────────────────────────────────────────────
 
 function blankForm() {
-  return { show: false, id: null, section: '', spec_type: 'item_field', field_name: '', aux: '', description: '', saving: false, error: '' }
+  return {
+    show: false, id: null, script_job: null,
+    section: '', spec_type: 'item_field', field_name: '', aux: '',
+    description: '', saving: false, error: '',
+  }
 }
 const form = ref(blankForm())
 
-function openNew() {
-  form.value = { ...blankForm(), show: true }
+function openNew(presetScriptJob = null) {
+  form.value = { ...blankForm(), show: true, script_job: presetScriptJob }
 }
 
 function openEdit(rule) {
   form.value = {
     show: true, id: rule.id,
+    script_job: rule.script_job ?? null,
     section: rule.section, spec_type: rule.spec_type,
     field_name: rule.field_name, aux: rule.aux,
     description: rule.description,
@@ -561,6 +641,7 @@ function openEdit(rule) {
 async function save() {
   form.value.error = ''
   const payload = {
+    script_job:  form.value.script_job ?? null,
     section:     form.value.section,
     spec_type:   form.value.spec_type,
     field_name:  form.value.spec_type === 'exclude_section' ? '*' : form.value.field_name.trim(),
