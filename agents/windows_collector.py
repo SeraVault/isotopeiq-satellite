@@ -16,6 +16,7 @@ import re
 import socket
 import subprocess
 import sys
+import time
 try:
     import winreg
 except ImportError:
@@ -47,24 +48,85 @@ except ImportError:
 # well-known / registered ports commonly deployed in enterprise environments.
 DEFAULT_AGENT_PORT = 9322
 
+# Commands that occasionally fail transiently (WMI race conditions, PowerShell
+# provider hiccups) get one retry before we give up and log a warning.
+RETRYABLE_FAILURE_MARKERS = (
+    'rpc server is unavailable',
+    'quota violation',
+    'wmi: provider failure',
+    'cannot connect',
+)
+
+
+# ---------------------------------------------------------------------------
+# Verbose / progress logging — always written to stderr so stdout stays
+# reserved for the canonical JSON document.
+# ---------------------------------------------------------------------------
+
+VERBOSE = True
+
+
+def log(msg):
+    """Print a timestamped progress line to stderr, unless --quiet was set."""
+    if not VERBOSE:
+        return
+    ts = time.strftime('%H:%M:%S')
+    sys.stderr.write('[{}] {}\n'.format(ts, msg))
+    sys.stderr.flush()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def run(cmd, timeout=60):
-    """Run a shell command, return stdout as a string. Never raises."""
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=True,
-        )
-        stdout, _ = proc.communicate(timeout=timeout)
-        return stdout.decode('utf-8', errors='replace').strip()
-    except Exception:
-        return ''
+def run(cmd, timeout=60, retries=1):
+    """
+    Run a shell command, return stdout as a string. Never raises.
+
+    Kills the child process on timeout (instead of leaking it) and retries
+    once on known-transient WMI/PowerShell failures so a single hiccup
+    doesn't blank out a whole section of the report.
+    """
+    attempt = 0
+    while True:
+        attempt += 1
+        proc = None
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+            )
+            stdout, stderr = proc.communicate(timeout=timeout)
+            out = stdout.decode('utf-8', errors='replace').strip()
+            err = stderr.decode('utf-8', errors='replace').strip()
+
+            if not out and err and attempt <= retries:
+                low = err.lower()
+                if any(marker in low for marker in RETRYABLE_FAILURE_MARKERS):
+                    log('command failed transiently, retrying: {}'.format(_short(cmd)))
+                    time.sleep(1)
+                    continue
+            return out
+        except subprocess.TimeoutExpired:
+            log('command timed out after {}s, killing: {}'.format(timeout, _short(cmd)))
+            if proc is not None:
+                try:
+                    proc.kill()
+                    proc.communicate(timeout=5)
+                except Exception:
+                    pass
+            return ''
+        except Exception as exc:
+            log('command failed: {} ({})'.format(_short(cmd), exc))
+            return ''
+
+
+def _short(cmd, limit=90):
+    """Truncate a command string for log output."""
+    cmd = ' '.join(cmd.split())
+    return cmd if len(cmd) <= limit else cmd[:limit] + '...'
 
 
 def run_lines(cmd, timeout=60):
@@ -87,7 +149,10 @@ def wmic(wmi_class, fields, where=''):
     """
     rows = _wmic_cim(wmi_class, fields, where)
     if rows is None:
+        log('  Get-CimInstance unavailable for {}, falling back to wmic.exe'.format(wmi_class))
         rows = _wmic_cli(wmi_class, fields)
+    if not rows:
+        log('  no rows returned for {}'.format(wmi_class))
     return rows or []
 
 
@@ -254,6 +319,39 @@ def is_admin():
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
     except Exception:
         return False
+
+
+def _script_dir():
+    """Return the directory containing this script/binary."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _safe_filename_part(s):
+    """Strip characters that are illegal in Windows filenames."""
+    s = re.sub(r'[\\/:*?"<>|\s]+', '_', s.strip())
+    return s or 'unknown-host'
+
+
+def write_output_file(output):
+    """
+    Write the collected output as JSON to <script_dir>/<hostname>_<date>.json.
+    Returns the path written, or None on failure (never raises).
+    """
+    raw_hostname = output.get('device', {}).get('hostname', '') or 'unknown-host'
+    hostname = _safe_filename_part(raw_hostname)
+    date_str = time.strftime('%Y%m%d_%H%M%S')
+    filename = '{0}_{1}.json'.format(hostname, date_str)
+    path = os.path.join(_script_dir(), filename)
+    try:
+        with open(path, 'w') as f:
+            json.dump(output, f, indent=2)
+        sys.stderr.write('Wrote results to {0}\n'.format(path))
+        return path
+    except Exception as exc:
+        sys.stderr.write('WARNING: failed to write results file: {0}\n'.format(exc))
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1495,23 +1593,38 @@ def collect():
     output = empty_canonical()
     errors = {}
 
+    log('starting collection ({} sections)'.format(len(COLLECTORS)))
+    total_start = time.time()
+
     for name, fn in COLLECTORS:
+        log('collecting {}...'.format(name))
+        start = time.time()
         try:
             fn(output)
         except Exception as e:
             errors[name] = str(e)
+            log('  {} FAILED: {}'.format(name, e))
+        else:
+            elapsed = time.time() - start
+            log('  {} done ({:.1f}s)'.format(name, elapsed))
 
     if errors:
         output['_collection_errors'] = errors
+        log('collection finished with {} error(s) in {:.1f}s'.format(
+            len(errors), time.time() - total_start))
+    else:
+        log('collection finished cleanly in {:.1f}s'.format(time.time() - total_start))
 
     return output
 
 
-def _run_script(script_content, language):
+def _run_script(script_content, language, timeout=300):
     """
     Write script_content to a temp file and execute it.
 
     language — 'shell'/'bat' (cmd.exe), 'powershell', or 'python'.
+    timeout  — seconds before the child process is killed (default 300s),
+               so a hung remote script can't block the agent indefinitely.
 
     Returns a dict: {exit_code, stdout, stderr}.
     """
@@ -1538,6 +1651,7 @@ def _run_script(script_content, language):
         ext, cmd_fn = '.bat', lambda p: ['cmd.exe', '/c', p]
 
     fd, path = tempfile.mkstemp(suffix=ext, prefix='isotopeiq_')
+    proc = None
     try:
         os.write(fd, script_content.encode('utf-8'))
         os.close(fd)
@@ -1549,13 +1663,26 @@ def _run_script(script_content, language):
                 stderr=subprocess.PIPE,
                 shell=False,
             )
-        stdout, stderr = proc.communicate()
+        stdout, stderr = proc.communicate(timeout=timeout)
         return {
             'exit_code': proc.returncode,
             'stdout': stdout.decode('utf-8', errors='replace'),
             'stderr': stderr.decode('utf-8', errors='replace'),
         }
+    except subprocess.TimeoutExpired:
+        log('script execution timed out after {}s, killing process'.format(timeout))
+        if proc is not None:
+            try:
+                proc.kill()
+                proc.communicate(timeout=5)
+            except Exception:
+                pass
+        return {
+            'exit_code': -1, 'stdout': '',
+            'stderr': 'Timed out after {}s and was killed'.format(timeout),
+        }
     except Exception as exc:
+        log('script execution failed: {}'.format(exc))
         return {'exit_code': -1, 'stdout': '', 'stderr': str(exc)}
     finally:
         try:
@@ -1603,6 +1730,7 @@ def _make_handler(secret=None):
                 self.wfile.write(b'Not Found')
                 return
 
+            log('/collect requested by {}'.format(self.client_address[0]))
             data = json.dumps(collect(), indent=2).encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -1639,7 +1767,11 @@ def _make_handler(secret=None):
                 self._send_json(400, {'error': 'script is required'})
                 return
 
-            self._send_json(200, _run_script(script, language))
+            log('/run requested by {} ({}, {} bytes)'.format(
+                self.client_address[0], language, len(script)))
+            result = _run_script(script, language)
+            log('/run finished (exit_code={})'.format(result.get('exit_code')))
+            self._send_json(200, result)
 
         def log_message(self, fmt, *args):
             pass  # suppress per-request noise to stderr
@@ -1648,6 +1780,8 @@ def _make_handler(secret=None):
 
 
 def main():
+    global VERBOSE
+
     # ---- argument parsing ----
     if HAS_ARGPARSE:
         parser = argparse.ArgumentParser(description='IsotopeIQ Windows Agent')
@@ -1658,30 +1792,46 @@ def main():
         parser.add_argument('--secret',
             help='Shared secret; requests must supply this value in the '
                  'X-Agent-Secret header (recommended)')
+        parser.add_argument('--quiet', action='store_true',
+            help='Suppress progress logging on stderr')
         args = parser.parse_args()
     else:
         class args(object):
             serve = '--serve' in sys.argv
             port = DEFAULT_AGENT_PORT
             secret = None
+            quiet = '--quiet' in sys.argv
         for i, a in enumerate(sys.argv[1:], 1):
             if a == '--port' and i + 1 < len(sys.argv):
                 args.port = int(sys.argv[i + 1])
             if a == '--secret' and i + 1 < len(sys.argv):
                 args.secret = sys.argv[i + 1]
 
+    VERBOSE = not getattr(args, 'quiet', False)
+
+    if not is_admin():
+        sys.stderr.write(
+            'WARNING: not running as Administrator. Some data (other users\' '
+            'registry hives, certain WMI/security classes, full firewall '
+            'rules, etc.) may be incomplete or missing.\n'
+        )
+
     if args.serve:
         agent_secret = getattr(args, 'secret', None) or None
         server = ThreadedHTTPServer(('0.0.0.0', args.port), _make_handler(agent_secret))
-        sys.stderr.write('IsotopeIQ agent listening on 0.0.0.0:{0}\n'.format(args.port))
+        log('IsotopeIQ agent listening on 0.0.0.0:{0}'.format(args.port))
         if agent_secret:
-            sys.stderr.write('Agent secret authentication enabled.\n')
+            log('Agent secret authentication enabled.')
+        else:
+            log('WARNING: no --secret set; /collect and /run are unauthenticated.')
         try:
             server.serve_forever()
         except KeyboardInterrupt:
-            pass
+            log('shutting down (keyboard interrupt)')
     else:
-        print(json.dumps(collect(), indent=2))
+        result = collect()
+        print(json.dumps(result, indent=2))
+        write_output_file(result)
 
 
 if __name__ == '__main__':
