@@ -43,6 +43,18 @@ COLLECTOR_VERSION = '1.0.0'
 # helpers
 # ---------------------------------------------------------------------------
 
+def _decode_output(data):
+    """
+    Decode command output. wmic.exe writes UTF-16LE (with BOM) when its
+    stdout is a pipe, so sniff for that before assuming UTF-8.
+    """
+    if data.startswith(b'\xff\xfe'):
+        return data.decode('utf-16', errors='replace')
+    if b'\x00' in data[:200]:
+        return data.decode('utf-16-le', errors='replace')
+    return data.decode('utf-8', errors='replace')
+
+
 def run(cmd, timeout=60):
     """Run a shell command, return stdout as text. Never raises."""
     proc = None
@@ -50,7 +62,7 @@ def run(cmd, timeout=60):
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, shell=True)
         stdout, _ = proc.communicate(timeout=timeout)
-        return stdout.decode('utf-8', errors='replace')
+        return _decode_output(stdout)
     except subprocess.TimeoutExpired:
         if proc is not None:
             try:
@@ -146,12 +158,17 @@ def wmic_query(alias, cim_class, fields, where=''):
         if rows:
             return [dict(zip(fields, r)) for r in rows]
 
-    cmd = 'wmic {}{} get {} /value'.format(
-        alias, ' where "{}"'.format(where) if where else '',
-        ','.join(fields))
+    # No explicit field list: wmic errors out the ENTIRE query when any
+    # requested property does not exist on this Windows version (e.g. XP
+    # has no Win32_OperatingSystem.OSArchitecture). 'get /value' returns
+    # every available property; missing ones simply come back empty.
+    cmd = 'wmic {}{} get /value'.format(
+        alias, ' where "{}"'.format(where) if where else '')
     out = []
     for block in parse_value_blocks(run(cmd)):
-        out.append({f: block.get(f, '') for f in fields})
+        row = {f: block.get(f, '') for f in fields}
+        if any(row.values()):
+            out.append(row)
     return out
 
 
