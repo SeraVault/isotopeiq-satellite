@@ -37,6 +37,14 @@ class Job(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            # List views order by this by default (see Meta.ordering) and
+            # most API list filters narrow by it too.
+            models.Index(fields=['-created_at']),
+            # reap_stale_jobs filters status='running' AND started_at__lt=...
+            # every 5 minutes — this is the exact shape of that query.
+            models.Index(fields=['status', 'started_at']),
+        ]
 
     def __str__(self):
         return f'Job {self.pk} ({self.status})'
@@ -62,6 +70,14 @@ class DeviceJobResult(models.Model):
 
     class Meta:
         ordering = ['-job__created_at']
+        indexes = [
+            # reap_stale_jobs filters status='running' AND started_at__lt=...
+            # every 5 minutes — this is the exact shape of that query.
+            models.Index(fields=['status', 'started_at']),
+            # retention/tasks.py filters on started_at alone for the
+            # raw_output/parsed_output/error_message clearing passes.
+            models.Index(fields=['started_at']),
+        ]
 
     def __str__(self):
         return f'Result for {self.device} in Job {self.job_id}'

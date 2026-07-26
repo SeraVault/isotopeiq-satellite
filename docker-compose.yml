@@ -18,10 +18,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
       - ${DATA_REDIS:-./data/redis}:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -36,7 +37,7 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.production
       DB_HOST: db
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     volumes:
       - ${DATA_STATICFILES:-./data/staticfiles}:/app/staticfiles
       - ${DATA_AGENTS:-./agents}:/agents:ro
@@ -47,7 +48,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/users/me/\")' 2>&1 | grep -qv 'Connection refused' || exit 0"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -68,7 +69,7 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.production
       DB_HOST: db
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     volumes:
       - ${LDAP_CA_CERTS_DIR:-/etc/ssl/certs}:/etc/ssl/certs:ro
     depends_on:
@@ -87,7 +88,7 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.production
       DB_HOST: db
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     volumes:
       - ${LDAP_CA_CERTS_DIR:-/etc/ssl/certs}:/etc/ssl/certs:ro
     depends_on:

@@ -79,6 +79,12 @@ DATABASES = {
         'PASSWORD': config('DB_PASSWORD', default=''),
         'HOST': config('DB_HOST', default='localhost'),
         'PORT': config('DB_PORT', default='5432'),
+        # Reuse connections across requests instead of opening a fresh one
+        # every time (Django's default is 0 = no reuse). 60s is long enough
+        # to amortize connection setup under normal Gunicorn worker traffic,
+        # short enough that a Postgres restart/failover is noticed quickly
+        # rather than serving from a long-dead connection.
+        'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=60, cast=int),
     }
 }
 
@@ -108,6 +114,17 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Redis
 REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 
+# Shared cache, backed by the same Redis instance as Celery. This needs to be
+# a real shared cache (not the per-process default LocMemCache) because it's
+# used for cross-process locks (see core.locking) that must be visible to
+# every Gunicorn worker and every Celery worker alike.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_URL,
+    },
+}
+
 # Celery
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = 'django-db'
@@ -126,13 +143,31 @@ CELERY_TASK_DEFAULT_QUEUE = 'isotopeiq_satellite_2'
 CELERY_TASK_TIME_LIMIT = 600        # seconds — SIGKILL
 CELERY_TASK_SOFT_TIME_LIMIT = 540   # seconds — SoftTimeLimitExceeded
 
-# Static beat schedule — retention pruning runs daily at 03:00 UTC.
-# Policy-driven schedules are registered dynamically via django_celery_beat.
+# Ack jobs only after they complete, and requeue them if the worker process
+# is killed (OOM, deploy, SIGKILL) mid-task, rather than silently losing the
+# task. Tasks here are idempotent enough to retry safely (they upsert
+# Job/DeviceJobResult rows keyed by id, not by side effect ordering).
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+
+# Static beat schedule — retention pruning runs daily at 03:00 UTC, and the
+# stale-job sweep runs every 5 minutes to catch jobs left in "running" by a
+# worker that died without acking (belt-and-suspenders alongside acks_late
+# above, since acks_late only protects against loss for tasks still queued —
+# it doesn't un-stick a Job row if the broker redelivery itself is delayed).
 from celery.schedules import crontab
 CELERY_BEAT_SCHEDULE = {
     'prune-old-data-daily': {
         'task': 'apps.retention.tasks.prune_old_data',
         'schedule': crontab(hour=3, minute=0),
+    },
+    'reap-stale-jobs': {
+        'task': 'apps.jobs.tasks.reap_stale_jobs',
+        'schedule': crontab(minute='*/5'),
+    },
+    'detect-offline-devices': {
+        'task': 'apps.devices.tasks.detect_offline_devices',
+        'schedule': crontab(minute=0),
     },
 }
 

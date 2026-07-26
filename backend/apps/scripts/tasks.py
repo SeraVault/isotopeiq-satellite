@@ -2,9 +2,16 @@ import json
 import logging
 
 from celery import shared_task
+from django.conf import settings
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+# A ScriptJob run is a single device (or server-only) pipeline, so its
+# worst-case duration is bounded by one Celery task's own hard time limit
+# plus a margin — unlike run_policy, there's no per-device fan-out to budget
+# for here.
+_SCRIPT_JOB_LOCK_TIMEOUT = settings.CELERY_TASK_TIME_LIMIT + 60
 
 
 def _get_collector(device):
@@ -18,26 +25,12 @@ def _run_agent_script(device, script_content, language):
 
     Raises RuntimeError on HTTP error or non-zero exit code.
     """
-    from urllib.request import Request, urlopen
-    from urllib.error import URLError
+    from core import agent_client
 
-    port = device.agent_port or 9322
-    url = 'http://{host}:{port}/run'.format(host=device.hostname, port=port)
-    payload = json.dumps({'script': script_content, 'language': language}).encode('utf-8')
-    headers = {'Content-Type': 'application/json'}
     try:
-        from apps.notifications.models import SystemSettings
-        _secret = SystemSettings.get().agent_secret or ''
-    except Exception:
-        _secret = ''
-    if _secret:
-        headers['X-Agent-Secret'] = _secret
-    req = Request(url, data=payload, headers=headers)
-    try:
-        with urlopen(req, timeout=300) as resp:  # noqa: S310
-            result = json.loads(resp.read().decode('utf-8'))
-    except URLError as exc:
-        raise RuntimeError('Agent unreachable at {0}: {1}'.format(url, exc))
+        result = agent_client.run_script(device, script_content, language)
+    except agent_client.AgentError as exc:
+        raise RuntimeError(str(exc))
 
     if result.get('exit_code', -1) != 0:
         raise RuntimeError(
@@ -151,6 +144,21 @@ def run_script_job(self, script_job_id: int, triggered_by: str = 'manual', devic
     """
     Execute a ScriptJob by running its ordered pipeline of ScriptJobSteps.
     """
+    from core.locking import AlreadyRunning, run_lock
+
+    lock_key = f'script_job:{script_job_id}:device:{device_id}'
+    try:
+        with run_lock(lock_key, timeout=_SCRIPT_JOB_LOCK_TIMEOUT):
+            return _run_script_job(self, script_job_id, triggered_by, device_id)
+    except AlreadyRunning:
+        logger.warning(
+            'run_script_job id=%s: skipped — a run is already in progress (device_id=%s).',
+            script_job_id, device_id,
+        )
+        return None
+
+
+def _run_script_job(self, script_job_id: int, triggered_by: str, device_id: int | None):
     from .job_models import ScriptJob, ScriptJobResult  # noqa: F401 — imported for side effects
 
     script_job = (
@@ -214,9 +222,15 @@ def _run_single(task, script_job, device, triggered_by):
         result.finished_at = timezone.now()
         result.save()
 
-    # Baseline / Drift — only on success with parsed data
-    if result.status == 'success' and result.parsed_output and device:
-        if any_baseline or any_drift:
+    if result.status == 'failed' and device:
+        from apps.notifications.dispatcher import dispatch_actions
+        dispatch_actions('job_failed', None, device, error_message=result.error_message)
+    elif result.status == 'success' and device:
+        from core.heartbeat import mark_seen
+        mark_seen(device)
+
+        # Baseline / Drift — only on success with parsed data
+        if result.parsed_output and (any_baseline or any_drift):
             try:
                 _apply_baseline_and_drift(
                     device, result, any_baseline, any_drift,
@@ -285,6 +299,18 @@ def _apply_baseline_and_drift(
             logger.warning('Drift detected for device "%s" (event %s).', device, drift_event.pk)
         dispatch_actions('drift_detected', None, device, baseline=baseline, drift_event=drift_event)
     else:
+        # Configuration matches baseline again — auto-resolve any open drift
+        # for this device rather than leaving it stuck at new/acknowledged
+        # forever waiting for a manual "resolve" click that the UI doesn't
+        # even expose.
+        resolved_count = DriftEvent.objects.filter(
+            device=device, status__in=['new', 'acknowledged'],
+        ).update(status='resolved')
+        if resolved_count:
+            logger.info(
+                'Auto-resolved %d drift event(s) for device "%s" — '
+                'collection now matches baseline.', resolved_count, device,
+            )
         dispatch_actions('collection_success', None, device, baseline=baseline)
 
 

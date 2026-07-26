@@ -5,12 +5,54 @@ from pathlib import Path
 
 from django.apps import apps
 from django.contrib import admin
+from django.db import connection
 from django.http import FileResponse, Http404, JsonResponse
 from django.urls import path, include
 from django.views.decorators.http import require_GET
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 _AGENTS_DIR = Path(os.environ.get('AGENTS_DIR', '/agents'))
+
+
+@require_GET
+def health_check(request):
+    """
+    Liveness/readiness probe for orchestration tooling (Docker healthcheck,
+    load balancers, etc). Checks the dependencies the app actually needs to
+    function — DB and cache/broker — not just "is the WSGI process up,"
+    which the previous Docker healthcheck (a bare HTTP GET against an
+    authenticated API endpoint) didn't really verify either.
+
+    Returns 200 with per-check detail if everything is reachable, 503 if
+    anything is down. Unauthenticated by design — this endpoint exposes no
+    application data, only up/down status, and orchestration tooling
+    generally can't supply credentials.
+    """
+    checks = {}
+    healthy = True
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+        checks['database'] = 'ok'
+    except Exception as exc:
+        checks['database'] = f'error: {exc}'
+        healthy = False
+
+    try:
+        from django.core.cache import cache
+        cache.set('_health_check', '1', timeout=5)
+        if cache.get('_health_check') != '1':
+            raise RuntimeError('cache round-trip returned unexpected value')
+        checks['cache'] = 'ok'
+    except Exception as exc:
+        checks['cache'] = f'error: {exc}'
+        healthy = False
+
+    return JsonResponse(
+        {'status': 'ok' if healthy else 'unhealthy', 'checks': checks},
+        status=200 if healthy else 503,
+    )
 
 
 @require_GET
@@ -62,6 +104,7 @@ def agents_info(request, filename):
 
 
 urlpatterns = [
+    path('health/', health_check, name='health-check'),
     path('admin/', admin.site.urls),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

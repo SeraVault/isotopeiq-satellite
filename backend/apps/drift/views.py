@@ -100,7 +100,7 @@ class DriftEventViewSet(viewsets.ReadOnlyModelViewSet):
         if not reason:
             return Response({'error': 'A reason is required to acknowledge drift.'}, status=status.HTTP_400_BAD_REQUEST)
         event = self.get_object()
-        event.status = 'resolved'
+        event.status = 'acknowledged'
         event.acknowledged_by = request.user.username
         event.acknowledged_at = timezone.now()
         event.acknowledgement_reason = reason

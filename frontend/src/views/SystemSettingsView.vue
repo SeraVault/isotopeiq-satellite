@@ -440,6 +440,21 @@
         </v-card-text>
       </v-card>
 
+      <!-- Device Monitoring -->
+      <v-card rounded="lg" elevation="1" class="mb-5" style="max-width:660px">
+        <v-card-title class="text-body-1 font-weight-bold pt-4 px-4">Device Monitoring</v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model.number="form.device_offline_threshold_hours"
+            label="Offline Threshold (hours)"
+            type="number"
+            min="0"
+            hint="A device is flagged offline if it hasn't completed a successful collection within this many hours. Set to 0 to disable offline detection."
+            persistent-hint
+          />
+        </v-card-text>
+      </v-card>
+
       <!-- Agent secret changed warning dialog -->
       <v-dialog v-model="secretChangedDialog" max-width="480" persistent>
         <v-card rounded="lg">
@@ -519,6 +534,7 @@ const form = ref({
   ldap_attr_email: 'mail',
   ldap_superuser_group: '',
   ldap_staff_group: '',
+  device_offline_threshold_hours: 48,
   // retention
   raw_data_days: 90,
   parsed_data_days: 365,

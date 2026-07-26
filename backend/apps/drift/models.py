@@ -77,7 +77,7 @@ class DriftEvent(models.Model):
     )
     job_result = models.ForeignKey(
         'jobs.DeviceJobResult',
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='drift_events',
@@ -92,6 +92,13 @@ class DriftEvent(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            # The dedup/auto-resolve lookups in jobs/tasks.py and
+            # scripts/tasks.py always filter on (device, status) together.
+            models.Index(fields=['device', 'status']),
+            # List views order by this by default (see Meta.ordering).
+            models.Index(fields=['-created_at']),
+        ]
 
     def __str__(self):
         return f'Drift on {self.device} at {self.created_at}'

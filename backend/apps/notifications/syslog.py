@@ -114,3 +114,23 @@ class SyslogNotifier:
             f' baseline_id={baseline.pk}'
             f' established_by="{baseline.established_by}"'
         )
+
+    def notify_job_failed(self, device, error_message: str) -> None:
+        """Emit a JOB_FAILED syslog message. device may be None for policy-level failures not tied to one device."""
+        name = device.name if device else 'N/A'
+        hostname = device.hostname if device else 'N/A'
+        self._emit(
+            f'IsotopeIQ JOB_FAILED'
+            f' device="{name}"'
+            f' hostname="{hostname}"'
+            f' error="{error_message}"'
+        )
+
+    def notify_device_offline(self, device, last_seen_at) -> None:
+        """Emit a DEVICE_OFFLINE syslog message."""
+        self._emit(
+            f'IsotopeIQ DEVICE_OFFLINE'
+            f' device="{device.name}"'
+            f' hostname="{device.hostname}"'
+            f' last_seen_at="{last_seen_at.isoformat() if last_seen_at else "never"}"'
+        )

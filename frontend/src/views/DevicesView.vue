@@ -165,6 +165,15 @@
             <template #item.is_active="{ item }">
               <v-chip :color="item.is_active ? 'success' : 'default'" size="x-small" label>{{ item.is_active ? 'Yes' : 'No' }}</v-chip>
             </template>
+            <template #item.last_seen_at="{ item }">
+              <v-tooltip :text="item.last_seen_at ? fmt(item.last_seen_at) : 'No successful collection yet'">
+                <template #activator="{ props: tip }">
+                  <v-chip v-bind="tip" :color="lastSeenColor(item)" size="x-small" label>
+                    {{ lastSeenLabel(item) }}
+                  </v-chip>
+                </template>
+              </v-tooltip>
+            </template>
             <template #item.tags="{ item }">
               <v-chip
                 v-for="tag in item.tags"
@@ -516,6 +525,7 @@ const deviceHeaders = [
   { title: 'Tags',       key: 'tags',            sortable: false },
   { title: 'Credential', key: 'credential' },
   { title: 'Active',     key: 'is_active' },
+  { title: 'Status',     key: 'last_seen_at',   sortable: false },
   { title: '',           key: 'actions', sortable: false, align: 'end' },
 ]
 
@@ -540,6 +550,20 @@ const viewer     = ref({ device: null, tab: 'info', baseline: null, baselineLoad
 
 function fmt(iso) { return new Date(iso).toLocaleString() }
 
+// offline_notified_at is set by the backend's offline-detection sweep
+// (apps.devices.tasks.detect_offline_devices) once last_seen_at passes the
+// configured threshold, and cleared the next time the device is seen again
+// — so it's the authoritative signal here rather than re-deriving the
+// threshold client-side.
+function lastSeenColor(d) {
+  if (!d.last_seen_at) return 'default'
+  return d.offline_notified_at ? 'error' : 'success'
+}
+function lastSeenLabel(d) {
+  if (!d.last_seen_at) return 'Never seen'
+  return d.offline_notified_at ? 'Offline' : 'Online'
+}
+
 function infoRows(d) {
   return [
     { label: 'Name',        value: d.name },
@@ -549,6 +573,7 @@ function infoRows(d) {
     { label: 'Credential',  value: credName(d.credential) },
     ...(d.connection_type === 'agent' ? [{ label: 'Agent Port', value: d.agent_port ?? 9322 }] : []),
     { label: 'Active',      value: d.is_active ? 'Yes' : 'No' },
+    { label: 'Last Seen',   value: d.last_seen_at ? fmt(d.last_seen_at) : 'Never' },
     ...(d.tags?.length ? [{ label: 'Tags',  value: d.tags.join(', ') }] : []),
     ...(d.notes         ? [{ label: 'Notes', value: d.notes }]          : []),
   ]

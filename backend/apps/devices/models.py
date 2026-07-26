@@ -51,7 +51,12 @@ class Device(models.Model):
     ]
 
     name = models.CharField(max_length=255, unique=True)
-    hostname = models.CharField(max_length=255)
+    # Indexed (search/filter both use it — see DeviceViewSet) but intentionally
+    # NOT unique: hostnames can legitimately collide across rows (e.g. a
+    # decommissioned device's old hostname getting DHCP-reassigned to a new
+    # one that's tracked as a separate Device record). Use `name` as the
+    # stable identity; hostname is connection info, not identity.
+    hostname = models.CharField(max_length=255, db_index=True)
     fqdn = models.CharField(max_length=255, blank=True)
     port = models.PositiveIntegerField(default=22)
     device_type = models.CharField(max_length=50, choices=DEVICE_TYPE_CHOICES, default='linux')
@@ -89,6 +94,18 @@ class Device(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Updated on every successful collection (see core.heartbeat.mark_seen).
+    # Null means "never successfully collected" — distinct from "offline"
+    # (which is a derived state: last_seen_at older than the configured
+    # offline threshold). Kept separate from is_active, which is an operator
+    # toggle, not an observed health signal.
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    # Set by the offline-sweep task (apps.devices.tasks.detect_offline_devices)
+    # so the device_offline notification fires once per offline transition
+    # rather than every sweep cycle, and clears automatically once the device
+    # is seen again (see core.heartbeat.mark_seen).
+    offline_notified_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['name']

@@ -40,9 +40,14 @@ def prune_old_data():
         logger.info('Retention: cleared parsed_output on %d results (older than %d days).', count, policy.parsed_data_days)
 
     # ── Job records (cascades to DeviceJobResult) ─────────────────────────────
+    # Jobs whose DeviceJobResult still has an unresolved DriftEvent are kept
+    # until that drift is acknowledged/resolved, even past the cutoff — the
+    # drift record needs its job context for as long as it's actionable.
     if policy.job_history_days:
         cutoff = now - timedelta(days=policy.job_history_days)
-        deleted, _ = Job.objects.filter(created_at__lt=cutoff).delete()
+        deleted, _ = Job.objects.filter(created_at__lt=cutoff).exclude(
+            device_results__drift_events__status__in=['new', 'acknowledged'],
+        ).delete()
         totals['jobs_deleted'] = deleted
         logger.info('Retention: deleted %d job records (older than %d days).', deleted, policy.job_history_days)
 

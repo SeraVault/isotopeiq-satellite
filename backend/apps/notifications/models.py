@@ -51,6 +51,12 @@ class SystemSettings(models.Model):
         default='http://localhost:8000',
         help_text='Public base URL of this satellite (used in agent download links, etc.)',
     )
+    device_offline_threshold_hours = models.PositiveIntegerField(
+        default=48,
+        help_text='Hours since a device\'s last successful collection before '
+                   'it is considered offline and a device_offline notification '
+                   'fires. 0 disables offline detection.',
+    )
     agent_secret = EncryptedCharField(
         max_length=255,
         blank=True,
@@ -118,10 +124,12 @@ class PostCollectionAction(models.Model):
     """
     TRIGGER_NEW_BASELINE  = 'new_baseline'
     TRIGGER_DRIFT         = 'drift_detected'
+    TRIGGER_JOB_FAILED    = 'job_failed'
     TRIGGER_ALWAYS        = 'always'
     TRIGGER_CHOICES = [
         (TRIGGER_NEW_BASELINE, 'New Baseline Established'),
         (TRIGGER_DRIFT,        'Drift Detected'),
+        (TRIGGER_JOB_FAILED,   'Job Failed'),
         (TRIGGER_ALWAYS,       'Always (every successful collection)'),
     ]
 

@@ -833,6 +833,7 @@ async function runNow(id) {
 const triggerOptions = [
   { value: 'new_baseline',   label: 'New Baseline Established' },
   { value: 'drift_detected', label: 'Drift Detected'           },
+  { value: 'job_failed',     label: 'Job Failed'                },
   { value: 'always',         label: 'Always (every success)'   },
 ]
 const destinationOptions = [

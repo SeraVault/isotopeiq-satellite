@@ -53,6 +53,33 @@ class EmailNotifier:
         )
         self._send(s, subject, body)
 
+    def notify_job_failed(self, device, error_message: str) -> None:
+        """device may be None for policy-level failures not tied to one device."""
+        s = _get_email_config()
+        if not s.email_enabled:
+            return
+        if device:
+            subject = f'[IsotopeIQ] Job Failed: {device.name}'
+            target = f'device "{device.name}" ({device.hostname})'
+        else:
+            subject = '[IsotopeIQ] Job Failed'
+            target = 'this policy run'
+        body = f'A collection job failed for {target}.\n\nError: {error_message}\n'
+        self._send(s, subject, body)
+
+    def notify_device_offline(self, device, last_seen_at) -> None:
+        s = _get_email_config()
+        if not s.email_enabled:
+            return
+        subject = f'[IsotopeIQ] Device Offline: {device.name}'
+        last_seen_str = last_seen_at.isoformat() if last_seen_at else 'never'
+        body = (
+            f'Device "{device.name}" ({device.hostname}) has not completed a '
+            f'successful collection since {last_seen_str} and is now '
+            f'considered offline.\n'
+        )
+        self._send(s, subject, body)
+
     def export_baseline(self, device, baseline) -> None:
         """Send the full canonical baseline JSON as an email attachment."""
         s = _get_email_config()
