@@ -1,0 +1,101 @@
+name: Build Windows Baseline Exporter
+
+on:
+  push:
+    paths:
+      - 'agents/windows_baseline_export.py'
+      - '.github/workflows/build-windows-baseline-export.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Test exporter output on the actual Windows runner ──────────────────────
+  test:
+    name: Test exporter
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+
+      - name: Run exporter + validate
+        shell: pwsh
+        run: |
+          python agents\windows_baseline_export.py -o $env:TEMP\baseline.json 2> $env:TEMP\errors.txt
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $env:TEMP\errors.txt
+            exit 1
+          }
+          python .github\scripts\validate_baseline.py $env:TEMP\baseline.json
+
+      - name: Upload output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-baseline-export-output
+          path: ${{ env.TEMP }}\baseline.json
+          retention-days: 7
+
+  # ── Build executable ───────────────────────────────────────────────────────
+  build:
+    needs: test
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up 32-bit Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          architecture: 'x86'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          cd agents
+          pyinstaller --onefile --name windows_baseline_export windows_baseline_export.py
+          if (Test-Path windows_baseline_export.exe) { Remove-Item windows_baseline_export.exe }
+          move dist\windows_baseline_export.exe .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-baseline-export
+          path: agents/windows_baseline_export.exe
+          retention-days: 30
+
+  commit-binary:
+    name: Commit binary
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-baseline-export
+          path: agents/
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git stash --include-untracked
+          git pull --rebase origin main
+          git stash pop
+          git add agents/windows_baseline_export.exe
+          git diff --cached --quiet && echo "No binary changes." || \
+            git commit -m "chore: rebuild windows baseline exporter binary [skip ci]"
+          git push
