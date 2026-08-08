@@ -9,6 +9,7 @@ Compile with PyInstaller:
 from __future__ import print_function
 
 import base64
+import csv
 import ctypes
 import json
 import os
@@ -16,6 +17,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 try:
     import winreg
@@ -1029,6 +1031,111 @@ def collect_filesystem(output):
 # security
 # ---------------------------------------------------------------------------
 
+def _audit_subcategories_enabled():
+    """True/False from the auditpol subcategory model, or None if absent.
+
+    Uses /r (CSV) so the answer comes from the 'Inclusion Setting' COLUMN
+    rather than from words appearing anywhere in a human-readable table --
+    the header row of the non-CSV output contains 'Success' regardless of
+    what is configured. auditpol does not exist before Vista/2008, where
+    this returns None and the caller falls back to the legacy model.
+    """
+    out = run('auditpol /get /category:* /r 2>nul')
+    if not out.strip():
+        return None
+    rows = list(csv.reader(out.splitlines()))
+    if not rows:
+        return None
+    header, found_any = rows[0], False
+    try:
+        sub_i = header.index('Subcategory')
+        set_i = header.index('Inclusion Setting')
+    except ValueError:
+        return None
+    for row in rows[1:]:
+        if len(row) <= max(sub_i, set_i) or not row[sub_i].strip():
+            continue
+        found_any = True
+        if row[set_i].strip().lower() not in ('', 'no auditing'):
+            return True
+    return False if found_any else None
+
+
+def _audit_legacy_enabled():
+    """True/False from the nine legacy [Event Audit] categories, or None.
+
+    Values are a bitmask: 0 none, 1 success, 2 failure, 3 both. This is the
+    only audit configuration that exists on XP/2003, and is what the OS
+    enforces on any machine where SCENoApplyLegacyAuditPolicy is not 1.
+    """
+    cfg = os.path.join(tempfile.gettempdir(),
+                       'audpol_{}.inf'.format(os.getpid()))
+    run('secedit /export /cfg "{}" /areas SECURITYPOLICY /quiet'.format(cfg),
+        120)
+    content = ''
+    for encoding in ('utf-16', None):
+        try:
+            if encoding:
+                with open(cfg, 'r', encoding=encoding, errors='replace') as f:
+                    content = f.read()
+            else:
+                with open(cfg, 'r', errors='replace') as f:
+                    content = f.read()
+            break
+        except Exception:
+            continue
+    try:
+        os.remove(cfg)
+    except OSError:
+        pass
+    if not content:
+        return None
+    section, found_any = '', False
+    for line in content.splitlines():
+        line = line.strip()
+        if line.startswith('['):
+            section = line
+            continue
+        if section != '[Event Audit]' or '=' not in line:
+            continue
+        key, value = (p.strip() for p in line.split('=', 1))
+        if not key.startswith('Audit'):
+            continue
+        found_any = True
+        try:
+            if int(value) > 0:
+                return True
+        except ValueError:
+            continue
+    return False if found_any else None
+
+
+def _audit_logging_enabled():
+    """Is anything actually being audited, per the model the OS enforces?
+
+    SCENoApplyLegacyAuditPolicy = 1 means the subcategory settings win;
+    0 or absent means the legacy categories are authoritative. Whichever
+    model applies is consulted first, with the other as a fallback so a
+    host that reports nothing for one still gets an answer from the other.
+    Returns None only when neither model could be read at all.
+    """
+    override = reg_get('HKLM', r'SYSTEM\CurrentControlSet\Control\Lsa',
+                       'SCENoApplyLegacyAuditPolicy')
+    try:
+        subcategories_win = int(override) == 1
+    except (TypeError, ValueError):
+        subcategories_win = False
+
+    order = ((_audit_subcategories_enabled, _audit_legacy_enabled)
+             if subcategories_win
+             else (_audit_legacy_enabled, _audit_subcategories_enabled))
+    for probe in order:
+        result = probe()
+        if result is not None:
+            return result
+    return None
+
+
 def collect_security(output):
     # UAC
     uac_val = reg_get('HKLM',
@@ -1061,12 +1168,28 @@ def collect_security(output):
     elif sb_out.strip().lower() == 'false':
         output['security']['secure_boot'] = False
 
-    # Audit logging — check if any category has Success/Failure configured
-    audit_out = run('auditpol /get /category:* 2>nul')
-    if audit_out:
-        output['security']['audit_logging_enabled'] = (
-            'Success' in audit_out or 'Failure' in audit_out
-        )
+    # Audit logging.
+    #
+    # This used to be a substring test for 'Success'/'Failure' over the whole
+    # auditpol dump, which is true on a machine that audits NOTHING: the CSV
+    # header itself contains "Inclusion Setting", every row of a fully
+    # disabled machine reads "No Auditing", and the word Success appears in
+    # the column headings of the non-/r output. Verified against two hosts
+    # that audit nothing -- both would have reported True.
+    #
+    # Windows also has TWO audit models, and the substring test saw only one:
+    #   * subcategories, via auditpol -- absent before Vista/2008
+    #   * the nine legacy [Event Audit] categories, via secedit -- the only
+    #     audit configuration that exists on XP/2003, and still what the OS
+    #     ENFORCES on any machine where SCENoApplyLegacyAuditPolicy is not 1
+    # so a host could report False while the legacy model had auditing on,
+    # or report True from subcategories the OS was ignoring.
+    #
+    # The canonical schema pins this to a single boolean|null
+    # (additionalProperties is False), so the per-category detail cannot be
+    # stored here. What it now answers correctly is "is anything actually
+    # being audited", read from whichever model the OS enforces.
+    output['security']['audit_logging_enabled'] = _audit_logging_enabled()
 
     # Password policy
     net_out = run('net accounts')

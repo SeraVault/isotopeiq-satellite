@@ -785,6 +785,14 @@ def _collect_audit_policy(settings):
             settings['audit.' + sub] = row.get('Inclusion Setting', '')
 
 
+# Legacy audit policy stores a bitmask per category rather than text.
+_AUDIT_LEGACY = {
+    '0': 'No Auditing',
+    '1': 'Success',
+    '2': 'Failure',
+    '3': 'Success and Failure',
+}
+
 _CERT_STORES = (('root', 'Root'), ('ca', 'CA'),
                 ('trustedpublisher', 'TrustedPublisher'))
 
@@ -864,15 +872,29 @@ def _collect_account_policy(settings):
             os.remove(cfg)
         except OSError:
             pass
-    in_section = False
+    # Both [System Access] (password/lockout policy) and [Event Audit] (the
+    # nine LEGACY audit categories) are taken from this one export. Only
+    # [System Access] used to be read, so the legacy audit model was parsed
+    # and thrown away -- and it is the ONLY audit configuration that exists
+    # on XP/2003, precisely the hosts this offline collector serves, because
+    # auditpol.exe does not ship before Vista/2008.
+    section = ''
     for line in content.splitlines():
         line = line.strip()
         if line.startswith('['):
-            in_section = line == '[System Access]'
+            section = line
             continue
-        if in_section and '=' in line:
-            key, value = line.split('=', 1)
-            settings['policy.' + key.strip()] = value.strip().strip('"')
+        if '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip().strip('"')
+        if section == '[System Access]':
+            settings['policy.' + key] = value
+        elif section == '[Event Audit]' and key.startswith('Audit'):
+            # Stored as a bitmask; decoded to the wording auditpol uses so
+            # the two models read identically in a drift report.
+            settings['audit_legacy.' + key] = _AUDIT_LEGACY.get(value, value)
 
 
 def collect_security():
@@ -898,6 +920,17 @@ def collect_security():
         'RestrictAnonymous': 'restrict_anonymous',
         'RestrictAnonymousSAM': 'restrict_anonymous_sam',
     }, 'lsa')
+
+    # Which audit model the OS actually enforces: 1 = the auditpol
+    # subcategories win, 0/absent = the legacy [Event Audit] categories do.
+    # Without it a reader cannot tell which of the two collected sets is
+    # authoritative. Read separately from the LSA block above because that
+    # one applies a fixed 'lsa' prefix.
+    _override = reg_get(winreg.HKEY_LOCAL_MACHINE,
+                        r'SYSTEM\CurrentControlSet\Control\Lsa',
+                        'SCENoApplyLegacyAuditPolicy', 64)
+    if _override is not None:
+        settings['audit.subcategory_override'] = str(_override)
 
     _collect_account_policy(settings)
 
