@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Version: 1.0.0 — initial release
+# Author:  Donnie Guedry (dguedry)
 """Standalone Linux baseline exporter.
 
 Collects a system baseline and writes it as JSON in the schema-1.2.0
@@ -33,6 +35,24 @@ COLLECTOR_VERSION = '1.0.0'
 # helpers
 # ---------------------------------------------------------------------------
 
+def _child_env():
+    """Environment for child processes, with PyInstaller's loader scrubbed.
+
+    The frozen binaries set LD_LIBRARY_PATH to their bundled (centos:7-era)
+    libraries; children inheriting it load those into NEWER system
+    binaries — rpm on el8 aborts on the mismatched libraries and the
+    collector silently recorded zero applications (found live 2026-08-22).
+    PyInstaller preserves the original value in LD_LIBRARY_PATH_ORIG.
+    """
+    env = dict(os.environ)
+    orig = env.pop('LD_LIBRARY_PATH_ORIG', None)
+    if orig:
+        env['LD_LIBRARY_PATH'] = orig
+    else:
+        env.pop('LD_LIBRARY_PATH', None)
+    return env
+
+
 def run(cmd, timeout=60):
     """Run a shell command, return stdout ('' on any failure).
 
@@ -40,7 +60,7 @@ def run(cmd, timeout=60):
     """
     try:
         p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE,
+                           stderr=subprocess.PIPE, env=_child_env(),
                            universal_newlines=True, timeout=timeout)
         return p.stdout
     except Exception:
