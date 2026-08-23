@@ -16,6 +16,7 @@ crontabs). Unprivileged runs still produce a valid file; the
 """
 
 import argparse
+import fnmatch
 import glob
 import hashlib
 import json
@@ -309,6 +310,22 @@ def _admin_info():
     return admins, admin_gids
 
 
+# systemd's DynamicUser allocation range: accounts here are created for a
+# unit's lifetime and vanish with it (Cockpit's cockpit-wsinstance-*
+# accounts, visible via nss-systemd only while the unit runs) — run
+# state, not configuration. Filtered by id range because the names are
+# unit-defined and open-ended.
+DYNAMIC_UID_MIN = 61184
+DYNAMIC_UID_MAX = 65519
+
+
+def _is_dynamic_id(idstr):
+    try:
+        return DYNAMIC_UID_MIN <= int(idstr) <= DYNAMIC_UID_MAX
+    except (TypeError, ValueError):
+        return False
+
+
 def collect_users():
     locked = {}
     for line in read_lines('/etc/shadow'):
@@ -323,6 +340,8 @@ def collect_users():
         if len(parts) < 7:
             continue
         name, passwd, uid, gid, gecos, home, shell = parts[:7]
+        if _is_dynamic_id(uid):
+            continue
         if passwd == 'x' and locked:
             # shadow database readable: locked entries and accounts with no
             # shadow entry at all (systemd dynamic users) count as disabled
@@ -349,6 +368,8 @@ def collect_groups():
     for line in _database_lines('group', '/etc/group'):
         parts = line.split(':')
         if len(parts) < 4:
+            continue
+        if _is_dynamic_id(parts[2]):
             continue
         groups.append({
             'id': parts[2],
@@ -412,6 +433,24 @@ def collect_patches():
 # services
 # ---------------------------------------------------------------------------
 
+# Ephemeral service INSTANCES excluded from the baseline: created per
+# login session (cockpit-session@1-..., the user@<uid> manager), per
+# crash (systemd-coredump@0), or per device number (lvm2-pvscan@252:2) —
+# run state, not configuration. Same list as the baseline_linux role's
+# baseline_linux_service_excludes; the [0-9] anchor keeps the TEMPLATE
+# unit files (name@.service) and named instances (getty@tty1).
+SERVICE_EXCLUDES = (
+    'cockpit-session@[0-9]*',
+    'gnome-headless-session@[0-9]*',
+    'user@[0-9]*',
+    'user-runtime-dir@[0-9]*',
+    'systemd-coredump@[0-9]*',
+    'lvm2-pvscan@[0-9]*',
+    'session-[0-9]*.scope',
+    'dbus-:*',
+)
+
+
 def collect_services():
     services = {}
     state_map = {'enabled': 'auto', 'enabled-runtime': 'auto'}
@@ -443,7 +482,9 @@ def collect_services():
         'run_as': '',
         'source': 'systemd' if which('systemctl') else 'sysvinit',
         'startup': startup,
-    } for name, startup in sorted(services.items())]
+    } for name, startup in sorted(services.items())
+        if not any(fnmatch.fnmatch(name.lower(), p)
+                   for p in SERVICE_EXCLUDES)]
 
 
 # ---------------------------------------------------------------------------
